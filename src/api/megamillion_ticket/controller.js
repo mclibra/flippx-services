@@ -2,20 +2,10 @@ import moment from 'moment';
 import { makeTransaction } from '../transaction/controller';
 import { Wallet } from '../wallet/model';
 import { Lottery } from '../lottery/model';
-import { User } from '../user/model';
 import { MegaMillionTicket } from './model';
+import { LoyaltyService } from '../loyalty/service';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
-
-const config = {
-	depositCommissionAgent: 0.01,
-	depositCommissionAdmin: 0.02,
-	userTransferComissionAdmin: 0.03,
-	ticketBorletteComissionAgent: 0.15,
-	ticketMegamillionComissionAgent: 0.015,
-	withdrawCommissionAgent: 0.01,
-	withdrawCommissionAdmin: 0.02,
-};
 
 export const listAllByLottery = async (
 	{ id },
@@ -52,49 +42,31 @@ export const listAllByLottery = async (
 		const megaMillionTickets = await MegaMillionTicket.find(params)
 			.limit(limit ? parseInt(limit) : 10)
 			.skip(offset ? parseInt(offset) : 0)
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code',
+				},
+			})
+			.populate('user')
 			.sort({
 				[sortBy]: sortOrder.toLowerCase(),
 			})
-			.populate('lottery')
 			.exec();
-		const amount = await MegaMillionTicket.aggregate([
-			{
-				$match: {
-					lottery: id,
-				},
-			},
-			{
-				$group: {
-					_id: null,
-					totalAmountPlayed: {
-						$sum: '$amountPlayed',
-					},
-					totalAmountWon: {
-						$sum: '$amountWon',
-					},
-				},
-			},
-		]);
 		const total = await MegaMillionTicket.count(params).exec();
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				tickets: megaMillionTickets,
+				megaMillionTickets,
 				total,
-				amount: amount.map(item => ({
-					...item,
-					totalAmountPlayed: parseFloat(
-						item.totalAmountPlayed
-					).toFixed(2),
-					totalAmountWon: parseFloat(item.totalAmountWon).toFixed(2),
-				})),
 			},
 		};
 	} catch (error) {
 		console.log(error);
 		return {
-			status: 400,
+			status: 500,
 			entity: {
 				success: false,
 				error: error.errors || error,
@@ -103,100 +75,31 @@ export const listAllByLottery = async (
 	}
 };
 
-export const list = async ({ offset, limit }, { _id }) => {
+export const placeBet = async ({ id }, body, user) => {
 	try {
-		const megaMillionTickets = await MegaMillionTicket.find({
-			user: _id,
-		})
-			.limit(limit || 50)
-			.skip(offset || 0)
-			.populate('lottery')
-			.sort({
-				purchasedOn: 'desc',
-			})
-			.exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				tickets: megaMillionTickets,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const show = async ({ id }) => {
-	try {
-		const megaMillionTicket = await MegaMillionTicket.findById(id)
-			.populate('user', 'name email phone')
-			.exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				megaMillionTicket,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const ticketByLottery = async ({ id }, { _id }) => {
-	try {
-		const tickets = await MegaMillionTicket.find({
-			user: _id,
-			lottery: id,
-		}).exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				tickets,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const create = async ({ id }, body, user) => {
-	try {
-		const walletData = await Wallet.findOne({
-			user: user._id,
-		});
+		const { cashType = 'VIRTUAL' } = body;
 
 		// Validate cash type
-		const cashType = body.cashType || 'VIRTUAL';
 		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
 					error: 'Invalid cash type. Must be REAL or VIRTUAL',
+				},
+			};
+		}
+
+		const walletData = await Wallet.findOne({
+			user: user._id,
+		});
+
+		if (!walletData) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User wallet not found',
 				},
 			};
 		}
@@ -219,6 +122,7 @@ export const create = async ({ id }, body, user) => {
 
 				const megaMillionTicket = await MegaMillionTicket.create(body);
 				if (megaMillionTicket._id) {
+					// Process transaction
 					await makeTransaction(
 						user._id,
 						user.role,
@@ -229,6 +133,53 @@ export const create = async ({ id }, body, user) => {
 						megaMillionTicket._id,
 						cashType // Pass cash type to transaction function
 					);
+
+					// **NEW: Record play activity for loyalty tracking**
+					try {
+						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						if (!loyaltyResult.success) {
+							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+						} else {
+							console.log(`Play activity recorded for user ${user._id} - Megamillion ticket purchase`);
+						}
+					} catch (loyaltyError) {
+						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						// Don't fail ticket creation if loyalty tracking fails
+					}
+
+					// **NEW: Award XP for ticket purchase**
+					try {
+						// Calculate XP for Megamillion (fixed $2 amount)
+						const baseXP = 10; // Base XP for Megamillion ticket
+						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+						const totalXP = baseXP * cashTypeMultiplier;
+
+						const xpResult = await LoyaltyService.awardUserXP(
+							user._id,
+							totalXP,
+							'GAME_ACTIVITY',
+							`Megamillion ticket purchase - Amount: $${MEGAMILLION_TICKET_AMOUNT} (${cashType})`,
+							{
+								gameType: 'MEGAMILLION',
+								ticketId: megaMillionTicket._id,
+								amountPlayed: MEGAMILLION_TICKET_AMOUNT,
+								cashType,
+								baseXP,
+								multiplier: cashTypeMultiplier,
+								numbers: body.numbers,
+								megaBall: body.megaBall
+							}
+						);
+
+						if (!xpResult.success) {
+							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+						} else {
+							console.log(`Awarded ${totalXP} XP to user ${user._id} for Megamillion ticket purchase`);
+						}
+					} catch (xpError) {
+						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						// Don't fail ticket creation if XP awarding fails
+					}
 
 					return {
 						status: 200,
@@ -379,12 +330,49 @@ export const cashoutTicket = async ({ id }, user) => {
 			throw 'This ticket has already been claimed.';
 		}
 		const totalAmountWon = megamillionTicket.amountWon;
+
 		const amountTransferred = await makeTransaction(
 			user._id,
 			user.role,
 			'WON_MEGAMILLION',
 			totalAmountWon
 		);
+
+		// **NEW: Award XP for winning**
+		try {
+			// Calculate XP based on amount won
+			const baseXP = Math.max(25, Math.floor(totalAmountWon / 10)); // Higher XP for wins, Megamillion wins are typically larger
+			const cashTypeMultiplier = megamillionTicket.cashType === 'REAL' ? 2 : 1;
+			const winMultiplier = 2; // Higher bonus for Megamillion wins
+			const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+
+			const xpResult = await LoyaltyService.awardUserXP(
+				megamillionTicket.user._id,
+				totalXP,
+				'GAME_REWARD',
+				`Megamillion win - Amount: $${totalAmountWon} (${megamillionTicket.cashType})`,
+				{
+					gameType: 'MEGAMILLION',
+					ticketId: megamillionTicket._id,
+					amountWon: totalAmountWon,
+					cashType: megamillionTicket.cashType,
+					baseXP,
+					multiplier: cashTypeMultiplier * winMultiplier,
+					isWin: true,
+					numbers: megamillionTicket.numbers,
+					megaBall: megamillionTicket.megaBall
+				}
+			);
+
+			if (!xpResult.success) {
+				console.warn(`Failed to award win XP for user ${megamillionTicket.user._id}:`, xpResult.error);
+			} else {
+				console.log(`Awarded ${totalXP} XP to user ${megamillionTicket.user._id} for Megamillion win`);
+			}
+		} catch (xpError) {
+			console.error(`Error awarding win XP for user ${megamillionTicket.user._id}:`, xpError);
+		}
+
 		await Object.assign(megamillionTicket, {
 			isAmountDisbursed: true,
 		}).save();
@@ -443,49 +431,16 @@ export const remove = async ({ id }) => {
 export const commissionSummary = async ({ id }, user) => {
 	try {
 		if (!['ADMIN'].includes(user.role)) {
-			throw 'You are not authorized to cashout ticket.';
+			throw 'You are not authorized to view commission data.';
 		}
-
-		const summary = await MegaMillionTicket.aggregate([
-			{
-				$match: {
-					lottery: id,
-					status: {
-						$ne: 'CANCELLED',
-					},
-				},
-			},
-			{
-				$group: {
-					_id: '$user',
-					sales: {
-						$sum: '$amountPlayed',
-					},
-					rewards: {
-						$sum: '$amountWon',
-					},
-				},
-			},
-		]);
-		const summaryPopulated = await User.populate(summary, {
-			path: '_id',
-			select: 'name role',
-		});
-		const data = summaryPopulated
-			.filter(item => item._id.role === 'AGENT')
-			.map(item => ({
-				...item,
-				sales: parseFloat(item.sales),
-				rewards: parseFloat(item.rewards),
-				commission: parseFloat(
-					config.ticketMegamillionComissionAgent * item.sales
-				),
-			}));
+		const megaMillionTickets = await MegaMillionTicket.find({
+			user: id,
+		}).populate('user');
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				data: data,
+				megaMillionTickets,
 			},
 		};
 	} catch (error) {

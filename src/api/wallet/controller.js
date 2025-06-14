@@ -1,373 +1,29 @@
-import { Wallet } from './model';
-import { User } from '../user/model';
-import { Payment } from '../wallet/model';
+import { Wallet, Payment } from './model';
 import { Transaction } from '../transaction/model';
-import { Withdrawal } from '../withdrawal/model';
+import { makeTransaction } from '../transaction/controller';
 import { BankAccount } from '../bank_account/model';
-import payoneerService from '../../services/payoneer';
-import { payoneerConfig } from '../../../config';
+import { Withdrawal } from '../withdrawal/model';
+import { LoyaltyService } from '../loyalty/service';
 
-export const getUserBalance = async ({ _id }) => {
+export const getUserBalance = async user => {
 	try {
-		let walletData = await Wallet.findOne({
-			user: _id,
-		});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				walletData: walletData,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const getWalletSummary = async () => {
-	try {
-		let virtualWalletData = await Wallet.aggregate([
-			{
-				$project: {
-					userObjId: {
-						$toObjectId: '$user',
-					},
-					virtualBalance: {
-						$multiply: ['$virtualBalance', 1000],
-					},
-				},
-			},
-			{
-				$lookup: {
-					from: User.collection.name,
-					localField: 'userObjId',
-					foreignField: '_id',
-					as: 'user_doc',
-				},
-			},
-			{
-				$unwind: '$user_doc',
-			},
-			{
-				$group: {
-					_id: '$user_doc.role',
-					totalVirtualBalance: {
-						$sum: '$virtualBalance',
-					},
-				},
-			},
-		]);
-
-		let realWalletData = await Wallet.aggregate([
-			{
-				$project: {
-					userObjId: {
-						$toObjectId: '$user',
-					},
-					realBalance: {
-						$multiply: ['$realBalance', 1000],
-					},
-				},
-			},
-			{
-				$lookup: {
-					from: User.collection.name,
-					localField: 'userObjId',
-					foreignField: '_id',
-					as: 'user_doc',
-				},
-			},
-			{
-				$unwind: '$user_doc',
-			},
-			{
-				$group: {
-					_id: '$user_doc.role',
-					totalRealBalance: {
-						$sum: '$realBalance',
-					},
-				},
-			},
-		]);
-
-		// Combine the results
-		const combinedData = [];
-		const allRoles = [
-			...new Set([
-				...virtualWalletData.map(item => item._id),
-				...realWalletData.map(item => item._id),
-			]),
-		];
-
-		allRoles.forEach(role => {
-			const virtualData = virtualWalletData.find(
-				item => item._id === role
-			);
-			const realData = realWalletData.find(item => item._id === role);
-
-			combinedData.push({
-				role,
-				totalVirtualBalance: virtualData
-					? virtualData.totalVirtualBalance / 1000
-					: 0,
-				totalRealBalance: realData
-					? realData.totalRealBalance / 1000
-					: 0,
-			});
-		});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				walletData: combinedData,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const initiateVirtualCashPurchase = async req => {
-	try {
-		const { amount } = req.body;
-		const user = req.user;
-
-		// Validate amount
-		if (
-			amount < payoneerConfig.minPurchaseAmount ||
-			amount > payoneerConfig.maxPurchaseAmount
-		) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: `Purchase amount must be between ${payoneerConfig.minPurchaseAmount} and ${payoneerConfig.maxPurchaseAmount}`,
-				},
-			};
-		}
-
-		// Create payment session with Payoneer
-		const baseUrl = req.protocol + '://' + req.get('host');
-		const paymentSession = await payoneerService.createPaymentSession({
-			amount: amount,
-			currency: 'USD',
-			description: `Virtual cash purchase of ${amount}`,
-			successUrl: `${baseUrl}/api/wallet/purchase/success?session_id={CHECKOUT_SESSION_ID}`,
-			cancelUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id={CHECKOUT_SESSION_ID}`,
-			metadata: {
-				userId: user._id.toString(),
-				purchaseType: 'VIRTUAL_CASH',
-			},
-		});
-
-		// Record payment attempt
-		await Payment.create({
+		const walletData = await Wallet.findOne({
 			user: user._id,
-			sessionId: paymentSession.id,
-			amount: amount,
-			currency: 'USD',
-			status: 'PENDING',
-			virtualCashAmount: amount,
-			realCashAmount: amount * payoneerConfig.conversionRate,
-			metadata: {
-				userId: user._id.toString(),
-				purchaseType: 'VIRTUAL_CASH',
-			},
 		});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				paymentUrl: paymentSession.redirect_url,
-				sessionId: paymentSession.id,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to initiate purchase',
-			},
-		};
-	}
-};
-
-export const handlePurchaseSuccess = async req => {
-	try {
-		const { session_id } = req.query;
-
-		// Get payment record
-		const payment = await Payment.findOne({ sessionId: session_id });
-		if (!payment) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Payment session not found',
-				},
-			};
-		}
-
-		// Verify payment with Payoneer
-		const paymentSession =
-			await payoneerService.getPaymentSession(session_id);
-
-		if (paymentSession.status === 'COMPLETED') {
-			const userId = payment.user;
-			const purchaseAmount = payment.virtualCashAmount;
-			const realCashAmount = payment.realCashAmount;
-
-			// Get system account
-			const systemAccount = await User.findOne({ role: 'SYSTEM' });
-
-			// Update user's balances
-			const userWallet = await Wallet.findOne({ user: userId });
-			const previousVirtualBalance = userWallet.virtualBalance;
-			const previousRealBalance = userWallet.realBalance;
-
-			userWallet.virtualBalance += purchaseAmount;
-			userWallet.realBalance += realCashAmount;
-			await userWallet.save();
-
-			// Create transaction records
-			// Virtual cash credit
-			await Transaction.create({
-				user: userId,
-				cashType: 'VIRTUAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE',
-				transactionAmount: purchaseAmount,
-				previousBalance: previousVirtualBalance,
-				newBalance: userWallet.virtualBalance,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: session_id,
-				},
-				status: 'COMPLETED',
-			});
-
-			// Real cash bonus
-			await Transaction.create({
-				user: userId,
-				cashType: 'REAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE_BONUS',
-				transactionAmount: realCashAmount,
-				previousBalance: previousRealBalance,
-				newBalance: userWallet.realBalance,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: session_id,
-				},
-				status: 'COMPLETED',
-			});
-
-			// System account revenue record
-			await Transaction.create({
-				user: systemAccount._id,
-				cashType: 'VIRTUAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE_REVENUE',
-				transactionAmount: purchaseAmount,
-				previousBalance: 0, // We don't track system balance this way
-				newBalance: 0,
-				referenceType: 'USER',
-				referenceIndex: userId,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: session_id,
-				},
-				status: 'COMPLETED',
-			});
-
-			// Update payment record
-			payment.status = 'COMPLETED';
-			payment.providerResponse = paymentSession;
-			await payment.save();
-
+		if (walletData._id) {
 			return {
 				status: 200,
 				entity: {
 					success: true,
-					message: 'Purchase completed successfully',
-					virtualAmount: purchaseAmount,
-					realAmount: realCashAmount,
-					wallet: {
-						virtualBalance: userWallet.virtualBalance,
-						realBalance: userWallet.realBalance,
-					},
-				},
-			};
-		} else {
-			payment.status = paymentSession.status;
-			payment.providerResponse = paymentSession;
-			await payment.save();
-
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Payment not completed',
-					status: paymentSession.status,
+					walletData,
 				},
 			};
 		}
-	} catch (error) {
-		console.log(error);
 		return {
-			status: 500,
+			status: 400,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to process payment',
-			},
-		};
-	}
-};
-
-export const handlePurchaseCancel = async req => {
-	try {
-		const { session_id } = req.query;
-
-		// Get payment record
-		const payment = await Payment.findOne({ sessionId: session_id });
-		if (!payment) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Payment session not found',
-				},
-			};
-		}
-
-		// Update payment status
-		payment.status = 'CANCELLED';
-		await payment.save();
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				message: 'Payment cancelled',
+				error: 'Invalid parameters.',
 			},
 		};
 	} catch (error) {
@@ -376,213 +32,81 @@ export const handlePurchaseCancel = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to cancel payment',
+				error: error.errors || error,
 			},
 		};
 	}
 };
 
-export const handlePayoneerWebhook = async req => {
+export const withdrawalRequest = async (user, body) => {
 	try {
-		// Verify webhook signature
-		const signature = req.headers['x-payoneer-signature'];
-		const payload = req.body;
+		const { amount, bankAccountId } = body;
 
+		// **NEW: Document Verification Check**
 		if (
-			!payoneerService.verifyWebhookSignature(
-				JSON.stringify(payload),
-				signature
-			)
+			!user.idProof ||
+			user.idProof.verificationStatus !== 'VERIFIED' ||
+			!user.addressProof ||
+			user.addressProof.verificationStatus !== 'VERIFIED'
 		) {
 			return {
-				status: 401,
+				status: 403,
 				entity: {
-					error: 'Invalid signature',
+					success: false,
+					error: 'Document verification required to request withdrawal. Please upload and get your ID and address documents verified.',
 				},
 			};
 		}
-
-		const { event, data } = payload;
-
-		if (event === 'checkout.session.completed') {
-			// Find the payment
-			const payment = await Payment.findOne({ sessionId: data.id });
-			if (!payment) {
-				return {
-					status: 404,
-					entity: {
-						error: 'Payment not found',
-					},
-				};
-			}
-
-			// Check if payment already processed
-			if (payment.status === 'COMPLETED') {
-				return {
-					status: 200,
-					entity: {
-						message: 'Payment already processed',
-						received: true,
-					},
-				};
-			}
-
-			const userId = payment.user;
-			const purchaseAmount = payment.virtualCashAmount;
-			const realCashAmount = payment.realCashAmount;
-
-			// Get system account
-			const systemAccount = await User.findOne({ role: 'SYSTEM' });
-			if (!systemAccount) {
-				console.error('System account not found');
-				return {
-					status: 500,
-					entity: {
-						error: 'System configuration error',
-					},
-				};
-			}
-
-			// Update user's balances
-			const userWallet = await Wallet.findOne({ user: userId });
-			if (!userWallet) {
-				console.error(`Wallet not found for user ${userId}`);
-				return {
-					status: 404,
-					entity: {
-						error: 'User wallet not found',
-					},
-				};
-			}
-
-			const previousVirtualBalance = userWallet.virtualBalance;
-			const previousRealBalance = userWallet.realBalance;
-
-			userWallet.virtualBalance += purchaseAmount;
-			userWallet.realBalance += realCashAmount;
-			await userWallet.save();
-
-			// Create transaction records
-			// Virtual cash credit
-			await Transaction.create({
-				user: userId,
-				cashType: 'VIRTUAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE',
-				transactionAmount: purchaseAmount,
-				previousBalance: previousVirtualBalance,
-				newBalance: userWallet.virtualBalance,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: data.id,
-					source: 'webhook',
-				},
-				status: 'COMPLETED',
-			});
-
-			// Real cash bonus
-			await Transaction.create({
-				user: userId,
-				cashType: 'REAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE_BONUS',
-				transactionAmount: realCashAmount,
-				previousBalance: previousRealBalance,
-				newBalance: userWallet.realBalance,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: data.id,
-					source: 'webhook',
-				},
-				status: 'COMPLETED',
-			});
-
-			// System account revenue record
-			await Transaction.create({
-				user: systemAccount._id,
-				cashType: 'VIRTUAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'PURCHASE_REVENUE',
-				transactionAmount: purchaseAmount,
-				previousBalance: 0, // We don't track system balance this way
-				newBalance: 0,
-				referenceType: 'USER',
-				referenceIndex: userId,
-				transactionData: {
-					paymentId: payment._id,
-					sessionId: data.id,
-					source: 'webhook',
-				},
-				status: 'COMPLETED',
-			});
-
-			// Update payment record
-			payment.status = 'COMPLETED';
-			payment.providerResponse = data;
-			payment.completedAt = new Date();
-			await payment.save();
-
-			// Log successful webhook processing
-			console.log(
-				`Webhook processed successfully: session ${data.id} for user ${userId}`
-			);
-		} else if (
-			event === 'checkout.session.expired' ||
-			event === 'checkout.session.canceled'
-		) {
-			// Handle expired or canceled sessions
-			const payment = await Payment.findOne({ sessionId: data.id });
-			if (payment) {
-				payment.status =
-					event === 'checkout.session.expired'
-						? 'EXPIRED'
-						: 'CANCELLED';
-				payment.providerResponse = data;
-				await payment.save();
-
-				console.log(
-					`Payment ${payment.status.toLowerCase()}: session ${
-						data.id
-					}`
-				);
-			}
-		}
-
-		return {
-			status: 200,
-			entity: {
-				received: true,
-			},
-		};
-	} catch (error) {
-		console.error('Webhook processing error:', error);
-		return {
-			status: 500,
-			entity: {
-				error: error.message || 'Webhook processing failed',
-			},
-		};
-	}
-};
-
-export const initiateRealCashWithdrawal = async req => {
-	try {
-		const { amount, bankAccountId } = req.body;
-		const user = req.user;
 
 		// Validate amount
-		const minWithdrawalAmount = 10; // Define minimum withdrawal amount
-		if (!amount || amount < minWithdrawalAmount) {
+		if (!amount || amount <= 0) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Withdrawal amount must be at least ${minWithdrawalAmount}`,
+					error: 'Invalid withdrawal amount',
 				},
 			};
 		}
 
-		// Check user wallet
+		// **NEW: Check tier-based withdrawal limits**
+		try {
+			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
+			if (!withdrawalLimitResult.success) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: withdrawalLimitResult.error || 'Failed to check withdrawal limits',
+					},
+				};
+			}
+
+			if (withdrawalLimitResult.availableAmount < amount) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Weekly withdrawal limit exceeded. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
+						availableAmount: withdrawalLimitResult.availableAmount,
+						weeklyLimit: withdrawalLimitResult.weeklyLimit,
+						usedAmount: withdrawalLimitResult.usedAmount,
+						resetDate: withdrawalLimitResult.resetDate,
+					},
+				};
+			}
+		} catch (loyaltyError) {
+			console.error('Error checking withdrawal limits:', loyaltyError);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Failed to validate withdrawal limits. Please try again.',
+				},
+			};
+		}
+
+		// Get user wallet
 		const wallet = await Wallet.findOne({ user: user._id });
 		if (!wallet) {
 			return {
@@ -594,7 +118,7 @@ export const initiateRealCashWithdrawal = async req => {
 			};
 		}
 
-		// Verify sufficient balance
+		// Check sufficient balance
 		if (wallet.realBalance < amount) {
 			return {
 				status: 400,
@@ -605,40 +129,43 @@ export const initiateRealCashWithdrawal = async req => {
 			};
 		}
 
-		// Verify bank account belongs to user
-		const bankAccount = await BankAccount.findOne({
-			_id: bankAccountId,
-			user: user._id,
-		});
-
-		if (!bankAccount) {
+		// Validate bank account
+		const bankAccount = await BankAccount.findById(bankAccountId);
+		if (
+			!bankAccount ||
+			bankAccount.user.toString() !== user._id.toString()
+		) {
 			return {
-				status: 404,
+				status: 400,
 				entity: {
 					success: false,
-					error: 'Bank account not found or does not belong to user',
+					error: 'Invalid bank account',
 				},
 			};
 		}
 
+		// Calculate processing fee (if any)
+		const fee = 0; // No fee for now
+		const netAmount = amount - fee;
+
 		// Create withdrawal record
 		const withdrawal = await Withdrawal.create({
 			user: user._id,
-			amount,
 			bankAccount: bankAccountId,
+			amount,
+			fee,
+			netAmount,
 			status: 'PENDING',
 			requestedAt: new Date(),
-			withdrawalFee: 0, // Set fees as appropriate
-			netAmount: amount, // Adjust for fees if needed
 		});
 
-		// Reserve the funds (deduct from available balance)
+		// Update wallet - place hold on funds
 		const previousBalance = wallet.realBalance;
 		wallet.realBalance -= amount;
 		wallet.pendingWithdrawals = (wallet.pendingWithdrawals || 0) + amount;
 		await wallet.save();
 
-		// Create transaction record
+		// Record transaction
 		await Transaction.create({
 			user: user._id,
 			cashType: 'REAL',
@@ -678,6 +205,342 @@ export const initiateRealCashWithdrawal = async req => {
 			entity: {
 				success: false,
 				error: error.message || 'Failed to process withdrawal request',
+			},
+		};
+	}
+};
+
+export const createPayment = async (user, body) => {
+	try {
+		const { amount, paymentMethod, description } = body;
+
+		// Validate payment data
+		if (!amount || amount <= 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid payment amount',
+				},
+			};
+		}
+
+		if (!paymentMethod) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Payment method is required',
+				},
+			};
+		}
+
+		// Create payment record
+		const payment = await Payment.create({
+			user: user._id,
+			amount,
+			paymentMethod,
+			description: description || `${paymentMethod} payment`,
+			status: 'PENDING',
+			createdAt: new Date(),
+		});
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payment,
+				message: 'Payment created successfully',
+			},
+		};
+	} catch (error) {
+		console.error('Payment creation error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to create payment',
+			},
+		};
+	}
+};
+
+export const confirmPayment = async (user, { paymentId }) => {
+	try {
+		// Find the payment
+		const payment = await Payment.findById(paymentId);
+		if (!payment) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Payment not found',
+				},
+			};
+		}
+
+		// Verify payment belongs to user (unless admin)
+		if (user.role !== 'ADMIN' && payment.user.toString() !== user._id.toString()) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized to confirm this payment',
+				},
+			};
+		}
+
+		// Check if already processed
+		if (payment.status !== 'PENDING') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Payment is already ${payment.status.toLowerCase()}`,
+				},
+			};
+		}
+
+		// Get user wallet
+		const wallet = await Wallet.findOne({ user: payment.user });
+		if (!wallet) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User wallet not found',
+				},
+			};
+		}
+
+		// Update payment status
+		payment.status = 'COMPLETED';
+		payment.confirmedAt = new Date();
+		payment.confirmedBy = user._id;
+		await payment.save();
+
+		// Add funds to wallet using transaction system
+		await makeTransaction(
+			payment.user,
+			'USER',
+			'WIRE_TRANSFER',
+			payment.amount,
+			'PAYMENT',
+			payment._id,
+			null,
+			'REAL' // Payments add real cash
+		);
+
+		// **NEW: Record deposit for loyalty tracking**
+		try {
+			const loyaltyResult = await LoyaltyService.recordUserDeposit(
+				payment.user,
+				payment.amount
+			);
+			if (!loyaltyResult.success) {
+				console.warn(`Failed to record payment deposit for loyalty tracking for user ${payment.user}:`, loyaltyResult.error);
+			} else {
+				console.log(`Payment deposit recorded for loyalty tracking: User ${payment.user}, Amount: ${payment.amount}`);
+			}
+		} catch (loyaltyError) {
+			console.error(`Error recording payment deposit for loyalty tracking for user ${payment.user}:`, loyaltyError);
+		}
+
+		// Get updated wallet
+		const updatedWallet = await Wallet.findOne({ user: payment.user });
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payment,
+				wallet: updatedWallet,
+				message: 'Payment confirmed and funds added to wallet',
+			},
+		};
+	} catch (error) {
+		console.error('Payment confirmation error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to confirm payment',
+			},
+		};
+	}
+};
+
+export const getUserPayments = async user => {
+	try {
+		const { limit = 10, offset = 0, status } = user.query || {};
+
+		let query = { user: user._id };
+		if (status) {
+			query.status = status.toUpperCase();
+		}
+
+		const payments = await Payment.find(query)
+			.sort({ createdAt: -1 })
+			.limit(parseInt(limit))
+			.skip(parseInt(offset));
+
+		const total = await Payment.countDocuments(query);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payments,
+				total,
+				pagination: {
+					limit: parseInt(limit),
+					offset: parseInt(offset),
+					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Get payments error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch payments',
+			},
+		};
+	}
+};
+
+export const getAllPayments = async (user, query) => {
+	try {
+		// Verify admin permissions
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized',
+				},
+			};
+		}
+
+		const { limit = 10, offset = 0, status, userId } = query;
+
+		let searchQuery = {};
+		if (status) {
+			searchQuery.status = status.toUpperCase();
+		}
+		if (userId) {
+			searchQuery.user = userId;
+		}
+
+		const payments = await Payment.find(searchQuery)
+			.populate('user', 'name phone email')
+			.populate('confirmedBy', 'name')
+			.sort({ createdAt: -1 })
+			.limit(parseInt(limit))
+			.skip(parseInt(offset));
+
+		const total = await Payment.countDocuments(searchQuery);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payments,
+				total,
+				pagination: {
+					limit: parseInt(limit),
+					offset: parseInt(offset),
+					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Get all payments error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch payments',
+			},
+		};
+	}
+};
+
+export const getWalletSummary = async user => {
+	try {
+		// Get wallet data
+		const wallet = await Wallet.findOne({ user: user._id });
+		if (!wallet) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Wallet not found',
+				},
+			};
+		}
+
+		// Get recent transactions
+		const recentTransactions = await Transaction.find({ user: user._id })
+			.sort({ createdAt: -1 })
+			.limit(10)
+			.select('transactionType transactionIdentifier transactionAmount cashType createdAt status');
+
+		// Get pending withdrawals
+		const pendingWithdrawals = await Withdrawal.find({
+			user: user._id,
+			status: 'PENDING'
+		}).select('amount requestedAt');
+
+		// **NEW: Get loyalty-based withdrawal information**
+		let loyaltyInfo = {};
+		try {
+			const [processingTimeResult, limitResult] = await Promise.all([
+				LoyaltyService.getWithdrawalProcessingTime(user._id),
+				LoyaltyService.checkWithdrawalLimit(user._id)
+			]);
+
+			if (processingTimeResult.success) {
+				loyaltyInfo.processingTime = processingTimeResult.processingTimeHours;
+				loyaltyInfo.tier = processingTimeResult.tier;
+			}
+
+			if (limitResult.success) {
+				loyaltyInfo.weeklyLimit = limitResult.weeklyLimit;
+				loyaltyInfo.usedAmount = limitResult.usedAmount;
+				loyaltyInfo.availableAmount = limitResult.availableAmount;
+				loyaltyInfo.resetDate = limitResult.resetDate;
+			}
+		} catch (loyaltyError) {
+			console.error('Error getting loyalty info for wallet summary:', loyaltyError);
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				wallet,
+				recentTransactions,
+				pendingWithdrawals,
+				loyaltyInfo, // Include tier-based withdrawal information
+				summary: {
+					totalBalance: wallet.realBalance + wallet.virtualBalance,
+					realBalance: wallet.realBalance,
+					virtualBalance: wallet.virtualBalance,
+					pendingWithdrawalAmount: pendingWithdrawals.reduce((sum, w) => sum + w.amount, 0),
+					pendingWithdrawalCount: pendingWithdrawals.length,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Wallet summary error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to get wallet summary',
 			},
 		};
 	}

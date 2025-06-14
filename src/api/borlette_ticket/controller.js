@@ -3,17 +3,7 @@ import { makeTransaction } from '../transaction/controller';
 import { Wallet } from '../wallet/model';
 import { Lottery, LotteryRestriction } from '../lottery/model';
 import { BorletteTicket } from './model';
-import { User } from '../user/model';
-import { State } from '../state/model';
-
-const config = {
-	depositCommissionAgent: 0.01,
-	depositCommissionAdmin: 0.02,
-	userTransferComissionAdmin: 0.03,
-	ticketBorletteComissionAgent: 0.15,
-	withdrawCommissionAgent: 0.01,
-	withdrawCommissionAdmin: 0.02,
-};
+import { LoyaltyService } from '../loyalty/service';
 
 export const listAllByLottery = async (
 	{ id },
@@ -50,135 +40,6 @@ export const listAllByLottery = async (
 		const borletteTickets = await BorletteTicket.find(params)
 			.limit(limit ? parseInt(limit) : 10)
 			.skip(offset ? parseInt(offset) : 0)
-			.sort({
-				[sortBy]: sortOrder.toLowerCase(),
-			})
-			.populate('lottery')
-			.exec();
-		const amount = await BorletteTicket.aggregate([
-			{
-				$match: {
-					lottery: id,
-				},
-			},
-			{
-				$group: {
-					_id: null,
-					totalAmountPlayed: {
-						$sum: '$totalAmountPlayed',
-					},
-					totalAmountWon: {
-						$sum: '$totalAmountWon',
-					},
-				},
-			},
-		]);
-		const total = await BorletteTicket.count(params).exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				tickets: borletteTickets,
-				total,
-				amount,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const listByState = async (
-	{ stateId },
-	{
-		offset,
-		limit,
-		startDate,
-		endDate,
-		sortBy = 'purchasedOn',
-		sortOrder = 'desc',
-	},
-	{ role }
-) => {
-	try {
-		if (role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized access',
-				},
-			};
-		}
-
-		// Verify state exists
-		const state = await State.findById(stateId);
-		if (!state) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'State not found',
-				},
-			};
-		}
-
-		// Get all lotteries for this state
-		const stateLotteries = await Lottery.find({ state: stateId }).exec();
-		const lotteryIds = stateLotteries.map(lottery =>
-			lottery._id.toString()
-		);
-
-		if (lotteryIds.length === 0) {
-			return {
-				status: 200,
-				entity: {
-					success: true,
-					tickets: [],
-					total: 0,
-					amount: [],
-					state,
-				},
-			};
-		}
-
-		// Build params for tickets query
-		let params = {
-			lottery: { $in: lotteryIds },
-		};
-
-		if (startDate || endDate) {
-			params['$and'] = [];
-			if (startDate) {
-				params['$and'].push({
-					createdAt: {
-						$gte: moment(parseInt(startDate)).toISOString(),
-					},
-				});
-			}
-			if (endDate) {
-				params['$and'].push({
-					createdAt: {
-						$lte: moment(parseInt(endDate)).toISOString(),
-					},
-				});
-			}
-		}
-
-		// Get tickets for these lotteries
-		const borletteTickets = await BorletteTicket.find(params)
-			.limit(limit ? parseInt(limit) : 10)
-			.skip(offset ? parseInt(offset) : 0)
-			.sort({
-				[sortBy]: sortOrder.toLowerCase(),
-			})
 			.populate({
 				path: 'lottery',
 				populate: {
@@ -186,39 +47,18 @@ export const listByState = async (
 					select: 'name code',
 				},
 			})
-			.populate('user', 'name email phone')
+			.populate('user')
+			.sort({
+				[sortBy]: sortOrder.toLowerCase(),
+			})
 			.exec();
-
-		// Get aggregate amounts
-		const amount = await BorletteTicket.aggregate([
-			{
-				$match: {
-					lottery: { $in: lotteryIds },
-				},
-			},
-			{
-				$group: {
-					_id: null,
-					totalAmountPlayed: {
-						$sum: '$totalAmountPlayed',
-					},
-					totalAmountWon: {
-						$sum: '$totalAmountWon',
-					},
-				},
-			},
-		]);
-
 		const total = await BorletteTicket.count(params).exec();
-
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				tickets: borletteTickets,
+				borletteTickets,
 				total,
-				amount,
-				state,
 			},
 		};
 	} catch (error) {
@@ -233,235 +73,73 @@ export const listByState = async (
 	}
 };
 
-export const stateCommissionSummary = async ({ stateId }, user) => {
+const getAvailableAmount = async (lotteryId, numbers, hasMarriageNumbers) => {
 	try {
-		if (!['ADMIN'].includes(user.role)) {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'You are not authorized to access this data.',
-				},
-			};
-		}
-
-		// Verify state exists
-		const state = await State.findById(stateId);
-		if (!state) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'State not found',
-				},
-			};
-		}
-
-		// Get all lotteries for this state
-		const stateLotteries = await Lottery.find({
-			state: stateId,
-			status: 'COMPLETED',
-		}).exec();
-
-		const lotteryIds = stateLotteries.map(lottery =>
-			lottery._id.toString()
-		);
-
-		if (lotteryIds.length === 0) {
-			return {
-				status: 200,
-				entity: {
-					success: true,
-					data: [],
-					state,
-				},
-			};
-		}
-
-		// Get commission summary across all lotteries in the state
-		const summary = await BorletteTicket.aggregate([
-			{
-				$match: {
-					lottery: { $in: lotteryIds },
-					status: {
-						$ne: 'CANCELLED',
-					},
-				},
-			},
-			{
-				$group: {
-					_id: '$user',
-					sales: {
-						$sum: '$totalAmountPlayed',
-					},
-					rewards: {
-						$sum: '$totalAmountWon',
-					},
-				},
-			},
-		]);
-
-		const summaryPopulated = await User.populate(summary, {
-			path: '_id',
-			select: 'name role',
+		const restrictions = await LotteryRestriction.find({
+			lottery: lotteryId,
 		});
 
-		const data = summaryPopulated
-			.filter(item => item._id.role === 'AGENT')
-			.map(item => ({
-				...item,
-				sales: parseFloat(item.sales),
-				rewards: parseFloat(item.rewards),
-				commission: parseFloat(
-					config.ticketBorletteComissionAgent * item.sales
-				),
-			}));
+		let individualNumber = {};
+		let twoDigit = {};
+		let threeDigit = {};
+		let fourDigit = {};
+		let marriageNumber = {};
 
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				data: data,
-				state,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
-			},
-		};
-	}
-};
-
-export const list = async ({ offset, limit }, { _id }) => {
-	try {
-		const borletteTickets = await BorletteTicket.find({
-			user: _id,
-		})
-			.limit(limit || 50)
-			.skip(offset || 0)
-			.populate({
-				path: 'lottery',
-				populate: {
-					path: 'state',
-					select: 'name code',
-				},
-			})
-			.sort({
-				purchasedOn: 'desc',
-			})
-			.exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				tickets: borletteTickets,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const show = async ({ id }, { role }) => {
-	try {
-		const borletteTicket = await BorletteTicket.findOne({
-			_id: id,
-			purchasedBy: role,
-		})
-			.populate('user', 'name email phone')
-			.populate({
-				path: 'lottery',
-				populate: {
-					path: 'state',
-					select: 'name code',
-				},
-			});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				borletteTicket,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const ticketByLottery = async ({ id }, { _id }) => {
-	try {
-		const tickets = await BorletteTicket.find({
-			user: _id,
-			lottery: id,
-		})
-			.populate({
-				path: 'lottery',
-				populate: {
-					path: 'state',
-					select: 'name code',
-				},
-			})
-			.exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				tickets,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const create = async ({ id }, body, user) => {
-	try {
-		const walletData = await Wallet.findOne({
-			user: user._id,
+		restrictions.forEach(restriction => {
+			switch (restriction.type) {
+				case 'INDIVIDUAL_NUMBER':
+					restriction.numbers.forEach(numRestriction => {
+						individualNumber[numRestriction.number] =
+							numRestriction.availableAmount;
+					});
+					break;
+				case 'TWO_DIGIT':
+					restriction.numbers.forEach(numRestriction => {
+						twoDigit[numRestriction.number] =
+							numRestriction.availableAmount;
+					});
+					break;
+				case 'THREE_DIGIT':
+					restriction.numbers.forEach(numRestriction => {
+						threeDigit[numRestriction.number] =
+							numRestriction.availableAmount;
+					});
+					break;
+				case 'FOUR_DIGIT':
+					restriction.numbers.forEach(numRestriction => {
+						fourDigit[numRestriction.number] =
+							numRestriction.availableAmount;
+					});
+					break;
+				case 'MARRIAGE_NUMBER':
+					if (hasMarriageNumbers) {
+						restriction.numbers.forEach(numRestriction => {
+							marriageNumber[numRestriction.number] =
+								numRestriction.availableAmount;
+						});
+					}
+					break;
+			}
 		});
-		const lottery = await Lottery.findById(id).populate(
-			'state',
-			'name code'
-		);
 
-		if (!lottery) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Lottery not found',
-				},
-			};
-		}
+		return {
+			individualNumber,
+			twoDigit,
+			threeDigit,
+			fourDigit,
+			marriageNumber,
+		};
+	} catch (error) {
+		console.error('Error getting available amounts:', error);
+		throw error;
+	}
+};
+
+export const placeBet = async ({ id }, body, user) => {
+	try {
+		const { cashType = 'VIRTUAL' } = body;
 
 		// Validate cash type
-		const cashType = body.cashType || 'VIRTUAL';
 		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
 			return {
 				status: 400,
@@ -472,17 +150,38 @@ export const create = async ({ id }, body, user) => {
 			};
 		}
 
+		const walletData = await Wallet.findOne({
+			user: user._id,
+		});
+
+		if (!walletData) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User wallet not found',
+				},
+			};
+		}
+
 		// Get the appropriate balance based on cash type
 		const balanceToCheck =
 			cashType === 'REAL'
 				? walletData.realBalance
 				: walletData.virtualBalance;
 
+		const lottery = await Lottery.findById(id).populate('state');
+
 		if (lottery._id && lottery.scheduledTime > moment.now()) {
-			// Check if marriage numbers are allowed for this lottery
+			body.user = user._id;
+			body.purchasedBy = user.role;
+			body.lottery = id;
+			body.purchasedOn = moment.now();
+			body.cashType = cashType;
+
+			// Check if marriage numbers are allowed
 			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers !== false;
 
-			// Validate that no marriage numbers are included if not allowed
 			if (!hasMarriageNumbers) {
 				const hasMarriageNumberInTicket = body.numbers.some(item => {
 					const numberStr = item.numberPlayed.toString();
@@ -494,25 +193,21 @@ export const create = async ({ id }, body, user) => {
 						status: 400,
 						entity: {
 							success: false,
-							error: 'Marriage numbers are not allowed for this lottery',
+							error: `Marriage numbers are not allowed for ${lottery.title} (${lottery.state.name})`,
 						},
 					};
 				}
 			}
 
+			// Get restrictions for this lottery
 			const availableAmount = await getAvailableAmount(
 				id,
 				body.numbers.map(item => item.numberPlayed),
 				hasMarriageNumbers
 			);
-			body.user = user._id;
-			body.purchasedBy = user.role;
-			body.lottery = id;
-			body.purchasedOn = moment.now();
-			body.totalAmountPlayed = 0;
-			body.cashType = cashType;
 
 			body.numbers = body.numbers.map(item => {
+				// Check restrictions first
 				if (
 					availableAmount.individualNumber[
 					item.numberPlayed.toString()
@@ -530,51 +225,42 @@ export const create = async ({ id }, body, user) => {
 						);
 					}
 				} else {
+					const numberStr = item.numberPlayed.toString();
+					const numberLength = numberStr.length;
+
 					if (
-						item.numberPlayed.toString().length === 2 &&
-						availableAmount.twoDigit[
-						item.numberPlayed.toString()
-						] !== undefined &&
-						parseInt(
-							availableAmount.twoDigit[
-							item.numberPlayed.toString()
-							]
-						) < parseInt(item.amountPlayed)
+						numberLength === 2 &&
+						availableAmount.twoDigit[numberStr] !== undefined &&
+						parseInt(availableAmount.twoDigit[numberStr]) <
+						parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
 						);
-					} else if (
-						item.numberPlayed.toString().length === 3 &&
-						availableAmount.threeDigit[
-						item.numberPlayed.toString()
-						] !== undefined &&
-						parseInt(
-							availableAmount.threeDigit[
-							item.numberPlayed.toString()
-							]
-						) < parseInt(item.amountPlayed)
+					}
+					if (
+						numberLength === 3 &&
+						availableAmount.threeDigit[numberStr] !== undefined &&
+						parseInt(availableAmount.threeDigit[numberStr]) <
+						parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
 						);
-					} else if (
-						item.numberPlayed.toString().length === 4 &&
-						availableAmount.fourDigit[
-						item.numberPlayed.toString()
-						] !== undefined &&
-						parseInt(
-							availableAmount.fourDigit[
-							item.numberPlayed.toString()
-							]
-						) < parseInt(item.amountPlayed)
+					}
+					if (
+						numberLength === 4 &&
+						availableAmount.fourDigit[numberStr] !== undefined &&
+						parseInt(availableAmount.fourDigit[numberStr]) <
+						parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
 						);
-					} else if (
+					}
+					if (
 						hasMarriageNumbers &&
-						item.numberPlayed.toString().length === 5 &&
+						numberLength === 5 &&
 						availableAmount.marriageNumber[
 						item.numberPlayed.toString()
 						] !== undefined &&
@@ -600,6 +286,7 @@ export const create = async ({ id }, body, user) => {
 			if (balanceToCheck >= body.totalAmountPlayed) {
 				const borletteTicket = await BorletteTicket.create(body);
 				if (borletteTicket._id) {
+					// Process transaction
 					await makeTransaction(
 						user._id,
 						user.role,
@@ -610,6 +297,52 @@ export const create = async ({ id }, body, user) => {
 						borletteTicket._id,
 						cashType // Pass cash type to transaction function
 					);
+
+					// **NEW: Record play activity for loyalty tracking**
+					try {
+						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						if (!loyaltyResult.success) {
+							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+						} else {
+							console.log(`Play activity recorded for user ${user._id} - Borlette ticket purchase`);
+						}
+					} catch (loyaltyError) {
+						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						// Don't fail ticket creation if loyalty tracking fails
+					}
+
+					// **NEW: Award XP for ticket purchase**
+					try {
+						// Calculate XP based on amount played (1 XP per $5 played, minimum 5 XP)
+						const baseXP = Math.max(5, Math.floor(body.totalAmountPlayed / 5));
+						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+						const totalXP = baseXP * cashTypeMultiplier;
+
+						const xpResult = await LoyaltyService.awardUserXP(
+							user._id,
+							totalXP,
+							'GAME_ACTIVITY',
+							`Borlette ticket purchase - Amount: $${body.totalAmountPlayed} (${cashType})`,
+							{
+								gameType: 'BORLETTE',
+								ticketId: borletteTicket._id,
+								amountPlayed: body.totalAmountPlayed,
+								cashType,
+								baseXP,
+								multiplier: cashTypeMultiplier
+							}
+						);
+
+						if (!xpResult.success) {
+							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+						} else {
+							console.log(`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`);
+						}
+					} catch (xpError) {
+						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						// Don't fail ticket creation if XP awarding fails
+					}
+
 					return {
 						status: 200,
 						entity: {
@@ -890,20 +623,22 @@ export const createMultiState = async (body, user) => {
 					});
 				}
 
+				totalAmount += purchaseAmount;
+
 				processedPurchases.push({
 					lottery,
 					numbers: processedNumbers,
 					totalAmountPlayed: purchaseAmount,
 				});
-
-				totalAmount += purchaseAmount;
 			} catch (error) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Error in purchase ${i}: ${error.message}`,
-						purchaseIndex: i,
+						error: error.message,
+						failedPurchaseIndex: i,
+						lottery: lottery.title,
+						state: lottery.state.name,
 					},
 				};
 			}
@@ -956,6 +691,51 @@ export const createMultiState = async (body, user) => {
 					...borletteTicket.toObject(),
 					lottery: processedPurchase.lottery,
 				});
+			}
+
+			// **NEW: Record play activity for loyalty tracking (once per multi-state purchase)**
+			try {
+				const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+				if (!loyaltyResult.success) {
+					console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+				} else {
+					console.log(`Play activity recorded for user ${user._id} - Multi-state Borlette purchase`);
+				}
+			} catch (loyaltyError) {
+				console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+			}
+
+			// **NEW: Award XP for multi-state purchase**
+			try {
+				// Calculate XP based on total amount played across all states
+				const baseXP = Math.max(10, Math.floor(totalAmount / 5)); // Higher minimum for multi-state
+				const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1;
+				const multiStateMultiplier = Math.min(2, 1 + (createdTickets.length - 1) * 0.2); // Bonus for multiple states
+				const totalXP = Math.floor(baseXP * cashTypeMultiplier * multiStateMultiplier);
+
+				const xpResult = await LoyaltyService.awardUserXP(
+					user._id,
+					totalXP,
+					'GAME_ACTIVITY',
+					`Multi-state Borlette purchase - ${createdTickets.length} states, Total: $${totalAmount} (${cashType})`,
+					{
+						gameType: 'BORLETTE',
+						isMultiState: true,
+						stateCount: createdTickets.length,
+						totalAmount,
+						cashType,
+						baseXP,
+						multiplier: cashTypeMultiplier * multiStateMultiplier
+					}
+				);
+
+				if (!xpResult.success) {
+					console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+				} else {
+					console.log(`Awarded ${totalXP} XP to user ${user._id} for multi-state Borlette purchase`);
+				}
+			} catch (xpError) {
+				console.error(`Error awarding XP for user ${user._id}:`, xpError);
 			}
 
 			return {
@@ -1096,12 +876,47 @@ export const cashoutTicket = async ({ id }, user) => {
 			throw new Error('This ticket has already been claimed.');
 		}
 		const totalAmountWon = borletteTicket.totalAmountWon;
+
 		const amountTransferred = await makeTransaction(
 			user._id,
 			user.role,
 			'WON_BORLETTE',
 			totalAmountWon
 		);
+
+		// **NEW: Award XP for winning**
+		try {
+			// Calculate XP based on amount won
+			const baseXP = Math.max(20, Math.floor(totalAmountWon / 10)); // Higher XP for wins
+			const cashTypeMultiplier = borletteTicket.cashType === 'REAL' ? 2 : 1;
+			const winMultiplier = 1.5; // Bonus for winning
+			const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+
+			const xpResult = await LoyaltyService.awardUserXP(
+				borletteTicket.user._id,
+				totalXP,
+				'GAME_REWARD',
+				`Borlette win - Amount: $${totalAmountWon} (${borletteTicket.cashType})`,
+				{
+					gameType: 'BORLETTE',
+					ticketId: borletteTicket._id,
+					amountWon: totalAmountWon,
+					cashType: borletteTicket.cashType,
+					baseXP,
+					multiplier: cashTypeMultiplier * winMultiplier,
+					isWin: true
+				}
+			);
+
+			if (!xpResult.success) {
+				console.warn(`Failed to award win XP for user ${borletteTicket.user._id}:`, xpResult.error);
+			} else {
+				console.log(`Awarded ${totalXP} XP to user ${borletteTicket.user._id} for Borlette win`);
+			}
+		} catch (xpError) {
+			console.error(`Error awarding win XP for user ${borletteTicket.user._id}:`, xpError);
+		}
+
 		await Object.assign(borletteTicket, {
 			isAmountDisbursed: true,
 		}).save();
@@ -1129,62 +944,14 @@ export const commissionSummary = async ({ id }, user) => {
 		if (!['ADMIN'].includes(user.role)) {
 			throw new Error('You are not authorized to view commission data.');
 		}
-
-		const lottery = await Lottery.findById(id).populate(
-			'state',
-			'name code'
-		);
-		if (!lottery) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Lottery not found',
-				},
-			};
-		}
-
-		const summary = await BorletteTicket.aggregate([
-			{
-				$match: {
-					lottery: id,
-					status: {
-						$ne: 'CANCELLED',
-					},
-				},
-			},
-			{
-				$group: {
-					_id: '$user',
-					sales: {
-						$sum: '$totalAmountPlayed',
-					},
-					rewards: {
-						$sum: '$totalAmountWon',
-					},
-				},
-			},
-		]);
-		const summaryPopulated = await User.populate(summary, {
-			path: '_id',
-			select: 'name role',
-		});
-		const data = summaryPopulated
-			.filter(item => item._id.role === 'AGENT')
-			.map(item => ({
-				...item,
-				sales: parseFloat(item.sales),
-				rewards: parseFloat(item.rewards),
-				commission: parseFloat(
-					config.ticketBorletteComissionAgent * item.sales
-				),
-			}));
+		const borletteTickets = await BorletteTicket.find({
+			user: id,
+		}).populate('user');
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				data: data,
-				lottery: lottery,
+				borletteTickets,
 			},
 		};
 	} catch (error) {
@@ -1193,6 +960,42 @@ export const commissionSummary = async ({ id }, user) => {
 			status: 500,
 			entity: {
 				error: typeof error === 'string' ? error : 'An error occurred',
+			},
+		};
+	}
+};
+
+export const update = async ({ id }, body) => {
+	try {
+		const borletteTicket = await BorletteTicket.findById(id);
+		if (borletteTicket._id) {
+			const updateResponse = await Object.assign(
+				borletteTicket,
+				body
+			).save();
+			if (updateResponse._id) {
+				return {
+					status: 200,
+					entity: {
+						success: true,
+						borletteTicket: updateResponse,
+					},
+				};
+			}
+		}
+		return {
+			status: 400,
+			entity: {
+				success: false,
+				error: 'Invalid parameters.',
+			},
+		};
+	} catch (error) {
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error,
 			},
 		};
 	}
@@ -1229,154 +1032,4 @@ export const remove = async ({ id }) => {
 			},
 		};
 	}
-};
-
-const getAvailableAmount = async (lotteryId, numberPlayed, hasMarriageNumbers = true) => {
-	const tickets = await BorletteTicket.find({
-		lottery: lotteryId,
-		status: 'ACTIVE',
-	});
-	const lotteryRestriction = await LotteryRestriction.findOne({
-		lottery: lotteryId,
-	});
-
-	let individualNumberPlayedAmount = {};
-
-	let availableAmount = {
-		twoDigit: {},
-		threeDigit: {},
-		fourDigit: {},
-		marriageNumber: {},
-		individualNumber: {},
-	};
-
-	numberPlayed.map(number => {
-		if (number.toString().length === 2) {
-			availableAmount.twoDigit[number.toString()] = parseInt(
-				lotteryRestriction.twoDigit
-			);
-		}
-		if (number.toString().length === 3) {
-			availableAmount.threeDigit[number.toString()] = parseInt(
-				lotteryRestriction.threeDigit
-			);
-		}
-		if (number.toString().length === 4) {
-			availableAmount.fourDigit[number.toString()] = parseInt(
-				lotteryRestriction.fourDigit
-			);
-		}
-		// Only process marriage numbers if they are allowed
-		if (hasMarriageNumbers && number.toString().length === 5) {
-			availableAmount.marriageNumber[number.toString()] = parseInt(
-				lotteryRestriction.marriageNumber
-			);
-		}
-	});
-
-	tickets.map(ticket => {
-		ticket.numbers.map(ticketNumber => {
-			if (
-				ticketNumber.numberPlayed.toString().length === 2 &&
-				lotteryRestriction.twoDigit !== null
-			) {
-				if (
-					availableAmount.twoDigit[
-					ticketNumber.numberPlayed.toString()
-					] === undefined
-				) {
-					availableAmount.twoDigit[
-						ticketNumber.numberPlayed.toString()
-					] = parseInt(lotteryRestriction.twoDigit);
-				}
-				availableAmount.twoDigit[
-					ticketNumber.numberPlayed.toString()
-				] -= parseInt(ticketNumber.amountPlayed);
-			}
-
-			if (
-				ticketNumber.numberPlayed.toString().length === 3 &&
-				lotteryRestriction.threeDigit !== null
-			) {
-				if (
-					availableAmount.threeDigit[
-					ticketNumber.numberPlayed.toString()
-					] === undefined
-				) {
-					availableAmount.threeDigit[
-						ticketNumber.numberPlayed.toString()
-					] = parseInt(lotteryRestriction.threeDigit);
-				}
-				availableAmount.threeDigit[
-					ticketNumber.numberPlayed.toString()
-				] -= parseInt(ticketNumber.amountPlayed);
-			}
-
-			if (
-				ticketNumber.numberPlayed.toString().length === 4 &&
-				lotteryRestriction.fourDigit !== null
-			) {
-				if (
-					availableAmount.fourDigit[
-					ticketNumber.numberPlayed.toString()
-					] === undefined
-				) {
-					availableAmount.fourDigit[
-						ticketNumber.numberPlayed.toString()
-					] = parseInt(lotteryRestriction.fourDigit);
-				}
-				availableAmount.fourDigit[
-					ticketNumber.numberPlayed.toString()
-				] -= parseInt(ticketNumber.amountPlayed);
-			}
-
-			if (
-				hasMarriageNumbers &&
-				ticketNumber.numberPlayed.toString().length === 5 &&
-				lotteryRestriction.marriageNumber !== null
-			) {
-				if (
-					availableAmount.marriageNumber[
-					ticketNumber.numberPlayed.toString()
-					] === undefined
-				) {
-					availableAmount.marriageNumber[
-						ticketNumber.numberPlayed.toString()
-					] = parseInt(lotteryRestriction.marriageNumber);
-				}
-				availableAmount.marriageNumber[
-					ticketNumber.numberPlayed.toString()
-				] -= parseInt(ticketNumber.amountPlayed);
-			}
-
-			if (
-				individualNumberPlayedAmount[ticketNumber.numberPlayed] ===
-				undefined
-			) {
-				individualNumberPlayedAmount[
-					ticketNumber.numberPlayed.toString()
-				] = 0;
-			}
-			individualNumberPlayedAmount[ticketNumber.numberPlayed] += parseInt(
-				ticketNumber.amountPlayed
-			);
-		});
-	});
-
-	lotteryRestriction.individualNumber.map(individualNumber => {
-		availableAmount.individualNumber[individualNumber.number.toString()] =
-			parseInt(individualNumber.limit) -
-			parseInt(
-				individualNumberPlayedAmount[
-				individualNumber.number.toString()
-				] || 0
-			);
-	});
-	console.log('lotteryRestriction => ', lotteryRestriction);
-	console.log(
-		'individualNumberPlayedAmount => ',
-		individualNumberPlayedAmount
-	);
-	console.log('availableAmount => ', availableAmount);
-	return availableAmount;
 };

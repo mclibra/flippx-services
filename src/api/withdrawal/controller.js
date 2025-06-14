@@ -4,6 +4,7 @@ import { Wallet } from '../wallet/model';
 import { Transaction } from '../transaction/model';
 import { User } from '../user/model';
 import { payoneerConfig } from '../../../config';
+import { LoyaltyService } from '../loyalty/service'; // ADD LOYALTY SERVICE IMPORT
 
 export const initiateWithdrawal = async req => {
 	try {
@@ -33,6 +34,43 @@ export const initiateWithdrawal = async req => {
 				entity: {
 					success: false,
 					error: `Minimum withdrawal amount is ${payoneerConfig.minWithdrawalAmount}`,
+				},
+			};
+		}
+
+		// **NEW: Check tier-based withdrawal limits**
+		try {
+			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
+			if (!withdrawalLimitResult.success) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: withdrawalLimitResult.error || 'Failed to check withdrawal limits',
+					},
+				};
+			}
+
+			if (withdrawalLimitResult.availableAmount < amount) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Weekly withdrawal limit exceeded. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
+						availableAmount: withdrawalLimitResult.availableAmount,
+						weeklyLimit: withdrawalLimitResult.weeklyLimit,
+						usedAmount: withdrawalLimitResult.usedAmount,
+						resetDate: withdrawalLimitResult.resetDate,
+					},
+				};
+			}
+		} catch (loyaltyError) {
+			console.error('Error checking withdrawal limits:', loyaltyError);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Failed to validate withdrawal limits. Please try again.',
 				},
 			};
 		}
@@ -137,8 +175,7 @@ export const approveWithdrawal = async req => {
 		}
 
 		// Find the withdrawal
-		const withdrawal =
-			await Withdrawal.findById(id).populate('bankAccount');
+		const withdrawal = await Withdrawal.findById(id);
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -159,9 +196,6 @@ export const approveWithdrawal = async req => {
 				},
 			};
 		}
-
-		// Get system account
-		const systemAccount = await User.findOne({ role: 'SYSTEM' });
 
 		// Find the pending transaction
 		const pendingTransaction = await Transaction.findOne({
@@ -187,44 +221,35 @@ export const approveWithdrawal = async req => {
 		// Update withdrawal status
 		withdrawal.status = 'APPROVED';
 		withdrawal.approvedBy = admin._id;
+		withdrawal.approvedAt = new Date();
 		await withdrawal.save();
 
 		// Update transaction status
 		pendingTransaction.status = 'COMPLETED';
-		pendingTransaction.transactionIdentifier = 'WITHDRAWAL';
 		await pendingTransaction.save();
 
-		// Record system transaction
-		await Transaction.create({
-			user: systemAccount._id,
-			cashType: 'REAL',
-			transactionType: 'DEBIT',
-			transactionIdentifier: 'WITHDRAWAL_PAYOUT',
-			transactionAmount: withdrawal.netAmount,
-			previousBalance: 0,
-			newBalance: 0,
-			referenceType: 'USER',
-			referenceIndex: withdrawal.user,
-			transactionData: {
-				withdrawalId: withdrawal._id,
-				bankAccountId: withdrawal.bankAccount._id,
-			},
-			status: 'COMPLETED',
-		});
-
-		// TODO: Initiate the actual payout with Payoneer
-		// This would typically be handled by a background job
+		// **NEW: Record withdrawal usage for loyalty tracking**
+		try {
+			const loyaltyResult = await LoyaltyService.recordWithdrawal(withdrawal.user, withdrawal.amount);
+			if (!loyaltyResult.success) {
+				console.warn(`Failed to record withdrawal for loyalty tracking for user ${withdrawal.user}:`, loyaltyResult.error);
+			} else {
+				console.log(`Withdrawal recorded for loyalty tracking: User ${withdrawal.user}, Amount: ${withdrawal.amount}`);
+			}
+		} catch (loyaltyError) {
+			console.error(`Error recording withdrawal for loyalty tracking for user ${withdrawal.user}:`, loyaltyError);
+		}
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				withdrawal,
-				message: 'Withdrawal approved and will be processed',
+				message: 'Withdrawal approved successfully',
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		console.error('Withdrawal approval error:', error);
 		return {
 			status: 500,
 			entity: {
@@ -325,7 +350,7 @@ export const rejectWithdrawal = async req => {
 			newBalance: wallet.realBalance,
 			transactionData: {
 				withdrawalId: withdrawal._id,
-				reason,
+				rejectionReason: reason,
 			},
 			status: 'COMPLETED',
 		});
@@ -335,11 +360,11 @@ export const rejectWithdrawal = async req => {
 			entity: {
 				success: true,
 				withdrawal,
-				message: 'Withdrawal rejected and funds returned to user',
+				message: 'Withdrawal rejected and funds returned',
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		console.error('Withdrawal rejection error:', error);
 		return {
 			status: 500,
 			entity: {
@@ -350,26 +375,46 @@ export const rejectWithdrawal = async req => {
 	}
 };
 
-export const getWithdrawals = async req => {
+export const getUserWithdrawals = async req => {
 	try {
 		const user = req.user;
-		const { status, limit = 10, offset = 0 } = req.query;
+		const { limit = 10, offset = 0, status } = req.query;
 
-		// Build query
-		const query = { user: user._id };
-
+		let query = { user: user._id };
 		if (status) {
 			query.status = status.toUpperCase();
 		}
 
-		// Get withdrawals
 		const withdrawals = await Withdrawal.find(query)
-			.sort({ requestDate: -1 })
-			.skip(parseInt(offset))
+			.populate('bankAccount')
+			.sort({ createdAt: -1 })
 			.limit(parseInt(limit))
-			.populate('bankAccount', '-user');
+			.skip(parseInt(offset));
 
 		const total = await Withdrawal.countDocuments(query);
+
+		// **NEW: Get user's withdrawal processing time and limits based on tier**
+		let withdrawalInfo = {};
+		try {
+			const [processingTimeResult, limitResult] = await Promise.all([
+				LoyaltyService.getWithdrawalProcessingTime(user._id),
+				LoyaltyService.checkWithdrawalLimit(user._id)
+			]);
+
+			if (processingTimeResult.success) {
+				withdrawalInfo.processingTime = processingTimeResult.processingTimeHours;
+				withdrawalInfo.tier = processingTimeResult.tier;
+			}
+
+			if (limitResult.success) {
+				withdrawalInfo.weeklyLimit = limitResult.weeklyLimit;
+				withdrawalInfo.usedAmount = limitResult.usedAmount;
+				withdrawalInfo.availableAmount = limitResult.availableAmount;
+				withdrawalInfo.resetDate = limitResult.resetDate;
+			}
+		} catch (loyaltyError) {
+			console.error('Error getting withdrawal info for user:', loyaltyError);
+		}
 
 		return {
 			status: 200,
@@ -377,6 +422,12 @@ export const getWithdrawals = async req => {
 				success: true,
 				withdrawals,
 				total,
+				pagination: {
+					limit: parseInt(limit),
+					offset: parseInt(offset),
+					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+				},
+				withdrawalInfo, // Include tier-based withdrawal information
 			},
 		};
 	} catch (error) {
@@ -385,15 +436,16 @@ export const getWithdrawals = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to get withdrawals',
+				error: error.message || 'Failed to fetch withdrawals',
 			},
 		};
 	}
 };
 
-export const getAdminWithdrawals = async req => {
+export const getAllWithdrawals = async req => {
 	try {
 		const admin = req.user;
+		const { limit = 10, offset = 0, status, userId } = req.query;
 
 		// Verify admin permissions
 		if (admin.role !== 'ADMIN') {
@@ -406,26 +458,21 @@ export const getAdminWithdrawals = async req => {
 			};
 		}
 
-		const { status, limit = 10, offset = 0, userId } = req.query;
-
-		// Build query
-		const query = {};
-
+		let query = {};
 		if (status) {
 			query.status = status.toUpperCase();
 		}
-
 		if (userId) {
 			query.user = userId;
 		}
 
-		// Get withdrawals
 		const withdrawals = await Withdrawal.find(query)
-			.sort({ requestDate: -1 })
-			.skip(parseInt(offset))
-			.limit(parseInt(limit))
+			.populate('user', 'name phone email')
 			.populate('bankAccount')
-			.populate('user', 'name email phone');
+			.populate('approvedBy', 'name')
+			.sort({ createdAt: -1 })
+			.limit(parseInt(limit))
+			.skip(parseInt(offset));
 
 		const total = await Withdrawal.countDocuments(query);
 
@@ -435,6 +482,11 @@ export const getAdminWithdrawals = async req => {
 				success: true,
 				withdrawals,
 				total,
+				pagination: {
+					limit: parseInt(limit),
+					offset: parseInt(offset),
+					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+				},
 			},
 		};
 	} catch (error) {
@@ -443,7 +495,53 @@ export const getAdminWithdrawals = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to get withdrawals',
+				error: error.message || 'Failed to fetch withdrawals',
+			},
+		};
+	}
+};
+
+export const getWithdrawalById = async req => {
+	try {
+		const { id } = req.params;
+		const user = req.user;
+
+		let query = { _id: id };
+
+		// Non-admin users can only see their own withdrawals
+		if (user.role !== 'ADMIN') {
+			query.user = user._id;
+		}
+
+		const withdrawal = await Withdrawal.findOne(query)
+			.populate('user', 'name phone email')
+			.populate('bankAccount')
+			.populate('approvedBy', 'name');
+
+		if (!withdrawal) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Withdrawal not found',
+				},
+			};
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				withdrawal,
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch withdrawal',
 			},
 		};
 	}
