@@ -21,6 +21,9 @@ const config = {
 	ticketMegamillionComissionAgent: 0.015,
 	withdrawCommissionAgent: 0.01,
 	withdrawCommissionAdmin: 0.02,
+	dominoComissionAgent: 0.02, // 2% commission for agents on domino games
+	dominoSystemCommission: 0.04, // 4% system commission on domino winnings
+	dominoAgentWinCommission: 0.015, // 1.5% agent commission on domino winnings
 };
 
 export const transactionSummary = async (
@@ -522,26 +525,26 @@ export const makeTransaction = async (
 					const adminCommision =
 						cashType === 'REAL'
 							? parseFloat(
-									config.depositCommissionAdmin *
-										transactionAmount
-								).toFixed(2)
+								config.depositCommissionAdmin *
+								transactionAmount
+							).toFixed(2)
 							: 0;
 
 					const agentCommision =
 						cashType === 'REAL'
 							? parseFloat(
-									config.depositCommissionAgent *
-										transactionAmount
-								).toFixed(2)
+								config.depositCommissionAgent *
+								transactionAmount
+							).toFixed(2)
 							: 0;
 
 					const amountAfterCommission =
 						cashType === 'REAL'
 							? parseFloat(
-									transactionAmount -
-										(parseFloat(agentCommision) +
-											parseFloat(adminCommision))
-								).toFixed(2)
+								transactionAmount -
+								(parseFloat(agentCommision) +
+									parseFloat(adminCommision))
+							).toFixed(2)
 							: transactionAmount;
 
 					// Credit to receiver
@@ -681,26 +684,26 @@ export const makeTransaction = async (
 					const adminCommision =
 						cashType === 'REAL'
 							? parseFloat(
-									config.withdrawCommissionAdmin *
-										transactionAmount
-								).toFixed(2)
+								config.withdrawCommissionAdmin *
+								transactionAmount
+							).toFixed(2)
 							: 0;
 
 					const agentCommision =
 						cashType === 'REAL'
 							? parseFloat(
-									config.withdrawCommissionAgent *
-										transactionAmount
-								).toFixed(2)
+								config.withdrawCommissionAgent *
+								transactionAmount
+							).toFixed(2)
 							: 0;
 
 					const amountAfterCommission =
 						cashType === 'REAL'
 							? parseFloat(
-									transactionAmount -
-										(parseFloat(agentCommision) +
-											parseFloat(adminCommision))
-								).toFixed(2)
+								transactionAmount -
+								(parseFloat(agentCommision) +
+									parseFloat(adminCommision))
+							).toFixed(2)
 							: transactionAmount;
 
 					// Debit from user
@@ -818,16 +821,16 @@ export const makeTransaction = async (
 				const adminCommision =
 					cashType === 'REAL'
 						? parseFloat(
-								config.userTransferComissionAdmin *
-									transactionAmount
-							).toFixed(2)
+							config.userTransferComissionAdmin *
+							transactionAmount
+						).toFixed(2)
 						: 0;
 
 				const amountAfterCommission =
 					cashType === 'REAL'
 						? parseFloat(
-								transactionAmount - parseFloat(adminCommision)
-							).toFixed(2)
+							transactionAmount - parseFloat(adminCommision)
+						).toFixed(2)
 						: transactionAmount;
 
 				// Debit from sender
@@ -1250,7 +1253,7 @@ export const makeTransaction = async (
 				if (userRole === 'AGENT') {
 					const agentCommision = parseFloat(
 						config.ticketMegamillionComissionAgent *
-							transactionAmount
+						transactionAmount
 					).toFixed(2);
 
 					// Credit commission to agent
@@ -1346,7 +1349,7 @@ export const makeTransaction = async (
 				if (userRole === 'AGENT') {
 					const agentCommision = parseFloat(
 						config.ticketMegamillionComissionAgent *
-							transactionAmount
+						transactionAmount
 					).toFixed(2);
 
 					// Debit commission from agent
@@ -1602,6 +1605,306 @@ export const makeTransaction = async (
 				break;
 			}
 
+			case 'DOMINO_ENTRY': {
+				if (transactionAmount > walletData[balanceField]) {
+					throw new Error(
+						`Insufficient ${cashType.toLowerCase()} balance.`
+					);
+				}
+
+				// Debit from user
+				await Transaction.create({
+					user: userId,
+					cashType,
+					transactionType: 'DEBIT',
+					transactionIdentifier: 'DOMINO_ENTRY',
+					transactionAmount: transactionAmount.toFixed(2),
+					referenceType: 'SYSTEM',
+					referenceIndex: systemAccount._id,
+					previousBalance,
+					newBalance: (previousBalance - transactionAmount).toFixed(2),
+					transactionData: {
+						roomId: ticketId, // roomId passed as ticketId parameter
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Credit to system account
+				await Transaction.create({
+					user: systemAccount._id,
+					cashType,
+					transactionType: 'CREDIT',
+					transactionIdentifier: 'DOMINO_ENTRY',
+					transactionAmount: transactionAmount.toFixed(2),
+					referenceType: userRole,
+					referenceIndex: userId,
+					previousBalance: 0,
+					newBalance: 0,
+					transactionData: {
+						roomId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Update wallet balance
+				walletData[balanceField] = previousBalance - transactionAmount;
+
+				// Handle agent commission if applicable
+				if (userRole === 'AGENT') {
+					const agentCommision = parseFloat(
+						config.dominoComissionAgent * transactionAmount || 0.02 * transactionAmount
+					).toFixed(2);
+
+					// Credit commission to agent
+					await Transaction.create({
+						user: userId,
+						cashType,
+						transactionIdentifier: 'DOMINO_ENTRY_COMMISSION',
+						transactionType: 'CREDIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: 'SYSTEM',
+						referenceIndex: systemAccount._id,
+						previousBalance: walletData[balanceField],
+						newBalance: (
+							walletData[balanceField] + parseFloat(agentCommision)
+						).toFixed(2),
+						transactionData: {
+							roomId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					// Debit commission from system
+					await Transaction.create({
+						user: systemAccount._id,
+						cashType,
+						transactionIdentifier: 'DOMINO_ENTRY_COMMISSION',
+						transactionType: 'DEBIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: userRole,
+						referenceIndex: userId,
+						previousBalance: 0,
+						newBalance: 0,
+						transactionData: {
+							roomId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					walletData[balanceField] += parseFloat(agentCommision);
+				}
+				break;
+			}
+
+			// WON_DOMINO for Domino game winnings
+			case 'WON_DOMINO': {
+				const comissionAmount = (0.04 * transactionAmount).toFixed(2);
+				const actualTransactionAmount = (
+					transactionAmount - parseFloat(comissionAmount)
+				).toFixed(2);
+				returnAmount = parseFloat(actualTransactionAmount);
+
+				// Debit from system
+				await Transaction.create({
+					user: systemAccount._id,
+					cashType,
+					transactionIdentifier: 'WON_DOMINO',
+					transactionType: 'DEBIT',
+					transactionAmount: transactionAmount.toFixed(2),
+					referenceType: userRole,
+					referenceIndex: userId,
+					previousBalance: 0,
+					newBalance: 0,
+					transactionData: {
+						gameId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Credit to user (minus commission)
+				await Transaction.create({
+					user: userId,
+					cashType,
+					transactionIdentifier: 'WON_DOMINO',
+					transactionType: 'CREDIT',
+					transactionAmount: parseFloat(actualTransactionAmount).toFixed(2),
+					referenceType: 'SYSTEM',
+					referenceIndex: systemAccount._id,
+					previousBalance,
+					newBalance: (
+						previousBalance + parseFloat(actualTransactionAmount)
+					).toFixed(2),
+					transactionData: {
+						gameId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Update wallet balance
+				walletData[balanceField] =
+					previousBalance + parseFloat(actualTransactionAmount);
+
+				// System keeps commission
+				await Transaction.create({
+					user: systemAccount._id,
+					cashType,
+					transactionIdentifier: 'WON_DOMINO_COMMISSION',
+					transactionType: 'CREDIT',
+					transactionAmount: parseFloat(comissionAmount).toFixed(2),
+					referenceType: userRole,
+					referenceIndex: userId,
+					previousBalance: 0,
+					newBalance: 0,
+					transactionData: {
+						gameId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// For agents/dealers, give them commission
+				if (userRole === 'AGENT' || userRole === 'DEALER') {
+					const agentCommision = (0.015 * transactionAmount).toFixed(2);
+
+					// Debit commission from system
+					await Transaction.create({
+						user: systemAccount._id,
+						cashType,
+						transactionIdentifier: 'WON_DOMINO_COMMISSION',
+						transactionType: 'DEBIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: userRole,
+						referenceIndex: userId,
+						previousBalance: 0,
+						newBalance: 0,
+						transactionData: {
+							gameId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					// Credit commission to agent/dealer
+					await Transaction.create({
+						user: userId,
+						cashType,
+						transactionIdentifier: 'WON_DOMINO_COMMISSION',
+						transactionType: 'CREDIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: 'SYSTEM',
+						referenceIndex: systemAccount._id,
+						previousBalance: walletData[balanceField],
+						newBalance: (
+							walletData[balanceField] + parseFloat(agentCommision)
+						).toFixed(2),
+						transactionData: {
+							gameId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					walletData[balanceField] += parseFloat(agentCommision);
+				}
+				break;
+			}
+
+			// DOMINO_REFUND for cancelled Domino games
+			case 'DOMINO_REFUND': {
+				// Credit to user
+				await Transaction.create({
+					user: userId,
+					cashType,
+					transactionIdentifier: 'DOMINO_REFUND',
+					transactionType: 'CREDIT',
+					transactionAmount: transactionAmount.toFixed(2),
+					referenceType: 'SYSTEM',
+					referenceIndex: systemAccount._id,
+					previousBalance,
+					newBalance: (previousBalance + transactionAmount).toFixed(2),
+					transactionData: {
+						roomId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Debit from system
+				await Transaction.create({
+					user: systemAccount._id,
+					cashType,
+					transactionIdentifier: 'DOMINO_REFUND',
+					transactionType: 'DEBIT',
+					transactionAmount: transactionAmount.toFixed(2),
+					referenceType: userRole,
+					referenceIndex: userId,
+					previousBalance: 0,
+					newBalance: 0,
+					transactionData: {
+						roomId: ticketId,
+						cashType,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Update wallet balance
+				walletData[balanceField] = previousBalance + transactionAmount;
+
+				// If agent had commission, refund it
+				if (userRole === 'AGENT') {
+					const agentCommision = parseFloat(
+						config.dominoComissionAgent * transactionAmount || 0.02 * transactionAmount
+					).toFixed(2);
+
+					// Debit commission from agent
+					await Transaction.create({
+						user: userId,
+						cashType,
+						transactionIdentifier: 'DOMINO_REFUND_COMMISSION',
+						transactionType: 'DEBIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: 'SYSTEM',
+						referenceIndex: systemAccount._id,
+						previousBalance: walletData[balanceField],
+						newBalance: (
+							walletData[balanceField] - parseFloat(agentCommision)
+						).toFixed(2),
+						transactionData: {
+							roomId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					// Credit commission back to system
+					await Transaction.create({
+						user: systemAccount._id,
+						cashType,
+						transactionIdentifier: 'DOMINO_REFUND_COMMISSION',
+						transactionType: 'CREDIT',
+						transactionAmount: parseFloat(agentCommision).toFixed(2),
+						referenceType: userRole,
+						referenceIndex: userId,
+						previousBalance: 0,
+						newBalance: 0,
+						transactionData: {
+							roomId: ticketId,
+							cashType,
+						},
+						status: 'COMPLETED',
+					});
+
+					walletData[balanceField] -= parseFloat(agentCommision);
+				}
+				break;
+			}
+
 			// For any other transaction type
 			default: {
 				throw new Error(
@@ -1641,6 +1944,12 @@ export const commissionSummaryByAgent = async (
 					'TICKET_MEGAMILLION_COMMISSION',
 					'TICKET_MEGAMILLION_CANCELLED',
 					'TICKET_MEGAMILLION_COMMISSION_CANCELLED',
+					'DOMINO_ENTRY',
+					'DOMINO_ENTRY_COMMISSION',
+					'DOMINO_REFUND',
+					'DOMINO_REFUND_COMMISSION',
+					'WON_DOMINO',
+					'WON_DOMINO_COMMISSION',
 					'WITHDRAW',
 					'WITHDRAW_COMMISSION',
 					'DEPOSIT',
@@ -1990,16 +2299,14 @@ export const initiateTransaction = async (
 				status: 500,
 				entity: {
 					success: false,
-					error: `${
-						transactionType === 'DEBIT' ? 'Receiver does' : 'You do'
-					} not have enough balance in your account for this transaction.`,
+					error: `${transactionType === 'DEBIT' ? 'Receiver does' : 'You do'
+						} not have enough balance in your account for this transaction.`,
 				},
 			};
 		}
 		const verificationCode = generateRandomDigits(4);
-		const message = `${verificationCode} is your OTP to ${transactionType.toLowerCase()} G ${amountToTransfer} ${
-			transactionType === 'CREDIT' ? 'to' : 'from'
-		} your account. The OTP is valid for 5 mins.`;
+		const message = `${verificationCode} is your OTP to ${transactionType.toLowerCase()} G ${amountToTransfer} ${transactionType === 'CREDIT' ? 'to' : 'from'
+			} your account. The OTP is valid for 5 mins.`;
 		const textResponse = await sendMessage({
 			phone: receiverPhone,
 			message,

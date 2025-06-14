@@ -3,7 +3,7 @@ import { DominoGameEngine } from '../../services/domino/gameEngine';
 import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
-import { updateLoyaltyXP } from '../loyalty/controller';
+import { LoyaltyService } from '../loyalty/service';
 import { broadcastToRoom, broadcastGameUpdate } from '../../services/socket/dominoSocket';
 
 // ===================== ROOM MANAGEMENT =====================
@@ -122,7 +122,7 @@ export const createRoom = async (body, user) => {
             totalPot: entryFee
         });
 
-        // Deduct entry fee
+        // Deduct entry fee using DOMINO_ENTRY transaction identifier
         await makeTransaction(
             user._id,
             user.role,
@@ -208,7 +208,7 @@ export const joinRoom = async ({ roomId }, user) => {
         room.totalPot += room.entryFee;
         await room.save();
 
-        // Deduct entry fee
+        // Deduct entry fee using DOMINO_ENTRY transaction identifier
         await makeTransaction(
             user._id,
             user.role,
@@ -281,7 +281,7 @@ export const leaveRoom = async ({ roomId }, user) => {
             };
         }
 
-        // Refund entry fee
+        // Refund entry fee using DOMINO_REFUND transaction identifier
         await makeTransaction(
             user._id,
             user.role,
@@ -372,6 +372,21 @@ export const startDominoGame = async (room) => {
         room.status = 'IN_PROGRESS';
         room.startedAt = new Date();
         await room.save();
+
+        // Record play activity for all human players using LoyaltyService
+        for (const player of room.players) {
+            if (player.user && player.playerType === 'HUMAN') {
+                try {
+                    const loyaltyResult = await LoyaltyService.recordUserPlayActivity(player.user);
+                    if (!loyaltyResult.success) {
+                        console.warn(`Failed to record play activity for user ${player.user}:`, loyaltyResult.error);
+                    }
+                } catch (error) {
+                    console.error(`Error recording play activity for user ${player.user}:`, error);
+                    // Don't fail the game start if loyalty tracking fails
+                }
+            }
+        }
 
         // Broadcast game started
         broadcastToRoom(room.roomId, 'game-started', {
@@ -689,15 +704,16 @@ const endDominoGame = async (game, gameEndResult) => {
             }));
         }
 
-        // Process payout
+        // Process payout and loyalty rewards
         if (game.winner !== null && game.winner !== undefined) {
             const winnerPlayer = game.players[game.winner];
 
             if (winnerPlayer.user) { // Only pay real users, not computer players
+                // Process winning transaction using WON_DOMINO identifier
                 await makeTransaction(
                     winnerPlayer.user,
                     'USER',
-                    'DOMINO_WIN',
+                    'WON_DOMINO',
                     game.winnerPayout,
                     null,
                     null,
@@ -705,15 +721,15 @@ const endDominoGame = async (game, gameEndResult) => {
                     game.room.cashType
                 );
 
-                // Award loyalty points
-                await awardLoyaltyPoints(winnerPlayer.user, true, game.room.entryFee);
+                // Award loyalty XP for winning using LoyaltyService
+                await awardDominoLoyaltyPoints(winnerPlayer.user, true, game.room.entryFee, game.room.cashType);
             }
         }
 
-        // Award participation points to other human players
+        // Award participation XP to other human players using LoyaltyService
         for (const player of game.players) {
             if (player.user && player.position !== game.winner) {
-                await awardLoyaltyPoints(player.user, false, game.room.entryFee);
+                await awardDominoLoyaltyPoints(player.user, false, game.room.entryFee, game.room.cashType);
             }
         }
 
@@ -1045,20 +1061,39 @@ export const getGameConfig = async () => {
 
 // ===================== HELPER FUNCTIONS =====================
 
-const awardLoyaltyPoints = async (userId, isWinner, entryFee) => {
+const awardDominoLoyaltyPoints = async (userId, isWinner, entryFee, cashType) => {
     try {
-        // Import loyalty functions if they exist
+        // Calculate XP based on game outcome and entry fee
+        const basePoints = isWinner ? 20 : 10; // Winners get more XP
+        const feeMultiplier = Math.max(1, Math.floor(entryFee / 5)); // Bonus for higher stakes
+        const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash games give more XP
+        const totalPoints = basePoints * feeMultiplier * cashTypeMultiplier;
 
+        // Award XP using LoyaltyService
+        const loyaltyResult = await LoyaltyService.awardUserXP(
+            userId,
+            totalPoints,
+            'GAME_REWARD',
+            `Domino game ${isWinner ? 'win' : 'participation'} - Entry: $${entryFee} (${cashType})`,
+            {
+                gameType: 'DOMINO',
+                isWinner,
+                entryFee,
+                cashType,
+                basePoints,
+                multiplier: feeMultiplier * cashTypeMultiplier
+            }
+        );
 
-        // Award points based on win/participation and entry fee
-        const basePoints = isWinner ? 10 : 5;
-        const feeMultiplier = Math.max(1, Math.floor(entryFee / 10));
-        const totalPoints = basePoints * feeMultiplier;
+        if (!loyaltyResult.success) {
+            console.warn(`Failed to award loyalty points to user ${userId}:`, loyaltyResult.error);
+        } else {
+            console.log(`Awarded ${totalPoints} XP to user ${userId} for domino game ${isWinner ? 'win' : 'participation'}`);
+        }
 
-        await updateLoyaltyXP(userId, totalPoints, 'DOMINO_GAME');
     } catch (error) {
-        console.error('Error awarding loyalty points:', error);
-        // Don't throw error - loyalty points are not critical
+        console.error('Error awarding domino loyalty points:', error);
+        // Don't throw error - loyalty points are not critical to game functionality
     }
 };
 

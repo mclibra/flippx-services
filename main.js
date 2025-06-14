@@ -4,8 +4,9 @@ import mongoose from './src/services/mongoose';
 import express from './src/services/express';
 import { createAdmin, createSystemAccount } from './src/seedDb';
 import api from './src/api';
-import { initCronJobs } from './src/services/cron/lottery';
-import { initializeLoyaltyScheduler } from './src/services/cron/loyaltyTasks';
+import './src/services/cron/lottery';
+import './src/services/cron/loyaltyTasks';
+import './src/services/cron/dominoMaintenance';
 
 const app = express(apiRoot, api);
 
@@ -39,9 +40,6 @@ setImmediate(async () => {
 	} catch (error) {
 		console.log(error);
 	}
-
-	initCronJobs();
-	initializeLoyaltyScheduler();
 	server.listen(port, ip, () => {
 		console.log(
 			'Express server listening on http://%s:%d, in %s mode',

@@ -9,6 +9,20 @@ import {
 	INACTIVITY_CHECK_DAYS
 } from './constants';
 
+const GAME_TRANSACTION_IDENTIFIERS = [
+	'TICKET_BORLETTE',
+	'TICKET_MEGAMILLION',
+	'TICKET_ROULETTE',
+	'DOMINO_ENTRY',
+];
+
+const WINNING_TRANSACTION_IDENTIFIERS = [
+	'WON_BORLETTE',
+	'WON_MEGAMILLION',
+	'WON_ROULETTE',
+	'WON_DOMINO',
+];
+
 // Initialize loyalty profile for a new user
 export const initializeLoyalty = async userId => {
 	try {
@@ -119,7 +133,27 @@ export const recordPlayActivity = async userId => {
 	}
 };
 
-// Record a deposit
+export const checkIDVerification = async (userId) => {
+	try {
+		const { User } = await import('../user/model');
+		const user = await User.findById(userId);
+
+		if (!user) {
+			return false;
+		}
+
+		// Check if user has verified ID proof
+		const hasVerifiedId = user.idProof &&
+			user.idProof.verificationStatus === 'VERIFIED';
+
+		return hasVerifiedId;
+	} catch (error) {
+		console.error('Error checking ID verification:', error);
+		return false;
+	}
+};
+
+// Record deposit for loyalty tracking
 export const recordDeposit = async (userId, amount) => {
 	try {
 		let loyalty = await LoyaltyProfile.findOne({ user: userId });
@@ -127,33 +161,34 @@ export const recordDeposit = async (userId, amount) => {
 			loyalty = await initializeLoyalty(userId);
 		}
 
-		// Update deposit amounts for the different periods
+		const now = moment();
+
+		// Update deposit amounts for different periods
 		loyalty.tierProgress.totalDeposit30Days += amount;
 		loyalty.tierProgress.totalDeposit60Days += amount;
 		loyalty.tierProgress.totalDeposit90Days += amount;
 
 		await loyalty.save();
 
-		// Evaluate tier after deposit
+		// Award XP for deposit (optional - adjust as needed)
+		const depositXP = Math.floor(amount / 10); // 1 XP per $10 deposited
+		if (depositXP > 0) {
+			await awardXP(
+				userId,
+				depositXP,
+				'BONUS',
+				`Deposit bonus: $${amount}`,
+				{ type: 'DEPOSIT', amount }
+			);
+		}
+
+		// Re-evaluate tier after deposit
 		await evaluateUserTier(userId);
 
 		return loyalty;
 	} catch (error) {
 		console.error('Error recording deposit:', error);
 		throw error;
-	}
-};
-
-// Check if user has proper ID verification
-const checkIDVerification = async userId => {
-	try {
-		const user = await User.findById(userId);
-		// Assuming the User model has an isIDVerified field
-		// If not available, you can use user.isActive as fallback but should implement proper ID verification
-		return user?.isIDVerified === true || user?.isActive === true;
-	} catch (error) {
-		console.error('Error checking ID verification:', error);
-		return false;
 	}
 };
 
@@ -343,7 +378,7 @@ const calculateTotalPlayAmount = async userId => {
 				$match: {
 					user: userId.toString(),
 					transactionIdentifier: {
-						$in: ['TICKET_BORLETTE', 'TICKET_MEGAMILLION', 'TICKET_ROULETTE'],
+						$in: GAME_TRANSACTION_IDENTIFIERS,
 					},
 				},
 			},
@@ -389,12 +424,8 @@ export const processWeeklyCashback = async () => {
 							},
 							transactionIdentifier: {
 								$in: [
-									'TICKET_BORLETTE',
-									'TICKET_MEGAMILLION',
-									'TICKET_ROULETTE',
-									'WON_BORLETTE',
-									'WON_MEGAMILLION',
-									'WON_ROULETTE',
+									...GAME_TRANSACTION_IDENTIFIERS,
+									...WINNING_TRANSACTION_IDENTIFIERS
 								],
 							},
 						},
@@ -415,14 +446,12 @@ export const processWeeklyCashback = async () => {
 
 				for (const result of transactionResults) {
 					if (
-						[
-							'TICKET_BORLETTE',
-							'TICKET_MEGAMILLION',
-							'TICKET_ROULETTE',
-						].includes(result._id.type)
+						GAME_TRANSACTION_IDENTIFIERS.includes(result._id.type)
 					) {
 						totalSpent += result.total;
-					} else {
+					} else if (
+						WINNING_TRANSACTION_IDENTIFIERS.includes(result._id.type)
+					) {
 						totalWon += result.total;
 					}
 				}
@@ -535,12 +564,8 @@ export const processMonthlyVIPCashback = async () => {
 							},
 							transactionIdentifier: {
 								$in: [
-									'TICKET_BORLETTE',
-									'TICKET_MEGAMILLION',
-									'TICKET_ROULETTE',
-									'WON_BORLETTE',
-									'WON_MEGAMILLION',
-									'WON_ROULETTE',
+									...GAME_TRANSACTION_IDENTIFIERS,
+									...WINNING_TRANSACTION_IDENTIFIERS
 								],
 							},
 						},
@@ -561,14 +586,12 @@ export const processMonthlyVIPCashback = async () => {
 
 				for (const result of transactionResults) {
 					if (
-						[
-							'TICKET_BORLETTE',
-							'TICKET_MEGAMILLION',
-							'TICKET_ROULETTE',
-						].includes(result._id.type)
+						GAME_TRANSACTION_IDENTIFIERS.includes(result._id.type)
 					) {
 						totalSpent += result.total;
-					} else {
+					} else if (
+						WINNING_TRANSACTION_IDENTIFIERS.includes(result._id.type)
+					) {
 						totalWon += result.total;
 					}
 				}

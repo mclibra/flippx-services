@@ -5,32 +5,30 @@ import { fetchGameResult } from '../lottery/externalLottery';
 import { publishResult } from '../../api/lottery/resultPublisher';
 
 // Cron job: Check and publish lottery results
-export const schedulePublishResults = () => {
-	cron.schedule('*/5 * * * *', async () => {
-		// Run every 5 minutes
-		console.log('Running cron job: Check and publish results');
-		try {
-			const now = moment();
-			const lotteries = await Lottery.find({
-				status: 'SCHEDULED',
-				scheduledTime: {
-					$lt: now.subtract(5, 'minutes').valueOf(),
-				},
-			});
+cron.schedule('*/5 * * * *', async () => {
+	// Run every 5 minutes
+	console.log('Running cron job: Check and publish results');
+	try {
+		const now = moment();
+		const lotteries = await Lottery.find({
+			status: 'SCHEDULED',
+			scheduledTime: {
+				$lt: now.subtract(5, 'minutes').valueOf(),
+			},
+		});
 
-			if (lotteries.length > 0) {
-				console.log(`Found ${lotteries.length} lotteries ready to be published`);
-				for (const lottery of lotteries) {
-					await fetchAndPublishResults(lottery);
-				}
-			} else {
-				console.log(`No lotteries found to be published`);
+		if (lotteries.length > 0) {
+			console.log(`Found ${lotteries.length} lotteries ready to be published`);
+			for (const lottery of lotteries) {
+				await fetchAndPublishResults(lottery);
 			}
-		} catch (error) {
-			console.error('Error in publishResults cron job:', error);
+		} else {
+			console.log(`No lotteries found to be published`);
 		}
-	});
-};
+	} catch (error) {
+		console.error('Error in publishResults cron job:', error);
+	}
+});
 
 // Exported function to create lotteries for a state (used by state and lottery services)
 export const createLotteriesForState = async state => {
@@ -278,7 +276,4 @@ async function processTicketsForLottery(lotteryId, results) {
 	}
 }
 
-export const initCronJobs = () => {
-	schedulePublishResults();
-	console.log('Cron jobs initialized');
-};
+console.log('Cron jobs initialized');

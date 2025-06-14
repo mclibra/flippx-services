@@ -111,4 +111,11 @@ router.get(
 	async (req, res) => done(res, await getDealerStats(req.user, req.query))
 );
 
+router.get(
+	'/domino/stats',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getDominoStats(req.query, req.user))
+);
+
 export default router;

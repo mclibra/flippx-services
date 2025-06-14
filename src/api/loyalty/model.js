@@ -79,6 +79,7 @@ const LoyaltyTransactionSchema = new Schema(
 				'CASHBACK',
 				'REFERRAL',
 				'BONUS',
+				'GAME_REWARD', // ADD THIS FOR DOMINO AND OTHER GAMES
 			],
 			required: true,
 		},
@@ -94,6 +95,10 @@ const LoyaltyTransactionSchema = new Schema(
 			monthKey: { type: String }, // For monthly tracking
 			referredUser: { type: String },
 			playAmount: { type: Number },
+			gameType: { type: String }, // ADD THIS FOR GAME TYPE TRACKING
+			entryFee: { type: Number }, // ADD THIS FOR ENTRY FEE TRACKING
+			cashType: { type: String }, // ADD THIS FOR CASH TYPE TRACKING
+			isWinner: { type: Boolean }, // ADD THIS FOR WIN/LOSS TRACKING
 		},
 		previousBalance: { type: Number, required: true },
 		newBalance: { type: Number, required: true },
