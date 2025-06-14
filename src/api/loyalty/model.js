@@ -35,6 +35,16 @@ const LoyaltyProfileSchema = new Schema(
 				date: { type: Date },
 				amount: { type: Number },
 				processed: { type: Boolean, default: false },
+				type: {
+					type: String,
+					enum: ['WEEKLY', 'MONTHLY'],
+					default: 'WEEKLY'
+				},
+				reference: {
+					monthKey: { type: String }, // For monthly cashback tracking (YYYY-MM)
+					weekStart: { type: String },
+					weekEnd: { type: String },
+				},
 			},
 		],
 		referralBenefits: [
@@ -77,6 +87,13 @@ const LoyaltyTransactionSchema = new Schema(
 		reference: {
 			type: { type: String },
 			id: { type: Schema.Types.Mixed },
+			weekStart: { type: String },
+			weekEnd: { type: String },
+			monthStart: { type: String },
+			monthEnd: { type: String },
+			monthKey: { type: String }, // For monthly tracking
+			referredUser: { type: String },
+			playAmount: { type: Number },
 		},
 		previousBalance: { type: Number, required: true },
 		newBalance: { type: Number, required: true },
@@ -87,11 +104,10 @@ const LoyaltyTransactionSchema = new Schema(
 	}
 );
 
-export const LoyaltyProfile = mongoose.model(
-	'LoyaltyProfile',
-	LoyaltyProfileSchema
-);
-export const LoyaltyTransaction = mongoose.model(
-	'LoyaltyTransaction',
-	LoyaltyTransactionSchema
-);
+LoyaltyProfileSchema.index({ user: 1 });
+LoyaltyProfileSchema.index({ currentTier: 1 });
+LoyaltyTransactionSchema.index({ user: 1, createdAt: -1 });
+LoyaltyTransactionSchema.index({ transactionType: 1, createdAt: -1 });
+
+export const LoyaltyProfile = mongoose.model('LoyaltyProfile', LoyaltyProfileSchema);
+export const LoyaltyTransaction = mongoose.model('LoyaltyTransaction', LoyaltyTransactionSchema);

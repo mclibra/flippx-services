@@ -1,108 +1,71 @@
-// api/loyalty/service.js
-
+import moment from 'moment';
 import {
+	initializeLoyalty,
 	awardXP,
 	recordPlayActivity,
 	recordDeposit,
+	evaluateUserTier,
 	getUserLoyalty,
 	getUserXPHistory,
 	checkWeeklyWithdrawalLimit,
 	recordWithdrawalUsage,
 	getWithdrawalTime,
 	processReferralQualification,
-	evaluateUserTier,
-	manualTierUpgrade,
-	initializeLoyalty,
+	processWeeklyCashback,
+	processMonthlyVIPCashback,
+	cleanupDepositData,
 } from './controller';
 import { LoyaltyProfile, LoyaltyTransaction } from './model';
 import { LOYALTY_TIERS } from './constants';
-import moment from 'moment';
 
-// Comprehensive service for loyalty program integration
-export const loyaltyService = {
-	// ===== Transaction-related methods =====
+export const LoyaltyService = {
+	// ===== Core loyalty methods =====
 
-	// Handle play activity (triggered by ticket purchase)
-	handlePlayActivity: async (userId, ticketAmount, ticketType, ticketId) => {
+	// Initialize loyalty for a new user
+	initializeLoyaltyForUser: async userId => {
 		try {
-			// Record the play activity for tier progression
-			await recordPlayActivity(userId);
-
-			// Award XP based on play amount (1 XP per dollar)
-			const xpAmount = Math.floor(ticketAmount);
-			if (xpAmount > 0) {
-				await awardXP(
-					userId,
-					xpAmount,
-					'EARN',
-					`XP earned for ${ticketType} ticket`,
-					{ type: 'TICKET', id: ticketId }
-				);
-			}
-
-			// Check if this player was referred and if they now qualify
-			await processReferralQualification(userId);
-
-			return { success: true };
+			const loyalty = await initializeLoyalty(userId);
+			return { success: true, loyalty };
 		} catch (error) {
-			console.error(
-				'Error handling play activity in loyalty service:',
-				error
-			);
+			console.error('Error initializing loyalty for user:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// Handle deposits
-	handleDeposit: async (userId, depositAmount) => {
+	// Award XP to a user
+	awardUserXP: async (userId, amount, type, description, reference = null) => {
 		try {
-			// Record the deposit for tier progression
-			await recordDeposit(userId, depositAmount);
-
-			// Award XP based on deposit amount (1 XP per $2 deposited)
-			const xpAmount = Math.floor(depositAmount / 2);
-			if (xpAmount > 0) {
-				await awardXP(
-					userId,
-					xpAmount,
-					'EARN',
-					`XP earned for deposit of $${depositAmount}`,
-					{ type: 'DEPOSIT', amount: depositAmount }
-				);
-			}
-
-			return { success: true };
+			const loyalty = await awardXP(userId, amount, type, description, reference);
+			return { success: true, loyalty };
 		} catch (error) {
-			console.error('Error handling deposit in loyalty service:', error);
+			console.error('Error awarding XP to user:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// Handle winnings (optional bonus XP for winning)
-	handleWinnings: async (userId, winAmount, gameType, ticketId) => {
+	// Record play activity
+	recordUserPlayActivity: async userId => {
 		try {
-			// Award bonus XP for winning (0.5 XP per dollar won)
-			const xpAmount = Math.floor(winAmount * 0.5);
-			if (xpAmount > 0) {
-				await awardXP(
-					userId,
-					xpAmount,
-					'BONUS',
-					`Bonus XP for winning $${winAmount} on ${gameType}`,
-					{ type: 'WIN', id: ticketId }
-				);
-			}
-
-			return { success: true };
+			const loyalty = await recordPlayActivity(userId);
+			return { success: true, loyalty };
 		} catch (error) {
-			console.error('Error handling winnings in loyalty service:', error);
+			console.error('Error recording play activity:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// ===== User Profile methods =====
+	// Record deposit
+	recordUserDeposit: async (userId, amount) => {
+		try {
+			const loyalty = await recordDeposit(userId, amount);
+			return { success: true, loyalty };
+		} catch (error) {
+			console.error('Error recording deposit:', error);
+			return { success: false, error: error.message };
+		}
+	},
 
-	// Get user's loyalty profile (for UI display)
+	// Get user loyalty profile
 	getUserLoyaltyProfile: async userId => {
 		try {
 			const result = await getUserLoyalty(userId);
@@ -113,8 +76,8 @@ export const loyaltyService = {
 		}
 	},
 
-	// Get user's XP transaction history
-	getXPHistory: async (userId, options = { limit: 10, offset: 0 }) => {
+	// Get user XP history
+	getUserXPHistory: async (userId, options = {}) => {
 		try {
 			const result = await getUserXPHistory(userId, options);
 			return result.entity;
@@ -124,13 +87,86 @@ export const loyaltyService = {
 		}
 	},
 
-	// Initialize loyalty for a new user
-	initializeLoyaltyForUser: async userId => {
+	// ===== Tier evaluation methods =====
+
+	// Evaluate user tier
+	evaluateUserTierStatus: async userId => {
 		try {
-			const loyalty = await initializeLoyalty(userId);
-			return { success: true, loyalty };
+			const oldLoyalty = await LoyaltyProfile.findOne({ user: userId });
+			const oldTier = oldLoyalty ? oldLoyalty.currentTier : 'NONE';
+
+			await evaluateUserTier(userId);
+
+			const newLoyalty = await LoyaltyProfile.findOne({ user: userId });
+			const newTier = newLoyalty ? newLoyalty.currentTier : 'NONE';
+
+			return {
+				success: true,
+				previousTier: oldTier,
+				currentTier: newTier,
+				tierChanged: oldTier !== newTier,
+			};
 		} catch (error) {
-			console.error('Error initializing loyalty for user:', error);
+			console.error('Error evaluating user tier:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Check if user qualifies for a specific tier
+	checkTierEligibility: async (userId, targetTier) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const tierReqs = LOYALTY_TIERS[targetTier]?.requirements;
+			if (!tierReqs) {
+				return { success: false, error: 'Invalid tier specified' };
+			}
+
+			// Check requirements based on tier
+			let eligible = true;
+			const reasons = [];
+
+			if (targetTier === 'SILVER') {
+				if (loyalty.tierProgress.totalDeposit30Days < tierReqs.depositAmount30Days) {
+					eligible = false;
+					reasons.push(`Need $${tierReqs.depositAmount30Days - loyalty.tierProgress.totalDeposit30Days} more in deposits`);
+				}
+				if (loyalty.tierProgress.daysPlayedThisWeek < tierReqs.daysPlayedPerWeek) {
+					eligible = false;
+					reasons.push(`Need ${tierReqs.daysPlayedPerWeek - loyalty.tierProgress.daysPlayedThisWeek} more play days this week`);
+				}
+			} else if (targetTier === 'GOLD') {
+				if (loyalty.currentTier !== 'SILVER') {
+					eligible = false;
+					reasons.push('Must be Silver tier first');
+				}
+				if (loyalty.tierProgress.totalDeposit60Days < tierReqs.depositAmount60Days) {
+					eligible = false;
+					reasons.push(`Need $${tierReqs.depositAmount60Days - loyalty.tierProgress.totalDeposit60Days} more in 60-day deposits`);
+				}
+			} else if (targetTier === 'VIP') {
+				if (loyalty.currentTier !== 'GOLD') {
+					eligible = false;
+					reasons.push('Must be Gold tier first');
+				}
+				if (loyalty.tierProgress.totalDeposit90Days < tierReqs.depositAmount90Days) {
+					eligible = false;
+					reasons.push(`Need $${tierReqs.depositAmount90Days - loyalty.tierProgress.totalDeposit90Days} more in 90-day deposits`);
+				}
+			}
+
+			return {
+				success: true,
+				eligible,
+				reasons,
+				currentTier: loyalty.currentTier,
+				targetTier,
+			};
+		} catch (error) {
+			console.error('Error checking tier eligibility:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -147,8 +183,6 @@ export const loyaltyService = {
 			return { success: false, error: error.message };
 		}
 	},
-
-	// ===== Withdrawal-related methods =====
 
 	// Check weekly withdrawal limit
 	checkWithdrawalLimit: async userId => {
@@ -172,82 +206,88 @@ export const loyaltyService = {
 		}
 	},
 
-	// ===== Referral-related methods =====
+	// ===== Referral methods =====
 
 	// Process referral qualification
-	processReferral: async refereeId => {
+	processReferralQualification: async refereeId => {
 		try {
 			const result = await processReferralQualification(refereeId);
 			return result;
 		} catch (error) {
-			console.error('Error processing referral:', error);
+			console.error('Error processing referral qualification:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// ===== Admin methods =====
-
-	// Manual tier upgrade (for admin use)
-	upgradeUserTier: async (adminId, userId, targetTier) => {
+	// Get referral statistics for a user
+	getUserReferralStats: async userId => {
 		try {
-			// Log admin action
-			console.log(
-				`Admin ${adminId} upgrading user ${userId} to ${targetTier} tier`
-			);
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
 
-			const result = await manualTierUpgrade(userId, targetTier);
+			const totalReferrals = loyalty.referralBenefits.length;
+			const qualifiedReferrals = loyalty.referralBenefits.filter(ref => ref.qualified).length;
+			const totalXPEarned = loyalty.referralBenefits.reduce((sum, ref) => sum + ref.earnedXP, 0);
+
+			return {
+				success: true,
+				totalReferrals,
+				qualifiedReferrals,
+				totalXPEarned,
+				currentTier: loyalty.currentTier,
+				referralXP: LOYALTY_TIERS[loyalty.currentTier].referralXP,
+			};
+		} catch (error) {
+			console.error('Error getting referral stats:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// ===== Cashback methods =====
+
+	// Process weekly cashback (GOLD tier)
+	processWeeklyCashback: async () => {
+		try {
+			const result = await processWeeklyCashback();
 			return result.entity;
 		} catch (error) {
-			console.error('Error upgrading user tier:', error);
+			console.error('Error processing weekly cashback:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// Manual XP adjustment (for admin use)
-	adjustUserXP: async (adminId, userId, amount, reason) => {
+	// Process monthly VIP cashback
+	processMonthlyVIPCashback: async () => {
 		try {
-			// Log admin action
-			console.log(
-				`Admin ${adminId} adjusting XP for user ${userId} by ${amount} points`
-			);
-
-			await awardXP(
-				userId,
-				amount,
-				'ADJUSTMENT',
-				`Admin adjustment: ${reason}`,
-				{ adminId }
-			);
-
-			return {
-				success: true,
-				message: `Successfully adjusted XP by ${amount}`,
-			};
+			const result = await processMonthlyVIPCashback();
+			return result.entity;
 		} catch (error) {
-			console.error('Error adjusting user XP:', error);
+			console.error('Error processing monthly VIP cashback:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// Force tier evaluation for a user
-	evaluateUserTier: async userId => {
+	// Get user's cashback history
+	getUserCashbackHistory: async userId => {
 		try {
-			const oldLoyalty = await LoyaltyProfile.findOne({ user: userId });
-			const oldTier = oldLoyalty ? oldLoyalty.currentTier : 'NONE';
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
 
-			await evaluateUserTier(userId);
-
-			const newLoyalty = await LoyaltyProfile.findOne({ user: userId });
-			const newTier = newLoyalty ? newLoyalty.currentTier : 'NONE';
+			const cashbackHistory = loyalty.cashbackHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+			const totalCashback = cashbackHistory.reduce((sum, cb) => sum + cb.amount, 0);
 
 			return {
 				success: true,
-				previousTier: oldTier,
-				currentTier: newTier,
-				tierChanged: oldTier !== newTier,
+				cashbackHistory,
+				totalCashback,
+				currentTier: loyalty.currentTier,
 			};
 		} catch (error) {
-			console.error('Error evaluating user tier:', error);
+			console.error('Error getting cashback history:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -337,6 +377,7 @@ export const loyaltyService = {
 				success: true,
 				total: cashback.length > 0 ? cashback[0].total : 0,
 				count: cashback.length > 0 ? cashback[0].count : 0,
+				period,
 			};
 		} catch (error) {
 			console.error('Error getting total cashback paid:', error);
@@ -346,41 +387,50 @@ export const loyaltyService = {
 
 	// ===== Utility methods =====
 
-	// Get tier information
-	getTierInfo: tierName => {
+	// Cleanup deposit data
+	cleanupDepositData: async () => {
 		try {
-			if (!tierName || !LOYALTY_TIERS[tierName]) {
-				throw new Error('Invalid tier name');
-			}
-
-			return {
-				success: true,
-				tier: {
-					name: tierName,
-					...LOYALTY_TIERS[tierName],
-				},
-			};
+			const result = await cleanupDepositData();
+			return result.entity;
 		} catch (error) {
-			console.error('Error getting tier info:', error);
+			console.error('Error cleaning up deposit data:', error);
 			return { success: false, error: error.message };
 		}
 	},
 
-	// Get all tiers information
-	getAllTiersInfo: () => {
+	// Get loyalty system health status
+	getSystemHealth: async () => {
 		try {
-			const tiers = {};
-
-			Object.keys(LOYALTY_TIERS).forEach(tierName => {
-				tiers[tierName] = {
-					name: tierName,
-					...LOYALTY_TIERS[tierName],
-				};
+			const totalUsers = await LoyaltyProfile.countDocuments();
+			const activeUsers = await LoyaltyProfile.countDocuments({
+				'tierProgress.lastPlayDate': {
+					$gte: moment().subtract(30, 'days').toDate(),
+				},
 			});
 
-			return { success: true, tiers };
+			const tierCounts = await LoyaltyProfile.aggregate([
+				{
+					$group: {
+						_id: '$currentTier',
+						count: { $sum: 1 },
+					},
+				},
+			]);
+
+			const recentTransactions = await LoyaltyTransaction.countDocuments({
+				createdAt: { $gte: moment().subtract(24, 'hours').toDate() },
+			});
+
+			return {
+				success: true,
+				totalUsers,
+				activeUsers,
+				tierCounts,
+				recentTransactions,
+				lastUpdated: new Date(),
+			};
 		} catch (error) {
-			console.error('Error getting all tiers info:', error);
+			console.error('Error getting system health:', error);
 			return { success: false, error: error.message };
 		}
 	},

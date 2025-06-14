@@ -1,6 +1,5 @@
 import cron from 'node-cron';
 import moment from 'moment-timezone';
-import { State } from '../../api/state/model';
 import { Lottery } from '../../api/lottery/model';
 import { fetchGameResult } from '../lottery/externalLottery';
 import { publishResult } from '../../api/lottery/resultPublisher';

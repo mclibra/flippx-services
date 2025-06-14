@@ -4,8 +4,8 @@ import mongoose from './src/services/mongoose';
 import express from './src/services/express';
 import { createAdmin, createSystemAccount } from './src/seedDb';
 import api from './src/api';
-import { initCronJobs } from './src/services/cron';
-import { initializeLoyaltyScheduler } from './src/services/scheduler/loyaltyTasks';
+import { initCronJobs } from './src/services/cron/lottery';
+import { initializeLoyaltyScheduler } from './src/services/cron/loyaltyTasks';
 
 const app = express(apiRoot, api);
 
