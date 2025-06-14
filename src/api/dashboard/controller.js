@@ -9,6 +9,7 @@ import { Withdrawal } from '../withdrawal/model';
 import { Payment } from '../wallet/model';
 import { State } from '../state/model';
 import { Lottery } from '../lottery/model';
+import { DominoGame, DominoRoom } from '../domino/model';
 
 export const getDashboardOverview = async (_, { role }) => {
 	try {
@@ -2255,6 +2256,79 @@ export const getDealerStats = async (
 				success: false,
 				error: error.errors || error,
 			},
+		};
+	}
+};
+
+export const getDominoStats = async (query, user) => {
+	try {
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: { success: false, error: 'Unauthorized access' }
+			};
+		}
+
+		const { startDate, endDate } = query;
+
+		let dateQuery = {};
+		if (startDate || endDate) {
+			if (startDate) dateQuery.$gte = new Date(parseInt(startDate));
+			if (endDate) dateQuery.$lte = new Date(parseInt(endDate));
+		}
+
+		const { DominoGame, DominoRoom } = require('../domino/model');
+
+		// Get domino game statistics
+		const dominoStats = await DominoGame.aggregate([
+			{
+				$match: dateQuery.createdAt ? { createdAt: dateQuery } : {}
+			},
+			{
+				$lookup: {
+					from: 'dominorooms',
+					localField: 'room',
+					foreignField: '_id',
+					as: 'roomData'
+				}
+			},
+			{
+				$unwind: '$roomData'
+			},
+			{
+				$group: {
+					_id: '$roomData.cashType',
+					totalGames: { $sum: 1 },
+					totalPot: { $sum: '$totalPot' },
+					totalPayout: { $sum: '$winnerPayout' },
+					totalHouseEdge: { $sum: '$houseAmount' },
+					avgGameDuration: { $avg: '$duration' },
+					avgPlayersPerGame: { $avg: { $size: '$players' } }
+				}
+			}
+		]);
+
+		const activeRooms = await DominoRoom.countDocuments({ status: 'WAITING' });
+		const inProgressGames = await DominoGame.countDocuments({ gameState: 'ACTIVE' });
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				dominoStats,
+				activeRooms,
+				inProgressGames,
+				timeRange: {
+					startDate: startDate ? new Date(parseInt(startDate)) : null,
+					endDate: endDate ? new Date(parseInt(endDate)) : null
+				}
+			}
+		};
+	} catch (error) {
+		console.error('Error getting domino stats:', error);
+		return {
+			status: 500,
+			entity: { success: false, error: error.message }
 		};
 	}
 };
