@@ -1,63 +1,51 @@
 import { Router } from 'express';
 import { done } from '../../services/response/';
-import { xApi, token } from '../../services/passport';
+import { token, xApi } from '../../services/passport';
 import {
 	getUserLoyalty,
 	getUserXPHistory,
 	checkWeeklyWithdrawalLimit,
 	recordWithdrawalUsage,
 	getWithdrawalTime,
-	manualTierUpgrade,
-	processWeeklyCashback,
-	processMonthlyVIPCashback,
-	cleanupDepositData,
 	processReferralQualification,
+	manualTierUpgrade,
+	cleanupDepositData,
+	// NEW endpoints
+	processNoWinCashback,
+	checkNoWinCashbackEligibility,
+	updateSessionTime,
 } from './controller';
+import { LoyaltyService } from './service';
 
 const router = new Router();
 
-// ===== USER ROUTES =====
+// ===== USER ROUTES (protected) =====
 
 // Get user's loyalty profile
-router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await getUserLoyalty(req.user._id))
+router.get(
+	'/profile',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await getUserLoyalty(req.user._id))
 );
 
 // Get user's XP transaction history
-router.get('/history', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await getUserXPHistory(req.user._id, req.query))
+router.get(
+	'/xp-history',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await getUserXPHistory(req.user._id, req.query))
 );
 
-// Check weekly withdrawal limits
+// Check weekly withdrawal limit
 router.get(
 	'/withdrawal-limit',
 	xApi(),
 	token({ required: true }),
-	async (req, res) =>
-		done(res, await checkWeeklyWithdrawalLimit(req.user._id))
+	async (req, res) => done(res, await checkWeeklyWithdrawalLimit(req.user._id))
 );
 
-// Record withdrawal usage
-router.post(
-	'/withdrawal-usage',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => {
-		const { amount } = req.body;
-		if (!amount || amount <= 0) {
-			return done(res, {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Valid withdrawal amount is required',
-				},
-			});
-		}
-		done(res, await recordWithdrawalUsage(req.user._id, amount));
-	}
-);
-
-// Get withdrawal time based on tier
+// Get withdrawal processing time
 router.get(
 	'/withdrawal-time',
 	xApi(),
@@ -65,20 +53,84 @@ router.get(
 	async (req, res) => done(res, await getWithdrawalTime(req.user._id))
 );
 
-// Process referral qualification (can be called by system)
+// NEW: Update session time (called periodically by frontend)
 router.post(
-	'/referral-qualification/:refereeId',
+	'/session-time',
 	xApi(),
 	token({ required: true }),
-	async (req, res) =>
-		done(res, await processReferralQualification(req.params.refereeId))
+	async (req, res) => {
+		const { sessionMinutes } = req.body;
+		if (!sessionMinutes || sessionMinutes < 0) {
+			return done(res, {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Valid sessionMinutes required',
+				},
+			});
+		}
+		done(res, await updateSessionTime(req.user._id, sessionMinutes));
+	}
+);
+
+// NEW: Check no-win cashback eligibility
+router.get(
+	'/no-win-cashback/check',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => {
+		const result = await checkNoWinCashbackEligibility(req.user._id);
+		done(res, {
+			status: 200,
+			entity: {
+				success: true,
+				...result,
+			},
+		});
+	}
+);
+
+// Get referral statistics
+router.get(
+	'/referral-stats',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => {
+		const stats = await LoyaltyService.getUserReferralStats(req.user._id);
+		done(res, {
+			status: stats.success ? 200 : 500,
+			entity: stats,
+		});
+	}
+);
+
+// Get cashback history
+router.get(
+	'/cashback-history',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => {
+		const history = await LoyaltyService.getUserCashbackHistory(req.user._id);
+		done(res, {
+			status: history.success ? 200 : 500,
+			entity: history,
+		});
+	}
 );
 
 // ===== ADMIN ROUTES =====
 
+// Get user's loyalty profile (admin view)
+router.get(
+	'/user/:userId',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getUserLoyalty(req.params.userId))
+);
+
 // Manual tier upgrade
 router.post(
-	'/tier-upgrade/:userId',
+	'/upgrade-tier/:userId',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) => {
@@ -96,20 +148,12 @@ router.post(
 	}
 );
 
-// Process weekly cashback for GOLD tier users
+// NEW: Process no-win cashback for all eligible users
 router.post(
-	'/process-weekly-cashback',
+	'/process-no-win-cashback',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await processWeeklyCashback())
-);
-
-// Process monthly cashback for VIP tier users
-router.post(
-	'/process-monthly-vip-cashback',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await processMonthlyVIPCashback())
+	async (req, res) => done(res, await processNoWinCashback())
 );
 
 // Cleanup deposit data
@@ -218,6 +262,111 @@ router.get(
 				},
 			});
 		}
+	}
+);
+
+// NEW: Get referral commission summary
+router.get(
+	'/analytics/referral-commissions',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => {
+		try {
+			const { ReferralCommission } = require('./model');
+			const { startDate, endDate } = req.query;
+
+			let dateQuery = {};
+			if (startDate || endDate) {
+				dateQuery.createdAt = {};
+				if (startDate) dateQuery.createdAt.$gte = new Date(startDate);
+				if (endDate) dateQuery.createdAt.$lte = new Date(endDate);
+			}
+
+			const commissionSummary = await ReferralCommission.aggregate([
+				{
+					$match: dateQuery,
+				},
+				{
+					$group: {
+						_id: {
+							gameType: '$gameType',
+							referrerTier: '$referrerTier',
+						},
+						totalCommissions: { $sum: '$commissionAmount' },
+						totalPlays: { $sum: 1 },
+						totalPlayAmount: { $sum: '$playAmount' },
+					},
+				},
+				{
+					$sort: { '_id.gameType': 1, '_id.referrerTier': 1 },
+				},
+			]);
+
+			done(res, {
+				status: 200,
+				entity: {
+					success: true,
+					commissionSummary,
+					dateRange: { startDate, endDate },
+				},
+			});
+		} catch (error) {
+			done(res, {
+				status: 500,
+				entity: {
+					success: false,
+					error: error.message || 'Failed to get commission summary',
+				},
+			});
+		}
+	}
+);
+
+// Get system statistics
+router.get(
+	'/analytics/system-stats',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => {
+		const stats = await LoyaltyService.getLoyaltyStatistics();
+		done(res, {
+			status: stats.success ? 200 : 500,
+			entity: stats,
+		});
+	}
+);
+
+// ===== INTERNAL ROUTES (called by other services) =====
+
+// Process referral qualification (internal)
+router.post(
+	'/internal/referral-qualification/:refereeId',
+	xApi(),
+	async (req, res) => {
+		const result = await processReferralQualification(req.params.refereeId);
+		done(res, {
+			status: result.success ? 200 : 400,
+			entity: result,
+		});
+	}
+);
+
+// Record withdrawal usage (internal)
+router.post(
+	'/internal/withdrawal-usage/:userId',
+	xApi(),
+	async (req, res) => {
+		const { amount } = req.body;
+		if (!amount || amount <= 0) {
+			return done(res, {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Valid amount required',
+				},
+			});
+		}
+		done(res, await recordWithdrawalUsage(req.params.userId, amount));
 	}
 );
 

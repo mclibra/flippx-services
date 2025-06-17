@@ -1,3 +1,4 @@
+// src/api/index.js
 import { Router } from 'express';
 import user from './user';
 import oauth from './oauth';
@@ -15,6 +16,7 @@ import domino from './domino';
 import notification from './notification';
 import state from './state';
 import dashboard from './dashboard';
+import loyalty from './loyalty';
 
 const router = new Router();
 
@@ -34,5 +36,6 @@ router.use('/domino', domino);
 router.use('/state', state);
 router.use('/text', text);
 router.use('/dashboard', dashboard);
+router.use('/loyalty', loyalty);
 
 export default router;

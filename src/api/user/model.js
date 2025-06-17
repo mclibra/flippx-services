@@ -116,6 +116,16 @@ const userSchema = new Schema(
 			},
 			rejectionReason: { type: String, default: null },
 		},
+		// NEW: Session and activity tracking fields
+		sessionTracking: {
+			lastLoginDate: { type: Date, default: null },
+			lastActivityDate: { type: Date, default: null },
+			currentSessionStartTime: { type: Date, default: null },
+			dailyLoginStreak: { type: Number, default: 0 },
+			lastDailyLoginDate: { type: Date, default: null },
+			totalSessionTimeToday: { type: Number, default: 0 }, // in seconds
+			sessionTimeUpdatedDate: { type: Date, default: null },
+		},
 	},
 	{
 		timestamps: true,
@@ -172,8 +182,9 @@ userSchema.methods = {
 				'phone',
 				'email',
 				'createdAt',
-				'idProof', // Include new fields in full view
-				'addressProof', // Include new fields in full view
+				'idProof',
+				'addressProof',
+				'sessionTracking', // Include session tracking in full view
 			];
 		}
 
