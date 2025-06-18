@@ -57,7 +57,7 @@ export const LOYALTY_TIERS = {
 		referralCommissions: {
 			borlette: { perPlay: 0.02, monthlyCap: 5500 },
 			roulette: { per100Spins: 0.075, monthlyCap: 4000 },
-			dominoes: { per100Wagered: 0.05, monthlyCap: 5500 },
+			dominoes: { per100Wagered: 0.05, monthlyCap: 4000 }, // Fixed: Changed from 5500 to 4000
 		},
 	},
 	VIP: {
@@ -85,7 +85,7 @@ export const LOYALTY_TIERS = {
 		referralCommissions: {
 			borlette: { perPlay: 0.04, monthlyCap: 10000 },
 			roulette: { per100Spins: 0.15, monthlyCap: 8000 },
-			dominoes: { per100Wagered: 0.10, monthlyCap: 10000 },
+			dominoes: { per100Wagered: 0.10, monthlyCap: 8000 },
 		},
 	},
 };
