@@ -386,7 +386,7 @@ export const placeBet = async ({ id }, body, user) => {
 	}
 };
 
-export const createMultiState = async (body, user) => {
+export const create = async (body, user) => {
 	try {
 		const { cashType = 'VIRTUAL', purchases } = body;
 

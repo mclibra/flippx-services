@@ -8,7 +8,6 @@ import {
 	listAllByLottery,
 	listByState,
 	create,
-	createMultiState,
 	cancelTicket,
 	cashoutTicket,
 	commissionSummary,
@@ -55,7 +54,7 @@ router.post(
 	'/multi-state',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await createMultiState(req.body, req.user))
+	async (req, res) => done(res, await create(req.body, req.user))
 );
 
 router.get(
@@ -74,11 +73,6 @@ router.get(
 
 router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await show(req.params, req.user))
-);
-
-// Original single lottery purchase route (maintained for backward compatibility)
-router.post('/:id', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await create(req.params, req.body, req.user))
 );
 
 router.delete('/:id', xApi(), token({ required: true }), async (req, res) =>
