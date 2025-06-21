@@ -153,6 +153,18 @@ export const list = async ({
  * @param {string} cashType - 'REAL' or 'VIRTUAL'
  * @returns {Promise<number>} Amount transferred
  */
+/**
+ * Make a transaction with dual cash type support
+ * @param {string} userId - User ID
+ * @param {string} userRole - User role
+ * @param {string} transactionIdentifier - Transaction type identifier
+ * @param {number} transactionAmount - Amount of transaction
+ * @param {string} referenceType - Reference type (optional)
+ * @param {string} referenceIndex - Reference index (optional)
+ * @param {string} ticketId - Ticket ID (optional)
+ * @param {string} cashType - 'REAL' or 'VIRTUAL'
+ * @returns {Promise<number>} Amount transferred
+ */
 export const makeTransaction = async (
 	userId,
 	userRole,
@@ -169,11 +181,18 @@ export const makeTransaction = async (
 			throw new Error('Invalid cash type. Must be REAL or VIRTUAL');
 		}
 
+		// Validate transaction amount
+		if (!transactionAmount || transactionAmount <= 0) {
+			throw new Error('Invalid transaction amount');
+		}
+
+		// Get user wallet
 		let walletData = await Wallet.findOne({ user: userId });
 		if (!walletData) {
 			throw new Error('Wallet not found for user');
 		}
 
+		// Get system account for commission transactions
 		const systemAccount = await User.findOne({ role: 'SYSTEM' });
 		if (!systemAccount) {
 			throw new Error('System account not found');
@@ -189,6 +208,10 @@ export const makeTransaction = async (
 		switch (transactionIdentifier) {
 			// DEPOSIT for agents/dealers depositing to users
 			case 'DEPOSIT': {
+				if (!referenceIndex) {
+					throw new Error('Reference index required for deposit transaction');
+				}
+
 				const receiverWalletData = await Wallet.findOne({
 					user: referenceIndex,
 				});
@@ -197,42 +220,131 @@ export const makeTransaction = async (
 					throw new Error('The specified user does not exist.');
 				}
 
-				const receiverBalanceField =
-					cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
-				const receiverPreviousBalance =
-					receiverWalletData[receiverBalanceField];
+				const receiverBalanceField = cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
+				const receiverPreviousBalance = receiverWalletData[receiverBalanceField];
 
-				// Calculate commissions
-				const adminCommision =
-					cashType === 'REAL'
-						? parseFloat(
-							config.depositCommissionAdmin * transactionAmount
-						).toFixed(2)
-						: 0;
+				// Calculate commissions (only for REAL cash)
+				const adminCommission = cashType === 'REAL'
+					? parseFloat((config.depositCommissionAdmin * transactionAmount).toFixed(2))
+					: 0;
 
-				const agentCommision =
-					cashType === 'REAL'
-						? parseFloat(
-							config.depositCommissionAgent * transactionAmount
-						).toFixed(2)
-						: 0;
+				const agentCommission = cashType === 'REAL' && userRole === 'AGENT'
+					? parseFloat((config.depositCommissionAgent * transactionAmount).toFixed(2))
+					: 0;
 
-				const amountAfterCommission =
-					cashType === 'REAL'
-						? parseFloat(
-							transactionAmount -
-							(parseFloat(agentCommision) +
-								parseFloat(adminCommision))
-						).toFixed(2)
-						: transactionAmount;
+				const amountAfterCommission = cashType === 'REAL'
+					? parseFloat((transactionAmount - (agentCommission + adminCommission)).toFixed(2))
+					: transactionAmount;
 
-				// Create transactions...
-				// (Rest of DEPOSIT case logic remains the same)
+				// Validate sufficient balance for depositor
+				if (transactionAmount > walletData[balanceField]) {
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
+				}
+
+				// Debit from depositor
+				walletData[balanceField] = previousBalance - transactionAmount;
+				await walletData.save();
+
+				// Create debit transaction for depositor
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: referenceType || 'USER',
+					referenceIndex,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						depositTo: referenceIndex,
+						originalAmount: transactionAmount,
+						amountAfterCommission,
+						agentCommission,
+						adminCommission,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Credit to receiver
+				receiverWalletData[receiverBalanceField] = receiverPreviousBalance + amountAfterCommission;
+				await receiverWalletData.save();
+
+				// Create credit transaction for receiver
+				await Transaction.create({
+					user: referenceIndex,
+					cashType,
+					referenceType: 'USER',
+					referenceIndex: userId,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount: amountAfterCommission,
+					previousBalance: receiverPreviousBalance,
+					newBalance: receiverWalletData[receiverBalanceField],
+					transactionData: {
+						depositBy: userId,
+						originalAmount: transactionAmount,
+						amountAfterCommission,
+						agentCommission,
+						adminCommission,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if applicable)
+				if (agentCommission > 0 && userRole === 'AGENT') {
+					walletData[balanceField] += agentCommission;
+					await walletData.save();
+
+					await Transaction.create({
+						user: userId,
+						cashType,
+						referenceType: 'COMMISSION',
+						referenceIndex,
+						transactionType: 'CREDIT',
+						transactionIdentifier: 'DEPOSIT_COMMISSION',
+						transactionAmount: agentCommission,
+						previousBalance: walletData[balanceField] - agentCommission,
+						newBalance: walletData[balanceField],
+						transactionData: {
+							originalTransaction: transactionAmount,
+							commissionRate: config.depositCommissionAgent,
+						},
+						status: 'COMPLETED',
+					});
+				}
+
+				// Process admin commission (if applicable)
+				if (adminCommission > 0) {
+					const adminWallet = await Wallet.findOne({ user: systemAccount._id });
+					if (adminWallet) {
+						const adminPreviousBalance = adminWallet[balanceField];
+						adminWallet[balanceField] += adminCommission;
+						await adminWallet.save();
+
+						await Transaction.create({
+							user: systemAccount._id,
+							cashType,
+							referenceType: 'COMMISSION',
+							referenceIndex,
+							transactionType: 'CREDIT',
+							transactionIdentifier: 'DEPOSIT_COMMISSION',
+							transactionAmount: adminCommission,
+							previousBalance: adminPreviousBalance,
+							newBalance: adminWallet[balanceField],
+							transactionData: {
+								originalTransaction: transactionAmount,
+								commissionRate: config.depositCommissionAdmin,
+							},
+							status: 'COMPLETED',
+						});
+					}
+				}
 
 				// Record deposit for loyalty tracking
 				try {
 					const loyaltyResult = await LoyaltyService.recordUserDeposit(
-						referenceIndex, // receiver of the deposit
+						referenceIndex,
 						parseFloat(transactionAmount)
 					);
 					if (!loyaltyResult.success) {
@@ -242,24 +354,176 @@ export const makeTransaction = async (
 					console.error(`Error recording deposit for loyalty tracking for user ${referenceIndex}:`, loyaltyError);
 				}
 
+				returnAmount = amountAfterCommission;
+				break;
+			}
+
+			// WITHDRAW for agents/dealers withdrawing from users
+			case 'WITHDRAW': {
+				if (!referenceIndex) {
+					throw new Error('Reference index required for withdraw transaction');
+				}
+
+				const receiverWalletData = await Wallet.findOne({
+					user: referenceIndex,
+				});
+
+				if (!receiverWalletData) {
+					throw new Error('The specified user does not exist.');
+				}
+
+				const receiverBalanceField = cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
+				const receiverPreviousBalance = receiverWalletData[receiverBalanceField];
+
+				// Calculate commissions (only for REAL cash)
+				const adminCommission = cashType === 'REAL'
+					? parseFloat((config.withdrawCommissionAdmin * transactionAmount).toFixed(2))
+					: 0;
+
+				const agentCommission = cashType === 'REAL' && userRole === 'AGENT'
+					? parseFloat((config.withdrawCommissionAgent * transactionAmount).toFixed(2))
+					: 0;
+
+				const totalWithCommissions = transactionAmount + agentCommission + adminCommission;
+
+				// Validate sufficient balance for receiver (user being withdrawn from)
+				if (totalWithCommissions > receiverWalletData[receiverBalanceField]) {
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance for withdrawal.`);
+				}
+
+				// Debit from receiver (user being withdrawn from)
+				receiverWalletData[receiverBalanceField] = receiverPreviousBalance - totalWithCommissions;
+				await receiverWalletData.save();
+
+				// Create debit transaction for receiver
+				await Transaction.create({
+					user: referenceIndex,
+					cashType,
+					referenceType: 'USER',
+					referenceIndex: userId,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount: totalWithCommissions,
+					previousBalance: receiverPreviousBalance,
+					newBalance: receiverWalletData[receiverBalanceField],
+					transactionData: {
+						withdrawBy: userId,
+						originalAmount: transactionAmount,
+						agentCommission,
+						adminCommission,
+						totalWithCommissions,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Credit to withdrawer (agent/dealer)
+				walletData[balanceField] = previousBalance + transactionAmount;
+				await walletData.save();
+
+				// Create credit transaction for withdrawer
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: referenceType || 'USER',
+					referenceIndex,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						withdrawFrom: referenceIndex,
+						originalAmount: transactionAmount,
+						agentCommission,
+						adminCommission,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if applicable)
+				if (agentCommission > 0 && userRole === 'AGENT') {
+					walletData[balanceField] += agentCommission;
+					await walletData.save();
+
+					await Transaction.create({
+						user: userId,
+						cashType,
+						referenceType: 'COMMISSION',
+						referenceIndex,
+						transactionType: 'CREDIT',
+						transactionIdentifier: 'WITHDRAW_COMMISSION',
+						transactionAmount: agentCommission,
+						previousBalance: walletData[balanceField] - agentCommission,
+						newBalance: walletData[balanceField],
+						transactionData: {
+							originalTransaction: transactionAmount,
+							commissionRate: config.withdrawCommissionAgent,
+						},
+						status: 'COMPLETED',
+					});
+				}
+
+				// Process admin commission (if applicable)
+				if (adminCommission > 0) {
+					const adminWallet = await Wallet.findOne({ user: systemAccount._id });
+					if (adminWallet) {
+						const adminPreviousBalance = adminWallet[balanceField];
+						adminWallet[balanceField] += adminCommission;
+						await adminWallet.save();
+
+						await Transaction.create({
+							user: systemAccount._id,
+							cashType,
+							referenceType: 'COMMISSION',
+							referenceIndex,
+							transactionType: 'CREDIT',
+							transactionIdentifier: 'WITHDRAW_COMMISSION',
+							transactionAmount: adminCommission,
+							previousBalance: adminPreviousBalance,
+							newBalance: adminWallet[balanceField],
+							transactionData: {
+								originalTransaction: transactionAmount,
+								commissionRate: config.withdrawCommissionAdmin,
+							},
+							status: 'COMPLETED',
+						});
+					}
+				}
+
+				returnAmount = transactionAmount;
 				break;
 			}
 
 			// TICKET_BORLETTE for Borlette ticket purchases
 			case 'TICKET_BORLETTE': {
+				// Validate sufficient balance
 				if (transactionAmount > walletData[balanceField]) {
-					throw new Error(
-						`Insufficient ${cashType.toLowerCase()} balance.`
-					);
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
 				}
 
-				// Process the transaction...
-				// (Transaction creation logic remains the same)
-
-				// Update wallet balance
+				// Debit from user wallet
 				walletData[balanceField] = previousBalance - transactionAmount;
+				await walletData.save();
 
-				// NEW: Process referral commission for Borlette
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'TICKET' : null,
+					referenceIndex: ticketId,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						ticketId,
+						gameType: 'BORLETTE',
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if user has an agent/referrer)
 				try {
 					const commissionResult = await LoyaltyService.processReferralCommission(
 						userId,
@@ -274,7 +538,61 @@ export const makeTransaction = async (
 					console.error('Error processing Borlette referral commission:', error);
 				}
 
-				// NEW: Track spending for loyalty tier requirements
+				// Track spending for loyalty tier requirements
+				try {
+					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
+				} catch (error) {
+					console.error('Error tracking play activity:', error);
+				}
+
+				break;
+			}
+
+			// TICKET_MEGAMILLION for Megamillion ticket purchases
+			case 'TICKET_MEGAMILLION': {
+				// Validate sufficient balance
+				if (transactionAmount > walletData[balanceField]) {
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
+				}
+
+				// Debit from user wallet
+				walletData[balanceField] = previousBalance - transactionAmount;
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'TICKET' : null,
+					referenceIndex: ticketId,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						ticketId,
+						gameType: 'MEGAMILLION',
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if user has an agent/referrer)
+				try {
+					const commissionResult = await LoyaltyService.processReferralCommission(
+						userId,
+						'MEGAMILLION',
+						transactionAmount,
+						ticketId
+					);
+					if (commissionResult.success) {
+						console.log(`Megamillion referral commission processed: ${commissionResult.message}`);
+					}
+				} catch (error) {
+					console.error('Error processing Megamillion referral commission:', error);
+				}
+
+				// Track spending for loyalty tier requirements
 				try {
 					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
 				} catch (error) {
@@ -286,19 +604,34 @@ export const makeTransaction = async (
 
 			// TICKET_ROULETTE for Roulette ticket purchases
 			case 'TICKET_ROULETTE': {
+				// Validate sufficient balance
 				if (transactionAmount > walletData[balanceField]) {
-					throw new Error(
-						`Insufficient ${cashType.toLowerCase()} balance.`
-					);
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
 				}
 
-				// Process the transaction...
-				// (Transaction creation logic remains the same)
-
-				// Update wallet balance
+				// Debit from user wallet
 				walletData[balanceField] = previousBalance - transactionAmount;
+				await walletData.save();
 
-				// NEW: Process referral commission for Roulette
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'TICKET' : null,
+					referenceIndex: ticketId,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						ticketId,
+						gameType: 'ROULETTE',
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if user has an agent/referrer)
 				try {
 					const commissionResult = await LoyaltyService.processReferralCommission(
 						userId,
@@ -313,7 +646,7 @@ export const makeTransaction = async (
 					console.error('Error processing Roulette referral commission:', error);
 				}
 
-				// NEW: Track spending for loyalty tier requirements
+				// Track spending for loyalty tier requirements
 				try {
 					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
 				} catch (error) {
@@ -325,19 +658,34 @@ export const makeTransaction = async (
 
 			// DOMINO_ENTRY for Dominoes game entry
 			case 'DOMINO_ENTRY': {
+				// Validate sufficient balance
 				if (transactionAmount > walletData[balanceField]) {
-					throw new Error(
-						`Insufficient ${cashType.toLowerCase()} balance.`
-					);
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
 				}
 
-				// Process the transaction...
-				// (Transaction creation logic remains the same)
-
-				// Update wallet balance
+				// Debit from user wallet
 				walletData[balanceField] = previousBalance - transactionAmount;
+				await walletData.save();
 
-				// NEW: Process referral commission for Dominoes
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'GAME' : null,
+					referenceIndex: ticketId,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						gameId: ticketId,
+						gameType: 'DOMINOES',
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process agent commission (if user has an agent/referrer)
 				try {
 					const commissionResult = await LoyaltyService.processReferralCommission(
 						userId,
@@ -352,7 +700,7 @@ export const makeTransaction = async (
 					console.error('Error processing Dominoes referral commission:', error);
 				}
 
-				// NEW: Track spending for loyalty tier requirements
+				// Track spending for loyalty tier requirements
 				try {
 					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
 				} catch (error) {
@@ -362,18 +710,35 @@ export const makeTransaction = async (
 				break;
 			}
 
-			// WINNING transactions - record win for no-win cashback tracking
+			// Winning transactions - record win for no-win cashback tracking
 			case 'WON_BORLETTE':
 			case 'WON_MEGAMILLION':
 			case 'WON_ROULETTE':
 			case 'WON_DOMINO': {
-				// Process the winning transaction...
-				// (Transaction creation logic remains the same)
-
-				// Update wallet balance
+				// Credit to user wallet
 				walletData[balanceField] = previousBalance + transactionAmount;
+				await walletData.save();
 
-				// NEW: Record win activity for no-win cashback tracking
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'TICKET' : 'GAME',
+					referenceIndex: ticketId,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						ticketId,
+						gameType: transactionIdentifier.replace('WON_', ''),
+						winningAmount: transactionAmount,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Record win activity for no-win cashback tracking
 				try {
 					await LoyaltyService.recordUserWin(userId);
 				} catch (error) {
@@ -383,24 +748,279 @@ export const makeTransaction = async (
 				break;
 			}
 
-			// FlippX collection transaction
-			case 'FLIPPX_COLLECTION': {
-				// This is handled internally by the system
-				// No wallet updates needed as collection is deducted before crediting
+			// WIRE_TRANSFER for wire transfer payments
+			case 'WIRE_TRANSFER': {
+				// Credit to user wallet
+				walletData[balanceField] = previousBalance + transactionAmount;
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: referenceType || 'PAYMENT',
+					referenceIndex,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						paymentId: referenceIndex,
+						paymentType: 'WIRE_TRANSFER',
+					},
+					status: 'COMPLETED',
+				});
+
 				break;
 			}
 
-			// Other transaction types remain unchanged...
-			default: {
-				// Handle other transaction types as before
+			// WITHDRAWAL_REQUEST for withdrawal requests (pending)
+			case 'WITHDRAWAL_REQUEST':
+			case 'WITHDRAWAL_PENDING': {
+				// Validate sufficient balance
+				if (transactionAmount > walletData[balanceField]) {
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance.`);
+				}
+
+				// Debit from user wallet (place hold on funds)
+				walletData[balanceField] = previousBalance - transactionAmount;
+				if (walletData.pendingWithdrawals) {
+					walletData.pendingWithdrawals += transactionAmount;
+				} else {
+					walletData.pendingWithdrawals = transactionAmount;
+				}
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: 'WITHDRAWAL',
+					referenceIndex,
+					transactionType: 'PENDING_DEBIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						withdrawalId: referenceIndex,
+						bankAccount: ticketId, // Using ticketId for bankAccount reference
+					},
+					status: 'PENDING',
+				});
+
 				break;
+			}
+
+			// WITHDRAWAL_REJECTED for rejected withdrawal refunds
+			case 'WITHDRAWAL_REJECTED': {
+				// Credit back to user wallet
+				walletData[balanceField] = previousBalance + transactionAmount;
+				if (walletData.pendingWithdrawals && walletData.pendingWithdrawals >= transactionAmount) {
+					walletData.pendingWithdrawals -= transactionAmount;
+				}
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: 'WITHDRAWAL',
+					referenceIndex,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						withdrawalId: referenceIndex,
+						refundReason: 'WITHDRAWAL_REJECTED',
+					},
+					status: 'COMPLETED',
+				});
+
+				break;
+			}
+
+			// Commission transactions
+			case 'TICKET_BORLETTE_COMMISSION':
+			case 'TICKET_MEGAMILLION_COMMISSION':
+			case 'DEPOSIT_COMMISSION':
+			case 'WITHDRAW_COMMISSION':
+			case 'TRANSFER_COMMISSION': {
+				// Credit commission to user wallet
+				walletData[balanceField] = previousBalance + transactionAmount;
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: 'COMMISSION',
+					referenceIndex,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						commissionType: transactionIdentifier,
+						originalTransactionId: referenceIndex,
+					},
+					status: 'COMPLETED',
+				});
+
+				break;
+			}
+
+			// USER_TRANSFER for peer-to-peer transfers
+			case 'USER_TRANSFER': {
+				if (!referenceIndex) {
+					throw new Error('Reference index required for user transfer');
+				}
+
+				const receiverWalletData = await Wallet.findOne({
+					user: referenceIndex,
+				});
+
+				if (!receiverWalletData) {
+					throw new Error('Transfer recipient not found.');
+				}
+
+				// Calculate transfer commission
+				const transferCommission = cashType === 'REAL'
+					? parseFloat((config.userTransferComissionAdmin * transactionAmount).toFixed(2))
+					: 0;
+
+				const totalTransferAmount = transactionAmount + transferCommission;
+
+				// Validate sufficient balance
+				if (totalTransferAmount > walletData[balanceField]) {
+					throw new Error(`Insufficient ${cashType.toLowerCase()} balance for transfer.`);
+				}
+
+				const receiverBalanceField = cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
+				const receiverPreviousBalance = receiverWalletData[receiverBalanceField];
+
+				// Debit from sender
+				walletData[balanceField] = previousBalance - totalTransferAmount;
+				await walletData.save();
+
+				// Create debit transaction for sender
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: 'USER',
+					referenceIndex,
+					transactionType: 'DEBIT',
+					transactionIdentifier,
+					transactionAmount: totalTransferAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						transferTo: referenceIndex,
+						originalAmount: transactionAmount,
+						transferCommission,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Credit to receiver
+				receiverWalletData[receiverBalanceField] = receiverPreviousBalance + transactionAmount;
+				await receiverWalletData.save();
+
+				// Create credit transaction for receiver
+				await Transaction.create({
+					user: referenceIndex,
+					cashType,
+					referenceType: 'USER',
+					referenceIndex: userId,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance: receiverPreviousBalance,
+					newBalance: receiverWalletData[receiverBalanceField],
+					transactionData: {
+						transferFrom: userId,
+						originalAmount: transactionAmount,
+					},
+					status: 'COMPLETED',
+				});
+
+				// Process transfer commission to admin (if applicable)
+				if (transferCommission > 0) {
+					const adminWallet = await Wallet.findOne({ user: systemAccount._id });
+					if (adminWallet) {
+						const adminPreviousBalance = adminWallet[balanceField];
+						adminWallet[balanceField] += transferCommission;
+						await adminWallet.save();
+
+						await Transaction.create({
+							user: systemAccount._id,
+							cashType,
+							referenceType: 'COMMISSION',
+							referenceIndex: userId,
+							transactionType: 'CREDIT',
+							transactionIdentifier: 'TRANSFER_COMMISSION',
+							transactionAmount: transferCommission,
+							previousBalance: adminPreviousBalance,
+							newBalance: adminWallet[balanceField],
+							transactionData: {
+								originalTransaction: transactionAmount,
+								commissionRate: config.userTransferComissionAdmin,
+								transferFrom: userId,
+								transferTo: referenceIndex,
+							},
+							status: 'COMPLETED',
+						});
+					}
+				}
+
+				returnAmount = transactionAmount;
+				break;
+			}
+
+			// Handle cancelled/refund transactions
+			case 'TICKET_BORLETTE_CANCELLED':
+			case 'TICKET_MEGAMILLION_CANCELLED':
+			case 'DOMINO_REFUND': {
+				// Credit refund to user wallet
+				walletData[balanceField] = previousBalance + transactionAmount;
+				await walletData.save();
+
+				// Create transaction record
+				await Transaction.create({
+					user: userId,
+					cashType,
+					referenceType: ticketId ? 'TICKET' : 'GAME',
+					referenceIndex: ticketId,
+					transactionType: 'CREDIT',
+					transactionIdentifier,
+					transactionAmount,
+					previousBalance,
+					newBalance: walletData[balanceField],
+					transactionData: {
+						ticketId,
+						refundReason: transactionIdentifier,
+					},
+					status: 'COMPLETED',
+				});
+
+				break;
+			}
+
+			// Default case for unhandled transaction types
+			default: {
+				throw new Error(`Unsupported transaction identifier: ${transactionIdentifier}`);
 			}
 		}
 
-		// Save wallet changes
+		// Final wallet save (in case some cases didn't save explicitly)
 		await walletData.save();
 
 		return returnAmount;
+
 	} catch (error) {
 		console.error(`Transaction error (${transactionIdentifier}):`, error);
 		throw error;
