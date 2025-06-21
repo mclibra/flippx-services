@@ -201,7 +201,7 @@ async function processTicketsAndPublishResults(lottery, results) {
 										baseAmountWon = number.amountPlayed * 300;
 										break;
 									case `${winningNumbers[0]}`:
-										baseAmountWon = number.amountPlayed * 65;
+										baseAmountWon = number.amountPlayed * 60;
 										break;
 									case `${winningNumbers[1]}`:
 										baseAmountWon = number.amountPlayed * 20;
