@@ -2,6 +2,7 @@ import moment from 'moment';
 import { LoyaltyProfile, LoyaltyTransaction, ReferralCommission } from './model';
 import { User } from '../user/model';
 import { Transaction } from '../transaction/model';
+import InfluencerCommissionService from '../../services/influencer/commissionService';
 import {
 	LOYALTY_TIERS,
 	TIER_DOWNGRADES,
@@ -162,26 +163,6 @@ export const recordPlayActivity = async (userId, amountSpent = 0) => {
 	} catch (error) {
 		console.error('Error recording play activity:', error);
 		throw error;
-	}
-};
-
-export const checkIDVerification = async (userId) => {
-	try {
-		const { User } = await import('../user/model');
-		const user = await User.findById(userId);
-
-		if (!user) {
-			return false;
-		}
-
-		// Check if user has verified ID proof
-		const hasVerifiedId = user.idProof &&
-			user.idProof.verificationStatus === 'VERIFIED';
-
-		return hasVerifiedId;
-	} catch (error) {
-		console.error('Error checking ID verification:', error);
-		return false;
 	}
 };
 
@@ -1331,6 +1312,16 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 			return { success: false, message: 'Referrer not found' };
 		}
 
+		// Check if referrer is an influencer first
+		if (referrer.isInfluencer) {
+			return await InfluencerCommissionService.processInfluencerCommission(
+				refereeId,
+				gameType,
+				playAmount,
+				playId
+			);
+		}
+
 		// Get referrer's loyalty program
 		let referrerLoyalty = await LoyaltyProfile.findOne({
 			user: referrer._id.toString(),
@@ -1718,29 +1709,28 @@ export const calculateTierProgress = loyalty => {
 	return progress;
 };
 
-// Calculate total play amount for a user
+// Helper function to calculate total play amount
 const calculateTotalPlayAmount = async userId => {
-	try {
-		const transactions = await Transaction.aggregate([
-			{
-				$match: {
-					user: userId.toString(),
-					transactionIdentifier: {
-						$in: GAME_TRANSACTION_IDENTIFIERS,
-					},
-				},
+	const result = await Transaction.aggregate([
+		{
+			$match: {
+				user: userId.toString(),
+				transactionIdentifier: { $in: GAME_TRANSACTION_IDENTIFIERS },
 			},
-			{
-				$group: {
-					_id: null,
-					total: { $sum: '$transactionAmount' },
-				},
+		},
+		{
+			$group: {
+				_id: null,
+				total: { $sum: '$transactionAmount' },
 			},
-		]);
+		},
+	]);
 
-		return transactions.length > 0 ? transactions[0].total : 0;
-	} catch (error) {
-		console.error('Error calculating play amount:', error);
-		throw error;
-	}
+	return result.length > 0 ? result[0].total : 0;
+};
+
+// Helper function to check ID verification
+const checkIDVerification = async userId => {
+	const user = await User.findById(userId);
+	return user && user.idProof && user.idProof.verificationStatus === 'VERIFIED';
 };

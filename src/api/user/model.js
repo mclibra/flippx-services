@@ -95,6 +95,12 @@ const userSchema = new Schema(
 			default: 'USER',
 		},
 		isActive: { type: Boolean, default: true },
+		isInfluencer: { type: Boolean, default: false },
+		influencerContractId: {
+			type: Schema.Types.ObjectId,
+			ref: 'Influencer',
+			default: null
+		},
 		// New fields for document verification
 		idProof: {
 			documentUrl: { type: String, default: null },

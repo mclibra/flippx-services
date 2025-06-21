@@ -112,3 +112,18 @@ export const SESSION_REQUIREMENTS = {
 	MIN_SESSION_MINUTES: 5, // Minimum 5 minutes per session
 	SESSION_TIMEOUT_MINUTES: 30, // Session times out after 30 minutes of inactivity
 };
+
+// NEW: Influencer commission rates
+export const INFLUENCER_COMMISSIONS = {
+	borlette: { perPlay: 0.25, monthlyCap: 15000 },
+	roulette: { per100Spins: 0.35, monthlyCap: 15000 },
+	dominoes: { per100Wagered: 0.30, monthlyCap: 15000 },
+};
+
+// NEW: Default FlippX collection percentages
+export const DEFAULT_FLIPPX_COLLECTION = {
+	borlette: 5, // 5% default
+	roulette: 5,
+	dominoes: 5,
+	megamillion: 5,
+};

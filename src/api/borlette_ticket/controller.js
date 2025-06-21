@@ -5,6 +5,7 @@ import { Lottery, LotteryRestriction } from '../lottery/model';
 import { BorletteTicket } from './model';
 import { LoyaltyService } from '../loyalty/service';
 import PayoutService from '../../services/payout/payoutService';
+import FlippXService from '../../services/flippx/collectionService'
 
 export const listAllByLottery = async (
 	{ id },
@@ -1109,17 +1110,27 @@ export const cashoutTicket = async ({ id }, user) => {
 		}
 		const totalAmountWon = borletteTicket.totalAmountWon;
 
+		// Apply FlippX collection
+		const collectionResult = await FlippXService.processWinningCollection(
+			user._id,
+			'BORLETTE',
+			totalAmountWon,
+			borletteTicket._id
+		);
+
+		const netAmountWon = collectionResult.netAmount;
+
 		const amountTransferred = await makeTransaction(
 			user._id,
 			user.role,
 			'WON_BORLETTE',
-			totalAmountWon
+			netAmountWon
 		);
 
 		// **NEW: Award XP for winning**
 		try {
 			// Calculate XP based on amount won
-			const baseXP = Math.max(20, Math.floor(totalAmountWon / 10)); // Higher XP for wins
+			const baseXP = Math.max(20, Math.floor(netAmountWon / 10)); // Higher XP for wins
 			const cashTypeMultiplier = borletteTicket.cashType === 'REAL' ? 2 : 1;
 			const winMultiplier = 1.5; // Bonus for winning
 			const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
@@ -1128,11 +1139,13 @@ export const cashoutTicket = async ({ id }, user) => {
 				borletteTicket.user._id,
 				totalXP,
 				'GAME_REWARD',
-				`Borlette win - Amount: $${totalAmountWon} (${borletteTicket.cashType})`,
+				`Borlette win - Net Amount: $${netAmountWon} (${borletteTicket.cashType})`,
 				{
 					gameType: 'BORLETTE',
 					ticketId: borletteTicket._id,
-					amountWon: totalAmountWon,
+					amountWon: netAmountWon,
+					originalWon: totalAmountWon,
+					flippxCollection: collectionResult.collectionAmount,
 					cashType: borletteTicket.cashType,
 					baseXP,
 					multiplier: cashTypeMultiplier * winMultiplier,

@@ -43,6 +43,12 @@ cron.schedule('0 0 1 * *', async () => {
 		}
 
 		console.log(`Reset referral commission caps for ${loyalties.length} users`);
+
+		// Reset influencer caps (tracked via monthKey, so no action needed)
+		const InfluencerCommissionService = (await import('../../services/influencer/commissionService')).default;
+		await InfluencerCommissionService.resetMonthlyInfluencerCaps();
+
+		console.log('Influencer commission tracking reset for new month');
 	} catch (error) {
 		console.error('Error resetting referral commission caps:', error);
 	}

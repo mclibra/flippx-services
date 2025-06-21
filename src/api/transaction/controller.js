@@ -383,6 +383,13 @@ export const makeTransaction = async (
 				break;
 			}
 
+			// FlippX collection transaction
+			case 'FLIPPX_COLLECTION': {
+				// This is handled internally by the system
+				// No wallet updates needed as collection is deducted before crediting
+				break;
+			}
+
 			// Other transaction types remain unchanged...
 			default: {
 				// Handle other transaction types as before

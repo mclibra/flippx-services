@@ -543,7 +543,6 @@ export const addUser = async body => {
 	}
 };
 
-// Rest of the existing functions remain unchanged...
 export const update = async (user, body) => {
 	try {
 		const updateResponse = await Object.assign(user, body).save();
