@@ -5,6 +5,7 @@ const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 const purchasedBy = ['ADMIN', 'AGENT', 'DEALER', 'USER'];
 const cashTypes = ['REAL', 'VIRTUAL'];
+const tierTypes = ['NONE', 'SILVER', 'GOLD', 'VIP'];
 
 const BorletteTicketSchema = new Schema(
 	{
@@ -39,6 +40,19 @@ const BorletteTicketSchema = new Schema(
 			default: 'VIRTUAL',
 			required: true,
 		},
+		// NEW: Store user's tier at purchase time for payout calculation
+		userTierAtPurchase: {
+			type: String,
+			enum: tierTypes,
+			default: 'NONE',
+		},
+		// NEW: Store payout configuration used
+		payoutConfig: {
+			percentage: { type: Number, default: 60 },
+			isCustom: { type: Boolean, default: false },
+			configId: { type: Schema.Types.ObjectId, ref: 'PayoutConfig', default: null },
+			description: { type: String, default: 'Default percentage' }
+		},
 	},
 	{
 		_id: false,
@@ -56,6 +70,10 @@ BorletteTicketSchema.plugin(AutoIncrement, {
 	id: 'borlette_ticket_id',
 	start_seq: 1113834213,
 });
+
+// Add index for tier-based analytics
+BorletteTicketSchema.index({ userTierAtPurchase: 1, status: 1 });
+BorletteTicketSchema.index({ 'payoutConfig.configId': 1 });
 
 export const BorletteTicket = mongoose.model(
 	'BorletteTicket',

@@ -4,6 +4,7 @@ import { Wallet } from '../wallet/model';
 import { Lottery, LotteryRestriction } from '../lottery/model';
 import { BorletteTicket } from './model';
 import { LoyaltyService } from '../loyalty/service';
+import PayoutService from '../../services/payout/payoutService';
 
 export const listAllByLottery = async (
 	{ id },
@@ -388,6 +389,304 @@ export const placeBet = async ({ id }, body, user) => {
 
 export const create = async (body, user) => {
 	try {
+		const { cashType = 'VIRTUAL' } = body;
+
+		// Validate cash type
+		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid cash type. Must be REAL or VIRTUAL',
+				},
+			};
+		}
+
+		body.user = user._id;
+		body.purchasedBy = user.role;
+		body.purchasedOn = moment.now();
+		body.cashType = cashType;
+
+		// NEW: Get user's current tier for payout calculation
+		let userTier = 'NONE';
+		let payoutConfig = { percentage: 60, isCustom: false, configId: null, description: 'Default percentage' };
+
+		try {
+			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(user._id);
+			if (loyaltyResult.success && loyaltyResult.loyalty) {
+				userTier = loyaltyResult.loyalty.currentTier || 'NONE';
+			}
+
+			// Map NONE tier to SILVER for payout purposes (as per requirements)
+			const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
+
+			// Get payout configuration for this tier
+			payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+		} catch (loyaltyError) {
+			console.warn(`Failed to get user tier for ${user._id}:`, loyaltyError);
+			// Continue with defaults
+		}
+
+		// Store tier and payout config in ticket
+		body.userTierAtPurchase = userTier;
+		body.payoutConfig = payoutConfig;
+
+		const lottery = await Lottery.findById(body.lottery)
+			.populate('state')
+			.populate('externalIds');
+
+		if (lottery && lottery.status === 'SCHEDULED') {
+			const walletData = await Wallet.findOne({ user: user._id });
+			const balanceField = cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
+			const balanceToCheck = walletData[balanceField];
+
+			// Check if lottery supports marriage numbers
+			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers || false;
+
+			// Get lottery restrictions
+			const lotteryRestriction = await LotteryRestriction.findOne({
+				lottery: body.lottery,
+			});
+
+			let availableAmount = null;
+			if (lotteryRestriction) {
+				availableAmount = lotteryRestriction.availableAmount;
+			}
+
+			body.numbers = body.numbers.map(item => {
+				// Validation logic remains the same
+				if (availableAmount) {
+					if (hasMarriageNumbers) {
+						const numberStr = item.numberPlayed.toString();
+						const isMarriageNumber = numberStr.includes('x');
+
+						if (isMarriageNumber) {
+							if (
+								availableAmount.marriageNumber[numberStr] !== undefined &&
+								parseInt(availableAmount.marriageNumber[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played.`
+								);
+							}
+						} else {
+							const numberLength = numberStr.length;
+
+							if (
+								numberLength === 2 &&
+								availableAmount.twoDigit[numberStr] !== undefined &&
+								parseInt(availableAmount.twoDigit[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played.`
+								);
+							}
+							if (
+								numberLength === 3 &&
+								availableAmount.threeDigit[numberStr] !== undefined &&
+								parseInt(availableAmount.threeDigit[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played.`
+								);
+							}
+							if (
+								numberLength === 4 &&
+								availableAmount.fourDigit[numberStr] !== undefined &&
+								parseInt(availableAmount.fourDigit[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played.`
+								);
+							}
+							if (
+								hasMarriageNumbers &&
+								numberLength === 5 &&
+								availableAmount.marriageNumber[
+								item.numberPlayed.toString()
+								] !== undefined &&
+								parseInt(
+									availableAmount.marriageNumber[
+									item.numberPlayed.toString()
+									]
+								) < parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played.`
+								);
+							}
+						}
+					} else {
+						const numberStr = item.numberPlayed.toString();
+						const numberLength = numberStr.length;
+
+						if (
+							numberLength === 2 &&
+							availableAmount.twoDigit[numberStr] !== undefined &&
+							parseInt(availableAmount.twoDigit[numberStr]) <
+							parseInt(item.amountPlayed)
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played.`
+							);
+						}
+						if (
+							numberLength === 3 &&
+							availableAmount.threeDigit[numberStr] !== undefined &&
+							parseInt(availableAmount.threeDigit[numberStr]) <
+							parseInt(item.amountPlayed)
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played.`
+							);
+						}
+						if (
+							numberLength === 4 &&
+							availableAmount.fourDigit[numberStr] !== undefined &&
+							parseInt(availableAmount.fourDigit[numberStr]) <
+							parseInt(item.amountPlayed)
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played.`
+							);
+						}
+						if (
+							hasMarriageNumbers &&
+							numberLength === 5 &&
+							availableAmount.marriageNumber[
+							item.numberPlayed.toString()
+							] !== undefined &&
+							parseInt(
+								availableAmount.marriageNumber[
+								item.numberPlayed.toString()
+								]
+							) < parseInt(item.amountPlayed)
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played.`
+							);
+						}
+					}
+				}
+
+				body.totalAmountPlayed += parseInt(item.amountPlayed);
+				return {
+					numberPlayed: item.numberPlayed,
+					amountPlayed: item.amountPlayed,
+				};
+			});
+
+			if (balanceToCheck >= body.totalAmountPlayed) {
+				const borletteTicket = await BorletteTicket.create(body);
+				if (borletteTicket._id) {
+					// Process transaction
+					await makeTransaction(
+						user._id,
+						user.role,
+						'TICKET_BORLETTE',
+						body.totalAmountPlayed,
+						null,
+						null,
+						borletteTicket._id,
+						cashType // Pass cash type to transaction function
+					);
+
+					// **NEW: Record play activity for loyalty tracking**
+					try {
+						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						if (!loyaltyResult.success) {
+							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+						} else {
+							console.log(`Play activity recorded for user ${user._id} - Borlette ticket purchase`);
+						}
+					} catch (loyaltyError) {
+						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						// Don't fail ticket creation if loyalty tracking fails
+					}
+
+					// **NEW: Award XP for ticket purchase**
+					try {
+						// Calculate XP based on amount played (1 XP per $5 played, minimum 5 XP)
+						const baseXP = Math.max(5, Math.floor(body.totalAmountPlayed / 5));
+						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+						const totalXP = baseXP * cashTypeMultiplier;
+
+						const xpResult = await LoyaltyService.awardUserXP(
+							user._id,
+							totalXP,
+							'GAME_ACTIVITY',
+							`Borlette ticket purchase - Amount: $${body.totalAmountPlayed} (${cashType})`,
+							{
+								gameType: 'BORLETTE',
+								ticketId: borletteTicket._id,
+								amountPlayed: body.totalAmountPlayed,
+								cashType,
+								baseXP,
+								multiplier: cashTypeMultiplier,
+								userTier: userTier,
+								payoutPercentage: payoutConfig.percentage
+							}
+						);
+
+						if (!xpResult.success) {
+							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+						} else {
+							console.log(`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`);
+						}
+					} catch (xpError) {
+						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						// Don't fail ticket creation if XP awarding fails
+					}
+
+					return {
+						status: 200,
+						entity: {
+							success: true,
+							borletteTicket: {
+								...borletteTicket.toObject(),
+								lottery: lottery,
+							},
+						},
+					};
+				}
+			} else {
+				return {
+					status: 500,
+					entity: {
+						success: false,
+						error: `Insufficient ${cashType.toLowerCase()} balance.`,
+					},
+				};
+			}
+		} else {
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: lottery._id
+						? 'Lottery is closed.'
+						: 'Invalid lottery ID.',
+				},
+			};
+		}
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const createMultiState = async (body, user) => {
+	try {
 		const { cashType = 'VIRTUAL', purchases } = body;
 
 		// Validate input structure
@@ -431,6 +730,26 @@ export const create = async (body, user) => {
 			}
 		}
 
+		// NEW: Get user's current tier for payout calculation
+		let userTier = 'NONE';
+		let payoutConfig = { percentage: 60, isCustom: false, configId: null, description: 'Default percentage' };
+
+		try {
+			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(user._id);
+			if (loyaltyResult.success && loyaltyResult.loyalty) {
+				userTier = loyaltyResult.loyalty.currentTier || 'NONE';
+			}
+
+			// Map NONE tier to SILVER for payout purposes (as per requirements)
+			const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
+
+			// Get payout configuration for this tier
+			payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+		} catch (loyaltyError) {
+			console.warn(`Failed to get user tier for ${user._id}:`, loyaltyError);
+			// Continue with defaults
+		}
+
 		// Get user wallet
 		const walletData = await Wallet.findOne({ user: user._id });
 		if (!walletData) {
@@ -448,200 +767,106 @@ export const create = async (body, user) => {
 				? walletData.realBalance
 				: walletData.virtualBalance;
 
-		// Extract unique lottery IDs
-		const lotteryIds = [...new Set(purchases.map(p => p.lotteryId))];
-
-		// Fetch all lotteries and validate they exist
-		const lotteries = await Lottery.find({
-			_id: { $in: lotteryIds },
-		}).populate('state', 'name code');
-
-		if (lotteries.length !== lotteryIds.length) {
-			const foundIds = lotteries.map(l => l._id.toString());
-			const missingIds = lotteryIds.filter(id => !foundIds.includes(id));
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'One or more lottery IDs are invalid',
-					missingLotteryIds: missingIds,
-				},
-			};
-		}
-
-		// Check all lotteries are active (scheduled time is in the future)
-		const now = moment.now();
-		const inactiveLotteries = lotteries.filter(
-			lottery => lottery.scheduledTime <= now
-		);
-
-		if (inactiveLotteries.length > 0) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'One or more lotteries are no longer active for ticket purchases',
-					inactiveLotteries: inactiveLotteries.map(l => ({
-						id: l._id,
-						title: l.title,
-						state: l.state.name,
-						scheduledTime: l.scheduledTime,
-					})),
-				},
-			};
-		}
-
-		// Create lottery lookup map
-		const lotteryMap = {};
-		lotteries.forEach(lottery => {
-			lotteryMap[lottery._id.toString()] = lottery;
-		});
-
-		// Process each purchase and validate restrictions
-		let totalAmount = 0;
+		// Process and validate each purchase
 		const processedPurchases = [];
+		let totalAmount = 0;
 
-		for (let i = 0; i < purchases.length; i++) {
-			const purchase = purchases[i];
-			const lottery = lotteryMap[purchase.lotteryId];
+		for (const purchase of purchases) {
+			// Get lottery and validate
+			const lottery = await Lottery.findById(purchase.lotteryId)
+				.populate('state')
+				.populate('externalIds');
 
-			try {
-				const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers !== false;
-
-				if (!hasMarriageNumbers) {
-					const hasMarriageNumberInTicket = purchase.numbers.some(item => {
-						const numberStr = item.numberPlayed.toString();
-						return numberStr.includes('x');
-					});
-
-					if (hasMarriageNumberInTicket) {
-						throw new Error(
-							`Marriage numbers are not allowed for ${lottery.title} (${lottery.state.name})`
-						);
-					}
-				}
-
-				// Check restrictions for this lottery
-				const availableAmount = await getAvailableAmount(
-					purchase.lotteryId,
-					purchase.numbers.map(item => item.numberPlayed),
-					hasMarriageNumbers
-				);
-
-				let purchaseAmount = 0;
-				const processedNumbers = [];
-
-				for (const item of purchase.numbers) {
-					// Validate number and amount
-					if (
-						!item.numberPlayed ||
-						!item.amountPlayed ||
-						item.amountPlayed <= 0
-					) {
-						throw new Error(
-							`Invalid number or amount in purchase ${i}`
-						);
-					}
-
-					const numberStr = item.numberPlayed.toString();
-					const amountPlayed = parseInt(item.amountPlayed);
-
-					// Check individual number restrictions first
-					if (
-						availableAmount.individualNumber[numberStr] !==
-						undefined
-					) {
-						if (
-							availableAmount.individualNumber[numberStr] <
-							amountPlayed
-						) {
-							throw new Error(
-								`${numberStr} cannot be played with amount ${amountPlayed} in ${lottery.title} (${lottery.state.name}). Available limit: ${availableAmount.individualNumber[numberStr]}`
-							);
-						}
-					} else {
-						// Check digit-based restrictions
-						const numberLength = numberStr.length;
-
-						if (
-							numberLength === 2 &&
-							availableAmount.twoDigit[numberStr] !== undefined
-						) {
-							if (
-								availableAmount.twoDigit[numberStr] <
-								amountPlayed
-							) {
-								throw new Error(
-									`${numberStr} cannot be played with amount ${amountPlayed} in ${lottery.title} (${lottery.state.name}). Available limit: ${availableAmount.twoDigit[numberStr]}`
-								);
-							}
-						} else if (
-							numberLength === 3 &&
-							availableAmount.threeDigit[numberStr] !== undefined
-						) {
-							if (
-								availableAmount.threeDigit[numberStr] <
-								amountPlayed
-							) {
-								throw new Error(
-									`${numberStr} cannot be played with amount ${amountPlayed} in ${lottery.title} (${lottery.state.name}). Available limit: ${availableAmount.threeDigit[numberStr]}`
-								);
-							}
-						} else if (
-							numberLength === 4 &&
-							availableAmount.fourDigit[numberStr] !== undefined
-						) {
-							if (
-								availableAmount.fourDigit[numberStr] <
-								amountPlayed
-							) {
-								throw new Error(
-									`${numberStr} cannot be played with amount ${amountPlayed} in ${lottery.title} (${lottery.state.name}). Available limit: ${availableAmount.fourDigit[numberStr]}`
-								);
-							}
-						} else if (
-							hasMarriageNumbers &&
-							numberLength === 5 &&
-							availableAmount.marriageNumber[numberStr] !==
-							undefined
-						) {
-							if (
-								availableAmount.marriageNumber[numberStr] <
-								amountPlayed
-							) {
-								throw new Error(
-									`${numberStr} cannot be played with amount ${amountPlayed} in ${lottery.title} (${lottery.state.name}). Available limit: ${availableAmount.marriageNumber[numberStr]}`
-								);
-							}
-						}
-					}
-
-					purchaseAmount += amountPlayed;
-					processedNumbers.push({
-						numberPlayed: item.numberPlayed,
-						amountPlayed: amountPlayed,
-					});
-				}
-
-				totalAmount += purchaseAmount;
-
-				processedPurchases.push({
-					lottery,
-					numbers: processedNumbers,
-					totalAmountPlayed: purchaseAmount,
-				});
-			} catch (error) {
+			if (!lottery || lottery.status !== 'SCHEDULED') {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: error.message,
-						failedPurchaseIndex: i,
-						lottery: lottery.title,
-						state: lottery.state.name,
+						error: `Lottery ${purchase.lotteryId} is not available for play`,
 					},
 				};
 			}
+
+			// Check if lottery supports marriage numbers
+			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers || false;
+
+			// Get lottery restrictions
+			const lotteryRestriction = await LotteryRestriction.findOne({
+				lottery: purchase.lotteryId,
+			});
+
+			let availableAmount = null;
+			if (lotteryRestriction) {
+				availableAmount = lotteryRestriction.availableAmount;
+			}
+
+			// Process and validate numbers for this lottery
+			let purchaseTotal = 0;
+			const validatedNumbers = purchase.numbers.map(item => {
+				// Same validation logic as single ticket creation
+				if (availableAmount) {
+					if (hasMarriageNumbers) {
+						const numberStr = item.numberPlayed.toString();
+						const isMarriageNumber = numberStr.includes('x');
+
+						if (isMarriageNumber) {
+							if (
+								availableAmount.marriageNumber[numberStr] !== undefined &&
+								parseInt(availableAmount.marriageNumber[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
+								);
+							}
+						} else {
+							const numberLength = numberStr.length;
+
+							if (
+								numberLength === 2 &&
+								availableAmount.twoDigit[numberStr] !== undefined &&
+								parseInt(availableAmount.twoDigit[numberStr]) <
+								parseInt(item.amountPlayed)
+							) {
+								throw new Error(
+									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
+								);
+							}
+							// Add other length validations...
+						}
+					} else {
+						// Standard validation without marriage numbers
+						const numberStr = item.numberPlayed.toString();
+						const numberLength = numberStr.length;
+
+						if (
+							numberLength === 2 &&
+							availableAmount.twoDigit[numberStr] !== undefined &&
+							parseInt(availableAmount.twoDigit[numberStr]) <
+							parseInt(item.amountPlayed)
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
+							);
+						}
+						// Add other length validations...
+					}
+				}
+
+				purchaseTotal += parseInt(item.amountPlayed);
+				return {
+					numberPlayed: item.numberPlayed,
+					amountPlayed: parseInt(item.amountPlayed),
+				};
+			});
+
+			processedPurchases.push({
+				lottery,
+				numbers: validatedNumbers,
+				totalAmountPlayed: purchaseTotal,
+			});
+
+			totalAmount += purchaseTotal;
 		}
 
 		// Check if user has sufficient balance for all purchases
@@ -671,6 +896,9 @@ export const create = async (body, user) => {
 					totalAmountPlayed: processedPurchase.totalAmountPlayed,
 					cashType,
 					numbers: processedPurchase.numbers,
+					// NEW: Store tier and payout config
+					userTierAtPurchase: userTier,
+					payoutConfig: payoutConfig,
 				};
 
 				const borletteTicket = await BorletteTicket.create(ticketData);
@@ -725,7 +953,9 @@ export const create = async (body, user) => {
 						totalAmount,
 						cashType,
 						baseXP,
-						multiplier: cashTypeMultiplier * multiStateMultiplier
+						multiplier: cashTypeMultiplier * multiStateMultiplier,
+						userTier: userTier,
+						payoutPercentage: payoutConfig.percentage
 					}
 				);
 
@@ -753,6 +983,8 @@ export const create = async (body, user) => {
 						],
 						cashType,
 						purchaseTime,
+						userTier: userTier,
+						payoutPercentage: payoutConfig.percentage,
 					},
 				},
 			};

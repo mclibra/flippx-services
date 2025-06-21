@@ -2332,3 +2332,155 @@ export const getDominoStats = async (query, user) => {
 		};
 	}
 };
+
+export const getLotteryDashboard = async (params, user) => {
+	try {
+		if (!['ADMIN'].includes(user.role)) {
+			throw new Error('You are not authorized to view dashboard data.');
+		}
+
+		// Get existing dashboard data (call the original function)
+		const originalDashboard = await getLotteryDashboard(params, user);
+
+		if (originalDashboard.status !== 200) {
+			return originalDashboard;
+		}
+
+		// Add tier-based analytics
+		const { BorletteTicket } = await import('../borlette_ticket/model');
+		const { PayoutConfig } = await import('../payout_config/model');
+
+		// Get tier distribution for recent tickets
+		const tierDistribution = await BorletteTicket.aggregate([
+			{
+				$match: {
+					status: 'COMPLETED',
+					createdAt: { $gte: moment().subtract(30, 'days').toDate() }
+				}
+			},
+			{
+				$group: {
+					_id: '$userTierAtPurchase',
+					ticketCount: { $sum: 1 },
+					totalPlayed: { $sum: '$totalAmountPlayed' },
+					totalWon: { $sum: '$totalAmountWon' },
+					avgPayoutPercentage: { $avg: '$payoutConfig.percentage' }
+				}
+			},
+			{
+				$addFields: {
+					profitMargin: {
+						$multiply: [
+							{
+								$divide: [
+									{ $subtract: ['$totalPlayed', '$totalWon'] },
+									'$totalPlayed'
+								]
+							},
+							100
+						]
+					}
+				}
+			},
+			{
+				$sort: { '_id': 1 }
+			}
+		]);
+
+		// Get active payout configurations
+		const activePayoutConfigs = await PayoutConfig.find({
+			isActive: true,
+			$or: [
+				{ validTo: null },
+				{ validTo: { $gte: new Date() } }
+			],
+			validFrom: { $lte: new Date() }
+		}).populate('createdBy', 'userName name');
+
+		// Get promotional configurations count
+		const promotionalConfigsCount = await PayoutConfig.countDocuments({
+			isActive: true,
+			isPromotional: true,
+			$or: [
+				{ validTo: null },
+				{ validTo: { $gte: new Date() } }
+			],
+			validFrom: { $lte: new Date() }
+		});
+
+		// Calculate tier impact on revenue
+		const tierImpactAnalysis = await BorletteTicket.aggregate([
+			{
+				$match: {
+					status: 'COMPLETED',
+					createdAt: { $gte: moment().subtract(7, 'days').toDate() }
+				}
+			},
+			{
+				$group: {
+					_id: {
+						date: {
+							$dateToString: {
+								format: '%Y-%m-%d',
+								date: '$createdAt'
+							}
+						},
+						tier: '$userTierAtPurchase'
+					},
+					dailyRevenue: { $sum: '$totalAmountPlayed' },
+					dailyPayouts: { $sum: '$totalAmountWon' },
+					ticketCount: { $sum: 1 }
+				}
+			},
+			{
+				$addFields: {
+					dailyProfit: { $subtract: ['$dailyRevenue', '$dailyPayouts'] }
+				}
+			},
+			{
+				$sort: { '_id.date': -1, '_id.tier': 1 }
+			}
+		]);
+
+		// Enhanced response with tier analytics
+		const enhancedResponse = {
+			...originalDashboard.entity,
+			tierAnalytics: {
+				tierDistribution,
+				activePayoutConfigurations: activePayoutConfigs,
+				promotionalConfigurationsCount: promotionalConfigsCount,
+				weeklyTierImpact: tierImpactAnalysis,
+				summary: {
+					totalTiersWithCustomPayouts: activePayoutConfigs.length,
+					averagePayoutIncrease: tierDistribution.reduce((acc, tier) => {
+						if (tier._id !== 'NONE' && tier._id !== 'SILVER') {
+							return acc + ((tier.avgPayoutPercentage || 60) - 60);
+						}
+						return acc;
+					}, 0) / Math.max(1, tierDistribution.filter(t => t._id !== 'NONE' && t._id !== 'SILVER').length),
+					totalEnhancedTierTickets: tierDistribution.reduce((acc, tier) => {
+						if (tier._id === 'GOLD' || tier._id === 'VIP') {
+							return acc + tier.ticketCount;
+						}
+						return acc;
+					}, 0)
+				}
+			}
+		};
+
+		return {
+			status: 200,
+			entity: enhancedResponse
+		};
+
+	} catch (error) {
+		console.error('Error getting enhanced lottery dashboard:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to retrieve enhanced dashboard data'
+			}
+		};
+	}
+};

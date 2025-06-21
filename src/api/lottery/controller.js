@@ -3,7 +3,7 @@ import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { BorletteTicket } from '../borlette_ticket/model';
 import { Lottery, LotteryRestriction } from './model';
 import { State } from '../state/model';
-import { publishResult } from './resultPublisher';
+import { publishResult } from '../../services/lottery/resultPublisher';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
