@@ -1,9 +1,9 @@
-import moment from 'moment';
-import { Lottery } from '../../api/lottery/model';
-import { BorletteTicket } from '../../api/borlette_ticket/model';
-import { MegaMillionTicket } from '../../api/megamillion_ticket/model';
 import { makeTransaction } from '../../api/transaction/controller';
+import { MegaMillionTicket } from '../../api/megamillion_ticket/model';
+import { BorletteTicket } from '../../api/borlette_ticket/model';
+import { Lottery } from '../../api/lottery/model';
 import PayoutService from '../payout/payoutService';
+import moment from 'moment';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
@@ -42,10 +42,10 @@ export const publishResult = async (lotteryId, results) => {
 	}
 };
 
-// NEW: Helper function to apply tier-based payout calculations
+// Apply tier-based payout for 1st place only
 const applyTierBasedPayout = async (baseAmount, ticket) => {
 	try {
-		// Use the tier stored at purchase time
+		// Get user tier from ticket
 		const userTier = ticket.userTierAtPurchase || 'NONE';
 		const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
 
@@ -204,7 +204,8 @@ async function processTicketsAndPublishResults(lottery, results) {
 										baseAmountWon = number.amountPlayed * 60;
 										break;
 									case `${winningNumbers[1]}`:
-										baseAmountWon = number.amountPlayed * 20;
+										// FIXED: Changed from 20 to 15 for 2nd place
+										baseAmountWon = number.amountPlayed * 15;
 										break;
 									case `${winningNumbers[2]}`:
 										baseAmountWon = number.amountPlayed * 10;
@@ -214,7 +215,13 @@ async function processTicketsAndPublishResults(lottery, results) {
 
 							// NEW: Apply tier-based adjustment to the base payout
 							if (baseAmountWon > 0) {
-								number.amountWon = await applyTierBasedPayout(baseAmountWon, ticket);
+								// Only apply tier adjustment for 1st place (winningNumbers[0])
+								if (number.numberPlayed.toString() === winningNumbers[0]) {
+									number.amountWon = await applyTierBasedPayout(baseAmountWon, ticket);
+								} else {
+									// 2nd and 3rd place use fixed percentages (no tier adjustment)
+									number.amountWon = baseAmountWon;
+								}
 
 								// Update result tracking
 								borletteResult[number.numberPlayed].amountReceived += number.amountPlayed;

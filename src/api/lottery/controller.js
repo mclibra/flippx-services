@@ -4,6 +4,7 @@ import { BorletteTicket } from '../borlette_ticket/model';
 import { Lottery, LotteryRestriction } from './model';
 import { State } from '../state/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
+import PayoutService from '../../services/payout/payoutService';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
@@ -87,9 +88,6 @@ export const list = async ({
 	}
 };
 
-// Updated controller.js - Add these modifications
-
-// 1. Modified nextLottery function to return list of upcoming lotteries
 export const nextLottery = async ({
 	type,
 	stateId,
@@ -153,7 +151,6 @@ export const nextLottery = async ({
 	}
 };
 
-// 2. New admin lottery dashboard endpoint
 export const getLotteryDashboard = async (_, { role }) => {
 	try {
 		if (role !== 'ADMIN') {
@@ -1090,29 +1087,54 @@ export const allStatesSummary = async (_, { role }) => {
 	}
 };
 
-export const preview = async ({ id }, results) => {
+export const preview = async (body, user) => {
 	try {
-		const lottery = await Lottery.findById(id);
-		if (lottery._id) {
-			const preview = await previewResult(lottery, results);
+		const { id, numbers } = body;
+		if (!id) {
 			return {
-				status: 200,
+				status: 400,
 				entity: {
-					success: true,
-					preview,
+					success: false,
+					error: 'Lottery ID is required',
 				},
 			};
 		}
+
+		if (!numbers || !Array.isArray(numbers) || numbers.length !== 3) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Three winning numbers are required',
+				},
+			};
+		}
+
+		const lottery = await Lottery.findById(id);
+		if (!lottery) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Lottery not found',
+				},
+			};
+		}
+
+		const results = { numbers };
+		const preview = await previewResult(lottery, results);
+
 		return {
-			status: 500,
+			status: 200,
 			entity: {
-				success: false,
-				error: 'Invalid parameters.',
+				success: true,
+				preview,
 			},
 		};
 	} catch (error) {
+		console.log(error);
 		return {
-			status: 500,
+			status: 409,
 			entity: {
 				success: false,
 				error: error.errors || error,
@@ -1181,12 +1203,12 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 		ticketList = await MegaMillionTicket.find({
 			lottery: _id,
 			status: 'ACTIVE',
-		});
+		}).populate('user');
 	} else {
 		ticketList = await BorletteTicket.find({
 			lottery: _id,
 			status: 'ACTIVE',
-		});
+		}).populate('user');
 	}
 	let megamillionResult = {
 		tickets: [],
@@ -1317,8 +1339,10 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 				ticket.counter = 0;
 				switch (type) {
 					case 'BORLETTE':
-						ticket.numbers.map(number => {
+						// NEW: Process each number with tier-based payout calculations for preview
+						for (const number of ticket.numbers) {
 							number.amountWon = 0;
+							let baseAmountWon = 0;
 
 							if (
 								hasMarriageNumbers &&
@@ -1326,52 +1350,59 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 									number.numberPlayed.toString()
 								) !== -1
 							) {
-								number.amountWon = number.amountPlayed * 500;
+								baseAmountWon = number.amountPlayed * 500;
 							} else {
 								switch (number.numberPlayed.toString()) {
 									case `${winningNumbers[0]}${winningNumbers[1]}`:
-										number.amountWon =
-											number.amountPlayed * 800;
+										baseAmountWon = number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[1]}${winningNumbers[2]}`:
-										number.amountWon =
-											number.amountPlayed * 800;
+										baseAmountWon = number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[0]}${winningNumbers[2]}`:
-										number.amountWon =
-											number.amountPlayed * 800;
+										baseAmountWon = number.amountPlayed * 800;
 										break;
 									case `${bonusNumber}${winningNumbers[0]}`:
-										number.amountWon =
-											number.amountPlayed * 300;
+										baseAmountWon = number.amountPlayed * 300;
 										break;
 									case `${winningNumbers[0]}`:
-										number.amountWon =
-											number.amountPlayed * 65;
+										// 1st place: Base 60x (will be adjusted by tier)
+										baseAmountWon = number.amountPlayed * 60;
 										break;
 									case `${winningNumbers[1]}`:
-										number.amountWon =
-											number.amountPlayed * 20;
+										// 2nd place: Fixed 15x for all tiers (FIXED from 20x to 15x)
+										baseAmountWon = number.amountPlayed * 15;
 										break;
 									case `${winningNumbers[2]}`:
-										number.amountWon =
-											number.amountPlayed * 10;
+										// 3rd place: Fixed 10x for all tiers (already correct)
+										baseAmountWon = number.amountPlayed * 10;
 										break;
 								}
 							}
-							if (number.amountWon > 0) {
-								borletteResult[
-									number.numberPlayed
-								].amountReceived += number.amountPlayed;
-								borletteResult[number.numberPlayed].amountWon +=
-									number.amountWon;
-								borletteResult[number.numberPlayed].counter +=
-									1;
+
+							// NEW: Apply tier-based adjustment with position-specific logic for preview
+							if (baseAmountWon > 0) {
+								// Get user tier from ticket or default
+								const userTier = ticket.userTierAtPurchase || 'NONE';
+
+								number.amountWon = await applyTierBasedPayoutForPreview(
+									baseAmountWon,
+									userTier,
+									number.numberPlayed.toString(),
+									winningNumbers
+								);
+
+								// Update result tracking
+								if (borletteResult[number.numberPlayed]) {
+									borletteResult[number.numberPlayed].amountReceived += number.amountPlayed;
+									borletteResult[number.numberPlayed].amountWon += number.amountWon;
+									borletteResult[number.numberPlayed].counter += 1;
+								}
 							}
-							borletteResult.totalAmountReceived +=
-								number.amountPlayed;
+
+							borletteResult.totalAmountReceived += number.amountPlayed;
 							borletteResult.totalAmountWon += number.amountWon;
-						});
+						}
 						break;
 					case 'MEGAMILLION': {
 						const matchedNumbers = ticket.numbers
@@ -1412,8 +1443,7 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 							!matchedMegaBall
 						) {
 							megamillionResult.matches['4_only'].counter += 1;
-							megamillionResult.matches['4_only'].amountWon +=
-								500;
+							megamillionResult.matches['4_only'].amountWon += 500;
 							ticket.amountWon = 500;
 						} else if (
 							matchedNumbers.length === 3 &&
@@ -1459,8 +1489,7 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 								2;
 							ticket.amountWon = 2;
 						}
-						megamillionResult.totalAmountReceived +=
-							MEGAMILLION_TICKET_AMOUNT;
+						megamillionResult.totalAmountReceived += 2;
 						megamillionResult.totalAmountWon += ticket.amountWon;
 						break;
 					}
@@ -1469,8 +1498,32 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 			})
 	);
 	const tickets = await Promise.all(ticketsPromise);
-
 	return type === 'MEGAMILLION'
 		? { ...megamillionResult, tickets }
 		: { ...borletteResult, tickets };
+};
+
+const applyTierBasedPayoutForPreview = async (baseAmount, userTier, playedNumber, winningNumbers) => {
+	try {
+		// Map NONE tier to SILVER for payout purposes
+		const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
+
+		// Check if this is a 1st place win (only 1st place gets tier-based multipliers)
+		const isFirstPlace = playedNumber === winningNumbers[0];
+
+		// If not 1st place, return base amount unchanged (2nd and 3rd place are fixed for all tiers)
+		if (!isFirstPlace) {
+			return baseAmount;
+		}
+
+		// Apply tier-based multiplier only for 1st place wins
+		const payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+		const tierMultiplier = payoutConfig.percentage / 60; // 60% is the base (Silver)
+
+		return Math.round(baseAmount * tierMultiplier);
+	} catch (error) {
+		console.error('Error applying tier-based payout for preview:', error);
+		// Return original amount as fallback
+		return baseAmount;
+	}
 };
