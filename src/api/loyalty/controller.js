@@ -1,6 +1,7 @@
 import moment from 'moment';
 import { LoyaltyProfile, LoyaltyTransaction, ReferralCommission } from './model';
 import { User } from '../user/model';
+import { Wallet } from '../wallet/model';
 import { Transaction } from '../transaction/model';
 import InfluencerCommissionService from '../../services/influencer/commissionService';
 import {
@@ -1433,7 +1434,6 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 			});
 
 			// Credit commission to referrer's wallet
-			const { Wallet } = await import('../wallet/model');
 			const referrerWallet = await Wallet.findOne({ user: referrer._id });
 			if (referrerWallet) {
 				referrerWallet.realBalance += commissionAmount;
@@ -1514,7 +1514,6 @@ export const processNoWinCashback = async () => {
 					await loyalty.save();
 
 					// Award cashback as real balance
-					const { Wallet } = await import('../wallet/model');
 					const userWallet = await Wallet.findOne({ user: loyalty.user._id });
 					if (userWallet) {
 						userWallet.realBalance += cashbackAmount;

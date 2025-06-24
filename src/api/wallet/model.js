@@ -18,8 +18,10 @@ const WalletSchema = new Schema(
 	{
 		user: { type: String, ref: 'User', required: true },
 		virtualBalance: { type: Number, required: true, default: 0.0 },
-		realBalance: { type: Number, required: true, default: 0.0 },
+		realBalanceWithdrawable: { type: Number, required: true, default: 0.0 },
+		realBalanceNonWithdrawable: { type: Number, required: true, default: 0.0 },
 		active: { type: Boolean, default: true },
+		pendingWithdrawals: { type: Number, default: 0.0 },
 	},
 	{
 		timestamps: true,
@@ -31,6 +33,10 @@ const WalletSchema = new Schema(
 		},
 	}
 );
+
+WalletSchema.virtual('realBalance').get(function () {
+	return this.realBalanceWithdrawable + this.realBalanceNonWithdrawable;
+});
 
 const PaymentSchema = new Schema(
 	{

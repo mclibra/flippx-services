@@ -34,18 +34,16 @@ export const createSystemAccount = async () => {
 
 			systemUser = await User.create(systemData);
 
-			// Create wallet for system account
+			// Create wallet for system account with new Real Cash structure
 			await Wallet.create({
 				user: systemUser._id,
 				virtualBalance: 0,
-				realBalance: 0,
+				realBalanceWithdrawable: 0,
+				realBalanceNonWithdrawable: 0,
 				active: true,
 			});
 
 			console.log('System account created with ID:', systemUser._id);
-
-			// Store system account ID in config or environment variable if needed
-			// This would typically be done through updating the environment
 		} else {
 			console.log(
 				'System account already exists with ID:',
@@ -65,10 +63,15 @@ const createNewAdminUser = async userData => {
 	if (!newUser) {
 		return null;
 	}
+
+	// Create wallet with new Real Cash structure
 	await Wallet.create({
 		user: newUser._id,
 		virtualBalance: 0,
-		realBalance: 0,
+		realBalanceWithdrawable: 0,
+		realBalanceNonWithdrawable: 0,
+		active: true,
 	});
+
 	return newUser;
 };

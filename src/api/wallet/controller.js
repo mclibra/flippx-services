@@ -7,32 +7,37 @@ import { LoyaltyService } from '../loyalty/service';
 
 export const getUserBalance = async user => {
 	try {
-		const walletData = await Wallet.findOne({
-			user: user._id,
-		});
-		if (walletData._id) {
+		const wallet = await Wallet.findOne({ user: user._id });
+		if (!wallet) {
 			return {
-				status: 200,
+				status: 404,
 				entity: {
-					success: true,
-					walletData,
+					success: false,
+					error: 'Wallet not found',
 				},
 			};
 		}
+
 		return {
-			status: 400,
+			status: 200,
 			entity: {
-				success: false,
-				error: 'Invalid parameters.',
+				success: true,
+				balance: {
+					virtualBalance: wallet.virtualBalance,
+					realBalanceWithdrawable: wallet.realBalanceWithdrawable,
+					realBalanceNonWithdrawable: wallet.realBalanceNonWithdrawable,
+					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
+					totalBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable + wallet.virtualBalance,
+				},
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		console.error('Get wallet balance error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: error.message || 'Failed to get wallet balance',
 			},
 		};
 	}
@@ -69,25 +74,35 @@ export const withdrawalRequest = async (user, body) => {
 			};
 		}
 
+		if (!bankAccountId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Bank account is required',
+				},
+			};
+		}
+
 		// **NEW: Check tier-based withdrawal limits**
 		try {
 			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
 			if (!withdrawalLimitResult.success) {
 				return {
-					status: 400,
+					status: 500,
 					entity: {
 						success: false,
-						error: withdrawalLimitResult.error || 'Failed to check withdrawal limits',
+						error: 'Failed to validate withdrawal limits. Please try again.',
 					},
 				};
 			}
 
-			if (withdrawalLimitResult.availableAmount < amount) {
+			if (amount > withdrawalLimitResult.availableAmount) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Weekly withdrawal limit exceeded. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
+						error: `Withdrawal amount exceeds your weekly limit. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
 						availableAmount: withdrawalLimitResult.availableAmount,
 						weeklyLimit: withdrawalLimitResult.weeklyLimit,
 						usedAmount: withdrawalLimitResult.usedAmount,
@@ -118,13 +133,15 @@ export const withdrawalRequest = async (user, body) => {
 			};
 		}
 
-		// Check sufficient balance
-		if (wallet.realBalance < amount) {
+		// Check sufficient withdrawable balance
+		if (wallet.realBalanceWithdrawable < amount) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Insufficient real cash balance',
+					error: 'Insufficient withdrawable real cash balance',
+					availableWithdrawable: wallet.realBalanceWithdrawable,
+					totalReal: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
 				},
 			};
 		}
@@ -160,8 +177,8 @@ export const withdrawalRequest = async (user, body) => {
 		});
 
 		// Update wallet - place hold on funds
-		const previousBalance = wallet.realBalance;
-		wallet.realBalance -= amount;
+		const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
+		wallet.realBalanceWithdrawable -= amount;
 		wallet.pendingWithdrawals = (wallet.pendingWithdrawals || 0) + amount;
 		await wallet.save();
 
@@ -172,11 +189,12 @@ export const withdrawalRequest = async (user, body) => {
 			transactionType: 'PENDING_DEBIT',
 			transactionIdentifier: 'WITHDRAWAL_REQUEST',
 			transactionAmount: amount,
-			previousBalance,
-			newBalance: wallet.realBalance,
+			previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
+			newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
 			transactionData: {
 				withdrawalId: withdrawal._id,
 				bankAccount: bankAccountId,
+				deductedFromWithdrawable: amount,
 			},
 			status: 'COMPLETED',
 		});
@@ -468,9 +486,11 @@ export const getAllPayments = async (user, query) => {
 	}
 };
 
-export const getWalletSummary = async user => {
+export const getWalletSummary = async req => {
 	try {
-		// Get wallet data
+		const user = req.user;
+
+		// Get user wallet
 		const wallet = await Wallet.findOne({ user: user._id });
 		if (!wallet) {
 			return {
@@ -521,13 +541,21 @@ export const getWalletSummary = async user => {
 			status: 200,
 			entity: {
 				success: true,
-				wallet,
+				wallet: {
+					virtualBalance: wallet.virtualBalance,
+					realBalanceWithdrawable: wallet.realBalanceWithdrawable,
+					realBalanceNonWithdrawable: wallet.realBalanceNonWithdrawable,
+					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
+					active: wallet.active,
+				},
 				recentTransactions,
 				pendingWithdrawals,
 				loyaltyInfo, // Include tier-based withdrawal information
 				summary: {
-					totalBalance: wallet.realBalance + wallet.virtualBalance,
-					realBalance: wallet.realBalance,
+					totalBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable + wallet.virtualBalance,
+					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
+					withdrawableBalance: wallet.realBalanceWithdrawable,
+					nonWithdrawableBalance: wallet.realBalanceNonWithdrawable,
 					virtualBalance: wallet.virtualBalance,
 					pendingWithdrawalAmount: pendingWithdrawals.reduce((sum, w) => sum + w.amount, 0),
 					pendingWithdrawalCount: pendingWithdrawals.length,

@@ -1,62 +1,55 @@
 import { Withdrawal } from './model';
-import { BankAccount } from '../bank_account/model';
 import { Wallet } from '../wallet/model';
+import { BankAccount } from '../bank_account/model';
 import { Transaction } from '../transaction/model';
 import { User } from '../user/model';
-import { payoneerConfig } from '../../../config';
-import { LoyaltyService } from '../loyalty/service'; // ADD LOYALTY SERVICE IMPORT
+import { LoyaltyService } from '../loyalty/service';
 
 export const initiateWithdrawal = async req => {
 	try {
 		const { amount, bankAccountId } = req.body;
 		const user = req.user;
 
-		// **NEW: Document Verification Check**
-		if (
-			!user.idProof ||
-			user.idProof.verificationStatus !== 'VERIFIED' ||
-			!user.addressProof ||
-			user.addressProof.verificationStatus !== 'VERIFIED'
-		) {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Document verification required to initiate withdrawal. Please upload and get your ID and address documents verified.',
-				},
-			};
-		}
-
-		// Validate withdrawal amount
-		if (amount < payoneerConfig.minWithdrawalAmount) {
+		// Validate input
+		if (!amount || amount <= 0) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Minimum withdrawal amount is ${payoneerConfig.minWithdrawalAmount}`,
+					error: 'Invalid withdrawal amount',
 				},
 			};
 		}
 
-		// **NEW: Check tier-based withdrawal limits**
+		if (!bankAccountId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Bank account is required',
+				},
+			};
+		}
+
+		// **NEW: Check loyalty-based withdrawal limits**
 		try {
 			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
 			if (!withdrawalLimitResult.success) {
 				return {
-					status: 400,
+					status: 500,
 					entity: {
 						success: false,
-						error: withdrawalLimitResult.error || 'Failed to check withdrawal limits',
+						error: 'Failed to validate withdrawal limits. Please try again.',
 					},
 				};
 			}
 
-			if (withdrawalLimitResult.availableAmount < amount) {
+			if (amount > withdrawalLimitResult.availableAmount) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Weekly withdrawal limit exceeded. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
+						error: `Withdrawal amount exceeds your weekly limit. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
 						availableAmount: withdrawalLimitResult.availableAmount,
 						weeklyLimit: withdrawalLimitResult.weeklyLimit,
 						usedAmount: withdrawalLimitResult.usedAmount,
@@ -75,14 +68,16 @@ export const initiateWithdrawal = async req => {
 			};
 		}
 
-		// Verify sufficient real cash balance
+		// Verify sufficient withdrawable real cash balance
 		const wallet = await Wallet.findOne({ user: user._id });
-		if (!wallet || wallet.realBalance < amount) {
+		if (!wallet || wallet.realBalanceWithdrawable < amount) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Insufficient real cash balance',
+					error: 'Insufficient withdrawable real cash balance',
+					availableWithdrawable: wallet ? wallet.realBalanceWithdrawable : 0,
+					totalReal: wallet ? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable : 0,
 				},
 			};
 		}
@@ -118,8 +113,8 @@ export const initiateWithdrawal = async req => {
 		});
 
 		// Place a hold on the funds by updating wallet
-		const previousBalance = wallet.realBalance;
-		wallet.realBalance -= amount;
+		const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
+		wallet.realBalanceWithdrawable -= amount;
 		await wallet.save();
 
 		// Record transaction
@@ -129,11 +124,12 @@ export const initiateWithdrawal = async req => {
 			transactionType: 'DEBIT',
 			transactionIdentifier: 'WITHDRAWAL_PENDING',
 			transactionAmount: amount,
-			previousBalance,
-			newBalance: wallet.realBalance,
+			previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
+			newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
 			transactionData: {
 				withdrawalId: withdrawal._id,
 				bankAccountId: bankAccountId,
+				deductedFromWithdrawable: amount,
 			},
 			status: 'PENDING',
 		});
@@ -175,7 +171,7 @@ export const approveWithdrawal = async req => {
 		}
 
 		// Find the withdrawal
-		const withdrawal = await Withdrawal.findById(id);
+		const withdrawal = await Withdrawal.findById(id).populate('user');
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -186,34 +182,12 @@ export const approveWithdrawal = async req => {
 			};
 		}
 
-		// Verify it's in PENDING status
 		if (withdrawal.status !== 'PENDING') {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Cannot approve withdrawal in ${withdrawal.status} status`,
-				},
-			};
-		}
-
-		// Find the pending transaction
-		const pendingTransaction = await Transaction.findOne({
-			user: withdrawal.user,
-			cashType: 'REAL',
-			transactionIdentifier: 'WITHDRAWAL_PENDING',
-			transactionData: {
-				withdrawalId: withdrawal._id.toString(),
-			},
-			status: 'PENDING',
-		});
-
-		if (!pendingTransaction) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Pending transaction not found',
+					error: 'Withdrawal is not in pending status',
 				},
 			};
 		}
@@ -221,24 +195,20 @@ export const approveWithdrawal = async req => {
 		// Update withdrawal status
 		withdrawal.status = 'APPROVED';
 		withdrawal.approvedBy = admin._id;
-		withdrawal.approvedAt = new Date();
+		withdrawal.processedDate = new Date();
 		await withdrawal.save();
 
 		// Update transaction status
-		pendingTransaction.status = 'COMPLETED';
-		await pendingTransaction.save();
-
-		// **NEW: Record withdrawal usage for loyalty tracking**
-		try {
-			const loyaltyResult = await LoyaltyService.recordWithdrawal(withdrawal.user, withdrawal.amount);
-			if (!loyaltyResult.success) {
-				console.warn(`Failed to record withdrawal for loyalty tracking for user ${withdrawal.user}:`, loyaltyResult.error);
-			} else {
-				console.log(`Withdrawal recorded for loyalty tracking: User ${withdrawal.user}, Amount: ${withdrawal.amount}`);
+		await Transaction.updateOne(
+			{
+				transactionIdentifier: 'WITHDRAWAL_PENDING',
+				'transactionData.withdrawalId': withdrawal._id,
+			},
+			{
+				status: 'COMPLETED',
+				transactionIdentifier: 'WITHDRAWAL_APPROVED',
 			}
-		} catch (loyaltyError) {
-			console.error(`Error recording withdrawal for loyalty tracking for user ${withdrawal.user}:`, loyaltyError);
-		}
+		);
 
 		return {
 			status: 200,
@@ -249,7 +219,7 @@ export const approveWithdrawal = async req => {
 			},
 		};
 	} catch (error) {
-		console.error('Withdrawal approval error:', error);
+		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -278,7 +248,7 @@ export const rejectWithdrawal = async req => {
 		}
 
 		// Find the withdrawal
-		const withdrawal = await Withdrawal.findById(id);
+		const withdrawal = await Withdrawal.findById(id).populate('user');
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -289,82 +259,70 @@ export const rejectWithdrawal = async req => {
 			};
 		}
 
-		// Verify it's in PENDING status
 		if (withdrawal.status !== 'PENDING') {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Cannot reject withdrawal in ${withdrawal.status} status`,
-				},
-			};
-		}
-
-		// Find the user's wallet
-		const wallet = await Wallet.findOne({ user: withdrawal.user });
-
-		// Find the pending transaction
-		const pendingTransaction = await Transaction.findOne({
-			user: withdrawal.user,
-			cashType: 'REAL',
-			transactionIdentifier: 'WITHDRAWAL_PENDING',
-			transactionData: {
-				withdrawalId: withdrawal._id.toString(),
-			},
-			status: 'PENDING',
-		});
-
-		if (!pendingTransaction) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Pending transaction not found',
+					error: 'Withdrawal is not in pending status',
 				},
 			};
 		}
 
 		// Update withdrawal status
 		withdrawal.status = 'REJECTED';
-		withdrawal.rejectionReason = reason;
+		withdrawal.rejectionReason = reason || 'Rejected by admin';
 		withdrawal.approvedBy = admin._id;
+		withdrawal.processedDate = new Date();
 		await withdrawal.save();
 
-		// Return funds to user's wallet
-		const previousBalance = wallet.realBalance;
-		wallet.realBalance += withdrawal.amount;
-		await wallet.save();
+		// Refund the amount back to user's withdrawable balance
+		const wallet = await Wallet.findOne({ user: withdrawal.user._id });
+		if (wallet) {
+			const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
+			wallet.realBalanceWithdrawable += withdrawal.amount;
+			await wallet.save();
 
-		// Update transaction status
-		pendingTransaction.status = 'CANCELLED';
-		await pendingTransaction.save();
+			// Create refund transaction
+			await Transaction.create({
+				user: withdrawal.user._id,
+				cashType: 'REAL',
+				transactionType: 'CREDIT',
+				transactionIdentifier: 'WITHDRAWAL_REJECTED',
+				transactionAmount: withdrawal.amount,
+				previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
+				newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
+				transactionData: {
+					withdrawalId: withdrawal._id,
+					rejectionReason: withdrawal.rejectionReason,
+					refundedToWithdrawable: withdrawal.amount,
+				},
+				status: 'COMPLETED',
+			});
+		}
 
-		// Record refund transaction
-		await Transaction.create({
-			user: withdrawal.user,
-			cashType: 'REAL',
-			transactionType: 'CREDIT',
-			transactionIdentifier: 'WITHDRAWAL_REJECTED',
-			transactionAmount: withdrawal.amount,
-			previousBalance,
-			newBalance: wallet.realBalance,
-			transactionData: {
-				withdrawalId: withdrawal._id,
-				rejectionReason: reason,
+		// Update original transaction status
+		await Transaction.updateOne(
+			{
+				transactionIdentifier: 'WITHDRAWAL_PENDING',
+				'transactionData.withdrawalId': withdrawal._id,
 			},
-			status: 'COMPLETED',
-		});
+			{
+				status: 'REJECTED',
+				transactionIdentifier: 'WITHDRAWAL_REJECTED',
+			}
+		);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				withdrawal,
-				message: 'Withdrawal rejected and funds returned',
+				message: 'Withdrawal rejected and amount refunded',
 			},
 		};
 	} catch (error) {
-		console.error('Withdrawal rejection error:', error);
+		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -393,29 +351,6 @@ export const getUserWithdrawals = async req => {
 
 		const total = await Withdrawal.countDocuments(query);
 
-		// **NEW: Get user's withdrawal processing time and limits based on tier**
-		let withdrawalInfo = {};
-		try {
-			const [processingTimeResult, limitResult] = await Promise.all([
-				LoyaltyService.getWithdrawalProcessingTime(user._id),
-				LoyaltyService.checkWithdrawalLimit(user._id)
-			]);
-
-			if (processingTimeResult.success) {
-				withdrawalInfo.processingTime = processingTimeResult.processingTimeHours;
-				withdrawalInfo.tier = processingTimeResult.tier;
-			}
-
-			if (limitResult.success) {
-				withdrawalInfo.weeklyLimit = limitResult.weeklyLimit;
-				withdrawalInfo.usedAmount = limitResult.usedAmount;
-				withdrawalInfo.availableAmount = limitResult.availableAmount;
-				withdrawalInfo.resetDate = limitResult.resetDate;
-			}
-		} catch (loyaltyError) {
-			console.error('Error getting withdrawal info for user:', loyaltyError);
-		}
-
 		return {
 			status: 200,
 			entity: {
@@ -427,7 +362,6 @@ export const getUserWithdrawals = async req => {
 					offset: parseInt(offset),
 					hasMore: (parseInt(offset) + parseInt(limit)) < total,
 				},
-				withdrawalInfo, // Include tier-based withdrawal information
 			},
 		};
 	} catch (error) {
