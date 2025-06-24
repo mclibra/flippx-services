@@ -89,7 +89,7 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 			// Get the appropriate balance based on cash type
 			const balanceToCheck =
 				cashType === 'REAL'
-					? wallet.realBalance
+					? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable
 					: wallet.virtualBalance;
 
 			if (balanceToCheck >= totalAmountPlayed) {
@@ -105,7 +105,7 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 				await makeTransaction(
 					user._id,
 					user.role,
-					'TICKET_ROULETTE',
+					'ROULETTE_BET',
 					totalAmountPlayed,
 					null,
 					null,
@@ -489,7 +489,7 @@ export const updatePlacedBet = async (id, winningNumber) => {
 								ticket.user._id,
 								totalXP,
 								'GAME_REWARD',
-								`Roulette win - Amount: $${ticket.totalAmountWon} (${ticket.cashType || 'VIRTUAL'})`,
+								`Roulette win - Amount: ${ticket.totalAmountWon} (${ticket.cashType || 'VIRTUAL'})`,
 								{
 									gameType: 'ROULETTE',
 									ticketId: ticket._id,
