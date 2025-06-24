@@ -1,7 +1,6 @@
 import moment from 'moment';
 import { LoyaltyProfile, LoyaltyTransaction, ReferralCommission } from './model';
 import { User } from '../user/model';
-import { Wallet } from '../wallet/model';
 import { Transaction } from '../transaction/model';
 import InfluencerCommissionService from '../../services/influencer/commissionService';
 import {
@@ -1290,7 +1289,6 @@ export const checkNoWinCashbackEligibility = async userId => {
 	}
 };
 
-// NEW: Process referral commission
 export const processReferralCommission = async (refereeId, gameType, playAmount, playId) => {
 	try {
 		// Check minimum bet requirement
@@ -1433,12 +1431,16 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 				tier: referrerLoyalty.currentTier,
 			});
 
-			// Credit commission to referrer's wallet
-			const referrerWallet = await Wallet.findOne({ user: referrer._id });
-			if (referrerWallet) {
-				referrerWallet.realBalance += commissionAmount;
-				await referrerWallet.save();
-			}
+			await makeTransaction(
+				referrer._id.toString(),
+				'USER',
+				'REFERRAL_COMMISSION',
+				commissionAmount,
+				'LOYALTY',
+				refereeId,
+				playId,
+				'REAL'
+			);
 
 			return {
 				success: true,
@@ -1513,12 +1515,16 @@ export const processNoWinCashback = async () => {
 
 					await loyalty.save();
 
-					// Award cashback as real balance
-					const userWallet = await Wallet.findOne({ user: loyalty.user._id });
-					if (userWallet) {
-						userWallet.realBalance += cashbackAmount;
-						await userWallet.save();
-					}
+					await makeTransaction(
+						loyalty.user._id.toString(),
+						'USER',
+						'CASHBACK',
+						cashbackAmount,
+						'LOYALTY',
+						null,
+						null,
+						'REAL'
+					);
 
 					// Create transaction record
 					await LoyaltyTransaction.create({

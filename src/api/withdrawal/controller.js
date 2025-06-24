@@ -2,8 +2,8 @@ import { Withdrawal } from './model';
 import { Wallet } from '../wallet/model';
 import { BankAccount } from '../bank_account/model';
 import { Transaction } from '../transaction/model';
-import { User } from '../user/model';
 import { LoyaltyService } from '../loyalty/service';
+import { makeTransaction } from '../transaction/controller';
 
 export const initiateWithdrawal = async req => {
 	try {
@@ -112,27 +112,16 @@ export const initiateWithdrawal = async req => {
 			requestDate: new Date(),
 		});
 
-		// Place a hold on the funds by updating wallet
-		const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
-		wallet.realBalanceWithdrawable -= amount;
-		await wallet.save();
-
-		// Record transaction
-		await Transaction.create({
-			user: user._id,
-			cashType: 'REAL',
-			transactionType: 'DEBIT',
-			transactionIdentifier: 'WITHDRAWAL_PENDING',
-			transactionAmount: amount,
-			previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
-			newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-			transactionData: {
-				withdrawalId: withdrawal._id,
-				bankAccountId: bankAccountId,
-				deductedFromWithdrawable: amount,
-			},
-			status: 'PENDING',
-		});
+		await makeTransaction(
+			user._id.toString(),
+			user.role,
+			'WITHDRAWAL_PENDING',
+			amount,
+			'WITHDRAWAL',
+			withdrawal._id.toString(),
+			bankAccountId,
+			'REAL'
+		);
 
 		return {
 			status: 200,
@@ -276,30 +265,16 @@ export const rejectWithdrawal = async req => {
 		withdrawal.processedDate = new Date();
 		await withdrawal.save();
 
-		// Refund the amount back to user's withdrawable balance
-		const wallet = await Wallet.findOne({ user: withdrawal.user._id });
-		if (wallet) {
-			const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
-			wallet.realBalanceWithdrawable += withdrawal.amount;
-			await wallet.save();
-
-			// Create refund transaction
-			await Transaction.create({
-				user: withdrawal.user._id,
-				cashType: 'REAL',
-				transactionType: 'CREDIT',
-				transactionIdentifier: 'WITHDRAWAL_REJECTED',
-				transactionAmount: withdrawal.amount,
-				previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
-				newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-				transactionData: {
-					withdrawalId: withdrawal._id,
-					rejectionReason: withdrawal.rejectionReason,
-					refundedToWithdrawable: withdrawal.amount,
-				},
-				status: 'COMPLETED',
-			});
-		}
+		await makeTransaction(
+			withdrawal.user._id.toString(),
+			withdrawal.user.role,
+			'WITHDRAWAL_REJECTED',
+			withdrawal.amount,
+			'WITHDRAWAL',
+			withdrawal._id.toString(),
+			null,
+			'REAL'
+		);
 
 		// Update original transaction status
 		await Transaction.updateOne(
@@ -370,27 +345,19 @@ export const getUserWithdrawals = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to fetch withdrawals',
+				error: error.message || 'Failed to get user withdrawals',
 			},
 		};
 	}
 };
 
-export const getAllWithdrawals = async req => {
-	try {
-		const admin = req.user;
-		const { limit = 10, offset = 0, status, userId } = req.query;
+export const getWithdrawals = async (req, res) => {
+	return await getUserWithdrawals(req);
+};
 
-		// Verify admin permissions
-		if (admin.role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized',
-				},
-			};
-		}
+export const getAdminWithdrawals = async req => {
+	try {
+		const { limit = 20, offset = 0, status, userId } = req.query;
 
 		let query = {};
 		if (status) {
@@ -429,53 +396,7 @@ export const getAllWithdrawals = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to fetch withdrawals',
-			},
-		};
-	}
-};
-
-export const getWithdrawalById = async req => {
-	try {
-		const { id } = req.params;
-		const user = req.user;
-
-		let query = { _id: id };
-
-		// Non-admin users can only see their own withdrawals
-		if (user.role !== 'ADMIN') {
-			query.user = user._id;
-		}
-
-		const withdrawal = await Withdrawal.findOne(query)
-			.populate('user', 'name phone email')
-			.populate('bankAccount')
-			.populate('approvedBy', 'name');
-
-		if (!withdrawal) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Withdrawal not found',
-				},
-			};
-		}
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				withdrawal,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to fetch withdrawal',
+				error: error.message || 'Failed to get admin withdrawals',
 			},
 		};
 	}

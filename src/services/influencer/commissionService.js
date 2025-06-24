@@ -1,9 +1,8 @@
 import { Influencer } from '../../api/influencer/model';
 import { InfluencerCommission } from '../../api/influencer_commission/model';
 import { User } from '../../api/user/model';
-import { Wallet } from '../../api/wallet/model';
-import { Transaction } from '../../api/transaction/model';
 import { LoyaltyTransaction } from '../../api/loyalty/model';
+import { makeTransaction } from '../../api/transaction/controller';
 import moment from 'moment';
 
 // Default influencer commission rates
@@ -93,11 +92,7 @@ class InfluencerCommissionService {
             const monthlyEarned = monthlyCommissions.length > 0 ? monthlyCommissions[0].totalEarned : 0;
 
             if (monthlyEarned >= commissionConfig.monthlyCap) {
-                return {
-                    success: false,
-                    message: 'Monthly commission cap reached',
-                    capReached: true
-                };
+                return { success: false, message: 'Monthly commission cap reached' };
             }
 
             // Calculate commission based on game type
@@ -110,22 +105,37 @@ class InfluencerCommissionService {
                     commissionRate = commissionConfig.perPlay;
                     break;
 
-                case 'roulette':
-                    // Check if this is the 100th spin
-                    const currentMonthSpins = await InfluencerCommission.countDocuments({
-                        influencer: referrer._id.toString(),
-                        gameType: 'ROULETTE',
-                        monthKey: monthKey,
-                    });
+                case 'roulette': {
+                    // Commission per 100 spins
+                    const spinHistory = await InfluencerCommission.aggregate([
+                        {
+                            $match: {
+                                influencer: referrer._id.toString(),
+                                gameType: 'ROULETTE',
+                                monthKey: monthKey,
+                            },
+                        },
+                        {
+                            $group: {
+                                _id: null,
+                                totalSpins: { $sum: 1 },
+                            },
+                        },
+                    ]);
 
-                    if ((currentMonthSpins + 1) % 100 === 0) {
+                    const totalSpins = spinHistory.length > 0 ? spinHistory[0].totalSpins : 0;
+                    const previousHundreds = Math.floor(totalSpins / 100);
+                    const currentHundreds = Math.floor((totalSpins + 1) / 100);
+
+                    if (currentHundreds > previousHundreds) {
                         commissionAmount = commissionConfig.per100Spins;
                         commissionRate = commissionConfig.per100Spins;
                     }
                     break;
+                }
 
-                case 'dominoes':
-                    // Calculate based on total wagered
+                case 'dominoes': {
+                    // Commission per $100 wagered
                     const wagerHistory = await InfluencerCommission.aggregate([
                         {
                             $match: {
@@ -152,6 +162,7 @@ class InfluencerCommissionService {
                         commissionRate = commissionConfig.per100Wagered;
                     }
                     break;
+                }
             }
 
             // Create commission record even if amount is 0 (for tracking)
@@ -183,55 +194,41 @@ class InfluencerCommissionService {
                     await commission.save();
                 }
 
-                // Credit commission to influencer's wallet
-                const influencerWallet = await Wallet.findOne({ user: referrer._id });
-                if (influencerWallet) {
-                    const previousBalance = influencerWallet.realBalance;
-                    influencerWallet.realBalance += commissionAmount;
-                    await influencerWallet.save();
+                // FIXED: Use makeTransaction instead of direct wallet update
+                await makeTransaction(
+                    referrer._id.toString(),
+                    'USER',
+                    'REFERRAL_COMMISSION',
+                    commissionAmount,
+                    'LOYALTY',
+                    refereeId,
+                    playId,
+                    'REAL'
+                );
 
-                    // Create transaction record
-                    await Transaction.create({
-                        user: referrer._id.toString(),
-                        cashType: 'REAL',
-                        transactionType: 'CREDIT',
-                        transactionIdentifier: 'INFLUENCER_COMMISSION',
-                        transactionAmount: commissionAmount,
-                        previousBalance,
-                        newBalance: influencerWallet.realBalance,
-                        transactionData: {
-                            gameType: gameType.toUpperCase(),
-                            refereeId,
-                            playId,
-                            commissionRate,
-                        },
-                        status: 'COMPLETED',
-                    });
+                // Create loyalty transaction for tracking
+                await LoyaltyTransaction.create({
+                    user: referrer._id.toString(),
+                    transactionType: 'REFERRAL_COMMISSION',
+                    xpAmount: 0, // Commissions are cash, not XP
+                    description: `Influencer ${gameType} commission from ${referee.userName || 'user'}`,
+                    reference: {
+                        commissionType: gameType.toUpperCase(),
+                        commissionAmount,
+                        referredUser: refereeId,
+                        playId,
+                        playAmount,
+                        isInfluencer: true,
+                    },
+                    previousBalance: 0,
+                    newBalance: 0,
+                    tier: 'INFLUENCER',
+                });
 
-                    // Create loyalty transaction for tracking
-                    await LoyaltyTransaction.create({
-                        user: referrer._id.toString(),
-                        transactionType: 'REFERRAL_COMMISSION',
-                        xpAmount: 0, // Commissions are cash, not XP
-                        description: `Influencer ${gameType} commission from ${referee.userName || 'user'}`,
-                        reference: {
-                            commissionType: gameType.toUpperCase(),
-                            commissionAmount,
-                            referredUser: refereeId,
-                            playId,
-                            playAmount,
-                            isInfluencer: true,
-                        },
-                        previousBalance: 0,
-                        newBalance: 0,
-                        tier: 'INFLUENCER',
-                    });
-
-                    // Update influencer total earned
-                    influencerContract.totalEarned += commissionAmount;
-                    influencerContract.lastPayoutDate = new Date();
-                    await influencerContract.save();
-                }
+                // Update influencer total earned
+                influencerContract.totalEarned += commissionAmount;
+                influencerContract.lastPayoutDate = new Date();
+                await influencerContract.save();
 
                 return {
                     success: true,

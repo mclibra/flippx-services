@@ -176,28 +176,16 @@ export const withdrawalRequest = async (user, body) => {
 			requestedAt: new Date(),
 		});
 
-		// Update wallet - place hold on funds
-		const previousWithdrawableBalance = wallet.realBalanceWithdrawable;
-		wallet.realBalanceWithdrawable -= amount;
-		wallet.pendingWithdrawals = (wallet.pendingWithdrawals || 0) + amount;
-		await wallet.save();
-
-		// Record transaction
-		await Transaction.create({
-			user: user._id,
-			cashType: 'REAL',
-			transactionType: 'PENDING_DEBIT',
-			transactionIdentifier: 'WITHDRAWAL_REQUEST',
-			transactionAmount: amount,
-			previousBalance: previousWithdrawableBalance + wallet.realBalanceNonWithdrawable,
-			newBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-			transactionData: {
-				withdrawalId: withdrawal._id,
-				bankAccount: bankAccountId,
-				deductedFromWithdrawable: amount,
-			},
-			status: 'COMPLETED',
-		});
+		await makeTransaction(
+			user._id.toString(),
+			user.role,
+			'WITHDRAWAL_REQUEST',
+			amount,
+			'WITHDRAWAL',
+			withdrawal._id.toString(),
+			bankAccountId,
+			'REAL'
+		);
 
 		return {
 			status: 200,
@@ -211,7 +199,7 @@ export const withdrawalRequest = async (user, body) => {
 					requestedAt: withdrawal.requestedAt,
 				},
 				wallet: {
-					realBalance: wallet.realBalance,
+					realBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
 					pendingWithdrawals: wallet.pendingWithdrawals,
 				},
 			},
@@ -337,7 +325,6 @@ export const confirmPayment = async (user, { paymentId }) => {
 		payment.confirmedBy = user._id;
 		await payment.save();
 
-		// Add funds to wallet using transaction system
 		await makeTransaction(
 			payment.user,
 			'USER',
@@ -418,12 +405,12 @@ export const getUserPayments = async user => {
 			},
 		};
 	} catch (error) {
-		console.error('Get payments error:', error);
+		console.error('Get user payments error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to fetch payments',
+				error: error.message || 'Failed to get user payments',
 			},
 		};
 	}
