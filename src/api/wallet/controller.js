@@ -4,6 +4,7 @@ import { makeTransaction } from '../transaction/controller';
 import { BankAccount } from '../bank_account/model';
 import { Withdrawal } from '../withdrawal/model';
 import { LoyaltyService } from '../loyalty/service';
+import { createPaymentSession, getPaymentSession, verifyWebhookSignature } from '../../services/payoneer';
 
 export const getUserBalance = async user => {
 	try {
@@ -166,12 +167,12 @@ export const withdrawalRequest = async (user, body) => {
 		});
 
 		await makeTransaction(
-			user._id.toString(),
+			user._id,
 			user.role,
 			'WITHDRAWAL_PENDING',
 			amount,
+			withdrawal._id,
 			'WITHDRAWAL',
-			withdrawal._id.toString(),
 			bankAccountId,
 			'REAL'
 		);
@@ -225,10 +226,9 @@ export const createPayment = async (user, body) => {
 		const payment = await Payment.create({
 			user: user._id,
 			amount,
-			paymentMethod,
+			method: paymentMethod,
 			description: description || `${paymentMethod} payment`,
 			status: 'PENDING',
-			createdAt: new Date(),
 		});
 
 		return {
@@ -251,7 +251,6 @@ export const createPayment = async (user, body) => {
 	}
 };
 
-// NEW: Create manual bank transfer payment (Admin only)
 export const createManualPayment = async (user, body) => {
 	try {
 		// Verify admin permissions
@@ -405,10 +404,10 @@ export const confirmPayment = async (user, { paymentId }) => {
 			'USER',
 			'WIRE_TRANSFER',
 			payment.amount,
-			'PAYMENT',
 			payment._id,
+			'PAYMENT',
 			null,
-			'REAL' // Payments add real cash
+			'REAL'
 		);
 
 		// **NEW: Record deposit for loyalty tracking**
@@ -450,32 +449,41 @@ export const confirmPayment = async (user, { paymentId }) => {
 	}
 };
 
-export const getUserPayments = async user => {
+export const getUserPayments = async ({ _id, query }) => {
 	try {
-		const { limit = 10, offset = 0, status } = user.query || {};
+		const {
+			page = 1,
+			limit = 10,
+			status,
+			method,
+		} = query;
 
-		let query = { user: user._id };
-		if (status) {
-			query.status = status.toUpperCase();
-		}
+		const filters = { user: _id };
 
-		const payments = await Payment.find(query)
+		if (status) filters.status = status;
+		if (method) filters.method = method;
+
+		const skip = (parseInt(page) - 1) * parseInt(limit);
+
+		const payments = await Payment.find(filters)
 			.sort({ createdAt: -1 })
+			.skip(skip)
 			.limit(parseInt(limit))
-			.skip(parseInt(offset));
+			.select('-providerResponse -metadata')
+			.lean();
 
-		const total = await Payment.countDocuments(query);
+		const total = await Payment.countDocuments(filters);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				payments,
-				total,
 				pagination: {
+					page: parseInt(page),
 					limit: parseInt(limit),
-					offset: parseInt(offset),
-					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+					total,
+					pages: Math.ceil(total / parseInt(limit)),
 				},
 			},
 		};
@@ -548,52 +556,70 @@ export const getAllPayments = async (user, query) => {
 	}
 };
 
-export const getWalletSummary = async req => {
+export const getWalletSummary = async (req) => {
 	try {
 		const user = req.user;
-
-		// Get user wallet
-		const wallet = await Wallet.findOne({ user: user._id });
-		if (!wallet) {
+		// Verify admin access
+		if (!['ADMIN'].includes(user.role)) {
 			return {
-				status: 404,
+				status: 403,
 				entity: {
 					success: false,
-					error: 'Wallet not found',
+					error: 'Unauthorized access',
 				},
 			};
 		}
 
+		// Find all wallets with user data
+		const wallets = await Wallet.aggregate([
+			{
+				$lookup: {
+					from: 'users',
+					localField: 'user',
+					foreignField: '_id',
+					as: 'userData',
+				},
+			},
+			{
+				$unwind: '$userData',
+			},
+			{
+				$match: {
+					'userData.role': { $nin: ['ADMIN', 'SYSTEM'] },
+				},
+			},
+		]);
+
 		// Get recent transactions
-		const recentTransactions = await Transaction.find({ user: user._id })
+		const recentTransactions = await Transaction.find({})
+			.populate('user', 'name phone')
 			.sort({ createdAt: -1 })
 			.limit(10)
-			.select('transactionType transactionIdentifier transactionAmount cashType createdAt status');
+			.lean();
 
 		// Get pending withdrawals
 		const pendingWithdrawals = await Withdrawal.find({
-			user: user._id,
-			status: 'PENDING'
-		}).select('amount requestedAt');
+			status: 'PENDING',
+		})
+			.populate('user', 'name phone')
+			.populate('bankAccount')
+			.sort({ createdAt: -1 })
+			.lean();
 
-		// **NEW: Get loyalty-based withdrawal information**
-		let loyaltyInfo = {};
+		// Calculate totals
+		const totalVirtualBalance = wallets.reduce((sum, w) => sum + w.virtualBalance, 0);
+		const totalRealBalanceWithdrawable = wallets.reduce((sum, w) => sum + w.realBalanceWithdrawable, 0);
+		const totalRealBalanceNonWithdrawable = wallets.reduce((sum, w) => sum + w.realBalanceNonWithdrawable, 0);
+		const totalRealBalance = totalRealBalanceWithdrawable + totalRealBalanceNonWithdrawable;
+		const totalBalance = totalVirtualBalance + totalRealBalance;
+
+		// **NEW: Get loyalty tier distribution summary**
+		let loyaltyInfo = null;
 		try {
-			const [processingTimeResult, limitResult] = await Promise.all([
-				LoyaltyService.getWithdrawalProcessingTime(user._id),
-				LoyaltyService.checkWithdrawalLimit(user._id)
-			]);
-
-			if (processingTimeResult.success) {
-				loyaltyInfo.processingTime = processingTimeResult.processingTimeHours;
-				loyaltyInfo.tier = processingTimeResult.tier;
-			}
-
-			if (limitResult.success) {
-				loyaltyInfo.weeklyLimit = limitResult.weeklyLimit;
-				loyaltyInfo.usedAmount = limitResult.usedAmount;
-				loyaltyInfo.availableAmount = limitResult.availableAmount;
-				loyaltyInfo.resetDate = limitResult.resetDate;
+			const loyaltyResult = await LoyaltyService.getLoyaltyTierDistribution();
+			if (loyaltyResult.success) {
+				loyaltyInfo = loyaltyResult.data;
+				loyaltyInfo.nextResetDate = loyaltyResult.resetDate;
 			}
 		} catch (loyaltyError) {
 			console.error('Error getting loyalty info for wallet summary:', loyaltyError);
@@ -604,23 +630,24 @@ export const getWalletSummary = async req => {
 			entity: {
 				success: true,
 				wallet: {
-					virtualBalance: wallet.virtualBalance,
-					realBalanceWithdrawable: wallet.realBalanceWithdrawable,
-					realBalanceNonWithdrawable: wallet.realBalanceNonWithdrawable,
-					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-					active: wallet.active,
+					virtualBalance: totalVirtualBalance,
+					realBalanceWithdrawable: totalRealBalanceWithdrawable,
+					realBalanceNonWithdrawable: totalRealBalanceNonWithdrawable,
+					totalRealBalance: totalRealBalance,
+					totalBalance: totalBalance,
 				},
 				recentTransactions,
 				pendingWithdrawals,
 				loyaltyInfo, // Include tier-based withdrawal information
 				summary: {
-					totalBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable + wallet.virtualBalance,
-					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-					withdrawableBalance: wallet.realBalanceWithdrawable,
-					nonWithdrawableBalance: wallet.realBalanceNonWithdrawable,
-					virtualBalance: wallet.virtualBalance,
+					totalBalance: totalBalance,
+					totalRealBalance: totalRealBalance,
+					withdrawableBalance: totalRealBalanceWithdrawable,
+					nonWithdrawableBalance: totalRealBalanceNonWithdrawable,
+					virtualBalance: totalVirtualBalance,
 					pendingWithdrawalAmount: pendingWithdrawals.reduce((sum, w) => sum + w.amount, 0),
 					pendingWithdrawalCount: pendingWithdrawals.length,
+					totalUsers: wallets.length,
 				},
 			},
 		};
@@ -636,23 +663,488 @@ export const getWalletSummary = async req => {
 	}
 };
 
-// Existing Payoneer functions (preserved as-is)
 export const initiateVirtualCashPurchase = async (req, res) => {
-	// Implementation preserved from existing code
-	// This function handles Payoneer integration for virtual cash purchases
+	try {
+		const { amount, virtualCashAmount, realCashAmount, currency = 'USD' } = req.body;
+		const user = req.user;
+
+		// Validate required fields
+		if (!amount || amount <= 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid amount specified',
+				},
+			};
+		}
+
+		// Validate cash distribution
+		const totalCashAmount = (virtualCashAmount || 0) + (realCashAmount || 0);
+		if (Math.abs(totalCashAmount - amount) > 0.01) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Virtual and real cash amounts must sum to total amount',
+				},
+			};
+		}
+
+		// Generate unique session ID for tracking
+		const sessionId = `vcash_${user._id}_${Date.now()}`;
+
+		// Get base URL from environment or use default
+		const baseUrl = process.env.HOST_URL || 'http://localhost:3000';
+
+
+		let paymentSession;
+		try {
+			paymentSession = await createPaymentSession({
+				amount,
+				currency,
+				description: `Virtual Cash Purchase - ${virtualCashAmount || 0} Virtual, ${realCashAmount || 0} Real`,
+				successUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
+				cancelUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
+				metadata: {
+					userId: user._id,
+					virtualCashAmount: virtualCashAmount || 0,
+					realCashAmount: realCashAmount || 0,
+					sessionId,
+				},
+			});
+		} catch (payoneerError) {
+			console.error('Payoneer session creation failed:', payoneerError);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Payment service temporarily unavailable. Please try again later.',
+				},
+			};
+		}
+
+		// Create payment record in database
+		const payment = await Payment.create({
+			user: user._id,
+			sessionId,
+			amount,
+			currency,
+			method: 'PAYONEER_BALANCE',
+			status: 'PENDING',
+			virtualCashAmount: virtualCashAmount || 0,
+			realCashAmount: realCashAmount || 0,
+			providerResponse: paymentSession,
+			ipAddress: req.ip || req.connection.remoteAddress,
+			metadata: {
+				userAgent: req.get('User-Agent'),
+				payoneerSessionId: paymentSession.session_id,
+			},
+		});
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				paymentUrl: paymentSession.checkout_url,
+				sessionId,
+				payment: {
+					id: payment._id,
+					amount: payment.amount,
+					currency: payment.currency,
+					virtualCashAmount: payment.virtualCashAmount,
+					realCashAmount: payment.realCashAmount,
+					status: payment.status,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Initiate virtual cash purchase error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to initiate purchase',
+			},
+		};
+	}
 };
 
 export const handlePurchaseSuccess = async (req, res) => {
-	// Implementation preserved from existing code
-	// This function handles successful Payoneer payments
+	try {
+		const { session_id } = req.query;
+
+		if (!session_id) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Session ID is required',
+				},
+			};
+		}
+
+		// Find payment record
+		const payment = await Payment.findOne({ sessionId: session_id });
+		if (!payment) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Payment session not found',
+				},
+			};
+		}
+
+		// Check if already processed
+		if (payment.status === 'COMPLETED') {
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					message: 'Payment already processed',
+					payment: {
+						id: payment._id,
+						amount: payment.amount,
+						status: payment.status,
+					},
+				},
+			};
+		}
+
+		// Verify payment with Payoneer
+		const payoneerSession = await getPaymentSession(payment.providerResponse.session_id);
+
+		// Check if payment was actually successful
+		if (payoneerSession.status !== 'COMPLETED' && payoneerSession.status !== 'PAID') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Payment not completed successfully',
+				},
+			};
+		}
+
+		// Update payment status
+		payment.status = 'COMPLETED';
+		payment.providerResponse = {
+			...payment.providerResponse,
+			completion_data: payoneerSession,
+		};
+		await payment.save();
+
+		// Get user wallet
+		const wallet = await Wallet.findOne({ user: payment.user });
+		if (!wallet) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User wallet not found',
+				},
+			};
+		}
+
+		// Credit virtual cash if specified
+		if (payment.virtualCashAmount > 0) {
+			await makeTransaction(
+				payment.user,
+				'USER',
+				'VIRTUAL_CASH_PURCHASE',
+				payment.virtualCashAmount,
+				payment._id,
+				'PAYMENT',
+				null,
+				'VIRTUAL'
+			);
+		}
+
+		// Credit real cash if specified (goes to non-withdrawable)
+		if (payment.realCashAmount > 0) {
+			await makeTransaction(
+				payment.user,
+				'USER',
+				'REAL_CASH_PURCHASE',
+				payment.realCashAmount,
+				payment._id,
+				'PAYMENT',
+				null,
+				'REAL'
+			);
+		}
+
+		// **NEW: Record deposit for loyalty tracking**
+		try {
+			const loyaltyResult = await LoyaltyService.recordUserDeposit(
+				payment.user,
+				payment.amount
+			);
+			if (!loyaltyResult.success) {
+				console.warn(`Failed to record deposit for user ${payment.user}:`, loyaltyResult.error);
+			}
+		} catch (loyaltyError) {
+			console.error(`Error recording deposit for user ${payment.user}:`, loyaltyError);
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Payment processed successfully',
+				payment: {
+					id: payment._id,
+					amount: payment.amount,
+					virtualCashAmount: payment.virtualCashAmount,
+					realCashAmount: payment.realCashAmount,
+					status: payment.status,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Handle purchase success error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to process successful payment',
+			},
+		};
+	}
 };
 
 export const handlePurchaseCancel = async (req, res) => {
-	// Implementation preserved from existing code
-	// This function handles cancelled Payoneer payments
+	try {
+		const { session_id } = req.query;
+
+		if (!session_id) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Session ID is required',
+				},
+			};
+		}
+
+		// Find payment record
+		const payment = await Payment.findOne({ sessionId: session_id });
+		if (!payment) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Payment session not found',
+				},
+			};
+		}
+
+		// Update payment status if not already processed
+		if (payment.status === 'PENDING') {
+			payment.status = 'CANCELLED';
+			await payment.save();
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Payment cancelled successfully',
+				payment: {
+					id: payment._id,
+					amount: payment.amount,
+					status: payment.status,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Handle purchase cancel error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to process payment cancellation',
+			},
+		};
+	}
 };
 
 export const handlePayoneerWebhook = async (req, res) => {
-	// Implementation preserved from existing code
-	// This function handles Payoneer webhooks
+	try {
+		const signature = req.get('X-Payoneer-Signature');
+		const payload = JSON.stringify(req.body);
+
+		// Verify webhook signature
+		if (!signature || !verifyWebhookSignature(payload, signature)) {
+			console.error('Invalid webhook signature');
+			return {
+				status: 401,
+				entity: {
+					success: false,
+					error: 'Invalid webhook signature',
+				},
+			};
+		}
+
+		const { event_type, data } = req.body;
+
+		console.log(`Payoneer webhook received: ${event_type}`, data);
+
+		switch (event_type) {
+			case 'checkout.session.completed':
+			case 'payment.completed': {
+				const sessionId = data.client_reference_id || data.session_id;
+
+				if (!sessionId) {
+					console.error('No session ID found in webhook data');
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'Session ID not found in webhook',
+						},
+					};
+				}
+
+				// Find payment by session ID
+				const payment = await Payment.findOne({
+					$or: [
+						{ sessionId: sessionId },
+						{ 'providerResponse.session_id': sessionId },
+					],
+				});
+
+				if (!payment) {
+					console.error(`Payment not found for session ID: ${sessionId}`);
+					return {
+						status: 404,
+						entity: {
+							success: false,
+							error: 'Payment not found',
+						},
+					};
+				}
+
+				// Only process if payment is still pending
+				if (payment.status !== 'PENDING') {
+					console.log(`Payment ${payment._id} already processed with status: ${payment.status}`);
+					return {
+						status: 200,
+						entity: {
+							success: true,
+							message: 'Payment already processed',
+						},
+					};
+				}
+
+				// Update payment status
+				payment.status = 'COMPLETED';
+				payment.providerResponse = {
+					...payment.providerResponse,
+					webhook_data: data,
+				};
+				await payment.save();
+
+				// Process wallet credits
+				try {
+					// Credit virtual cash if specified
+					if (payment.virtualCashAmount > 0) {
+						await makeTransaction(
+							payment.user,
+							'USER',
+							'VIRTUAL_CASH_PURCHASE',
+							payment.virtualCashAmount,
+							payment._id,
+							'PAYMENT',
+							null,
+							'VIRTUAL'
+						);
+					}
+
+					// Credit real cash if specified
+					if (payment.realCashAmount > 0) {
+						await makeTransaction(
+							payment.user,
+							'USER',
+							'REAL_CASH_PURCHASE',
+							payment.realCashAmount,
+							payment._id,
+							'PAYMENT',
+							null,
+							'REAL'
+						);
+					}
+
+					// Record deposit for loyalty tracking
+					try {
+						const loyaltyResult = await LoyaltyService.recordUserDeposit(
+							payment.user,
+							payment.amount
+						);
+						if (!loyaltyResult.success) {
+							console.warn(`Failed to record deposit for user ${payment.user}:`, loyaltyResult.error);
+						}
+					} catch (loyaltyError) {
+						console.error(`Error recording deposit for user ${payment.user}:`, loyaltyError);
+					}
+
+					console.log(`Successfully processed payment ${payment._id} via webhook`);
+				} catch (transactionError) {
+					console.error(`Error processing transactions for payment ${payment._id}:`, transactionError);
+					// Update payment status to failed
+					payment.status = 'FAILED';
+					payment.errorMessage = transactionError.message;
+					await payment.save();
+				}
+
+				break;
+			}
+
+			case 'checkout.session.failed':
+			case 'payment.failed': {
+				const sessionId = data.client_reference_id || data.session_id;
+
+				if (sessionId) {
+					const payment = await Payment.findOne({
+						$or: [
+							{ sessionId: sessionId },
+							{ 'providerResponse.session_id': sessionId },
+						],
+					});
+
+					if (payment && payment.status === 'PENDING') {
+						payment.status = 'FAILED';
+						payment.errorMessage = data.failure_reason || 'Payment failed';
+						payment.providerResponse = {
+							...payment.providerResponse,
+							webhook_data: data,
+						};
+						await payment.save();
+						console.log(`Payment ${payment._id} marked as failed via webhook`);
+					}
+				}
+				break;
+			}
+
+			default:
+				console.log(`Unhandled webhook event type: ${event_type}`);
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Webhook processed successfully',
+			},
+		};
+	} catch (error) {
+		console.error('Payoneer webhook error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to process webhook',
+			},
+		};
+	}
 };
