@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import moment from 'moment-timezone';
 import { Lottery } from '../../api/lottery/model';
 import { fetchGameResult } from '../lottery/externalLottery';
-import { publishResult } from '../../api/lottery/resultPublisher';
+import { publishResult } from '../lottery/resultPublisher';
 
 // Cron job: Check and publish lottery results
 cron.schedule('*/5 * * * *', async () => {

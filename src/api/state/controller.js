@@ -1,6 +1,6 @@
 import { State } from './model';
 import { fetchGameListByState } from '../../services/lottery/externalLottery';
-import { createLotteriesForState } from '../../services/cron';
+import { createLotteriesForState } from '../../services/cron/lottery';
 
 export const list = async ({
 	offset,

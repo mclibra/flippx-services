@@ -212,21 +212,21 @@ const DominoTournamentSchema = new Schema(
 );
 
 // DominoRoom indexes
-DominoRoomSchema.createIndex({ "roomId": 1 }, { unique: true })
-DominoRoomSchema.createIndex({ "status": 1, "cashType": 1, "playerCount": 1 })
-DominoRoomSchema.createIndex({ "createdAt": -1 })
-DominoRoomSchema.createIndex({ "players.user": 1 })
+DominoRoomSchema.index({ "roomId": 1 }, { unique: true })
+DominoRoomSchema.index({ "status": 1, "cashType": 1, "playerCount": 1 })
+DominoRoomSchema.index({ "createdAt": -1 })
+DominoRoomSchema.index({ "players.user": 1 })
 
 // DominoGame indexes  
-DominoGameSchema.createIndex({ "room": 1 })
-DominoGameSchema.createIndex({ "gameState": 1 })
-DominoGameSchema.createIndex({ "players.user": 1 })
-DominoGameSchema.createIndex({ "createdAt": -1 })
-DominoGameSchema.createIndex({ "winner": 1, "gameState": 1 })
+DominoGameSchema.index({ "room": 1 })
+DominoGameSchema.index({ "gameState": 1 })
+DominoGameSchema.index({ "players.user": 1 })
+DominoGameSchema.index({ "createdAt": -1 })
+DominoGameSchema.index({ "winner": 1, "gameState": 1 })
 
 // DominoChat indexes
-DominoChatSchema.createIndex({ "room": 1, "createdAt": -1 })
-DominoChatSchema.createIndex({ "user": 1 })
+DominoChatSchema.index({ "room": 1, "createdAt": -1 })
+DominoChatSchema.index({ "user": 1 })
 
 export const DominoGameConfig = mongoose.model('DominoGameConfig', DominoGameConfigSchema);
 export const DominoRoom = mongoose.model('DominoRoom', DominoRoomSchema);
