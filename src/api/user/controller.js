@@ -591,7 +591,7 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 						success: true,
 						user: searchedUser.view(true),
 						walletData: walletDataResponse.entity.success
-							? walletDataResponse.entity.walletData
+							? walletDataResponse.entity.balance
 							: {},
 					},
 				};

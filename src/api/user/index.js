@@ -31,12 +31,6 @@ router.post('/verify-otp', xApi(), async (req, res) =>
 	done(res, await verifyOtp(req.body))
 );
 
-router.post('/', xApi(), async (req, res) => done(res, await create(req.body)));
-
-router.put('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await update(req.user, req.body))
-);
-
 router.get('/me', xApi(), token({ required: true }), async (req, res) =>
 	done(res, {
 		status: 200,
@@ -96,18 +90,10 @@ router.get(
 	async (req, res) => done(res, await list(req.query))
 );
 
-router.put(
-	'/:id',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await updateUser(req.params, req.body))
-);
+router.post('/', xApi(), async (req, res) => done(res, await create(req.body)));
 
-router.get(
-	'/:id',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await userData(req.params))
+router.put('/', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await update(req.user, req.body))
 );
 
 router.get(
@@ -123,6 +109,20 @@ router.put(
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) => done(res, await verifyDocument(req.user, req.body))
+);
+
+router.put(
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await updateUser(req.params, req.body))
+);
+
+router.get(
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await userData(req.params))
 );
 
 export default router;
