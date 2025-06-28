@@ -108,8 +108,9 @@ const LoyaltyTransactionSchema = new Schema(
 				'CASHBACK',
 				'REFERRAL',
 				'BONUS',
+				'GAME_ACTIVITY',
 				'GAME_REWARD',
-				'REFERRAL_COMMISSION', // NEW: For cash commissions
+				'REFERRAL_COMMISSION',
 			],
 			required: true,
 		},

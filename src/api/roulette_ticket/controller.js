@@ -71,14 +71,27 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 			};
 		}
 
-		const roulette = await Roulette.findById(id);
+		// Ensure we get the roulette ID as a string, not an object
+		const rouletteId = typeof id === 'object' ? id._id || id.id : id;
+		const roulette = await Roulette.findById(rouletteId);
+
+		if (!roulette) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Roulette game not found',
+				},
+			};
+		}
+
 		if (roulette.spinSchedlue >= currentTime) {
 			let totalAmountPlayed = 0;
 
 			// Extract bet data, excluding cashType from bet calculations
 			const { cashType: _, ...bets } = betPlaced;
 
-			let bet = _.map(bets, (amount, block) => {
+			let bet = Object.entries(bets).map(([block, amount]) => {
 				totalAmountPlayed += amount;
 				return {
 					blockPlayed: block,
@@ -95,10 +108,10 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 			if (balanceToCheck >= totalAmountPlayed) {
 				const rouletteTicket = await RouletteTicket.create({
 					user: user._id,
-					roulette: id,
+					roulette: rouletteId, // Use the string ID, not the object
 					bet: bet,
 					totalAmountPlayed: totalAmountPlayed,
-					cashType: cashType, // Store cash type in ticket
+					cashType: cashType,
 				});
 
 				// Process transaction with cash type
@@ -137,7 +150,7 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 						user._id,
 						totalXP,
 						'GAME_ACTIVITY',
-						`Roulette bet placement - Amount: $${totalAmountPlayed} (${cashType})`,
+						`Roulette bet placement - Amount: ${totalAmountPlayed} (${cashType})`,
 						{
 							gameType: 'ROULETTE',
 							ticketId: rouletteTicket._id,
@@ -146,7 +159,7 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 							baseXP,
 							multiplier: cashTypeMultiplier,
 							betCount: bet.length,
-							rouletteId: id
+							rouletteId: rouletteId
 						}
 					);
 
@@ -204,7 +217,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 		});
 		let totalAmountWon = 0;
 		rouletteTickets.map(ticket => {
-			ticket.bet = _.map(ticket.bet, bet => {
+			ticket.bet = ticket.bet.map(bet => {
 				let winningAmount = 0;
 				switch (bet.blockPlayed) {
 					case '2_to_1_1':
@@ -264,8 +277,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 					case '19_36':
 						winningAmount =
 							winningNumber >= 19 && winningNumber <= 36
-								? bet.amountPlayed
-								: 0;
+								? bet.amountPlayed : 0;
 						break;
 					case 'even':
 						winningAmount =
@@ -305,8 +317,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 					amountWon: winningAmount,
 				};
 			});
-			ticket.totalAmountWon = _.reduce(
-				ticket.bet,
+			ticket.totalAmountWon = ticket.bet.reduce(
 				(sum, bet) => sum + bet.amountWon,
 				0
 			);
@@ -318,17 +329,21 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 	}
 };
 
-export const updatePlacedBet = async (id, winningNumber) => {
+export const updatePlacedBet = async (roulette, winningNumber) => {
 	try {
+		// Get the roulette ID properly
+		const rouletteId = typeof roulette === 'object' ? roulette._id || roulette.id : roulette;
+		winningNumber = winningNumber || roulette.winningNumber;
 		winningNumber = parseInt(winningNumber);
+
 		let rouletteTickets = await RouletteTicket.find({
-			roulette: id,
+			roulette: rouletteId,
 		}).populate('user');
 
 		const ticketPromise = rouletteTickets.map(
 			ticket =>
 				new Promise(async (resolve, reject) => {
-					ticket.bet = _.map(ticket.bet, bet => {
+					ticket.bet = ticket.bet.map(bet => {
 						switch (bet.blockPlayed) {
 							case '2_to_1_1':
 								bet.amountWon =
@@ -420,7 +435,7 @@ export const updatePlacedBet = async (id, winningNumber) => {
 										? bet.amountPlayed
 										: 0;
 								break;
-							// Handle corner bets
+							// Handle corner bets and other special bets
 							case '3_6':
 								bet.amountWon =
 									bet.blockPlayed
@@ -457,21 +472,45 @@ export const updatePlacedBet = async (id, winningNumber) => {
 										? bet.amountPlayed * 8
 										: 0;
 								break;
-							// Add all other corner bet cases...
+							// Handle line bets like 4_5_6_7_8_9 (from the POST body)
+							case '4_5_6_7_8_9':
+								bet.amountWon =
+									[4, 5, 6, 7, 8, 9].indexOf(winningNumber) !== -1
+										? bet.amountPlayed * 5
+										: 0;
+								break;
+							// Handle other multi-number bets dynamically
 							default:
-								// Single number bet
-								if (parseInt(bet.blockPlayed) === winningNumber) {
-									bet.amountWon = bet.amountPlayed * 35;
+								// Check if it's a multi-number bet (contains underscores)
+								if (bet.blockPlayed.includes('_')) {
+									const numbers = bet.blockPlayed.split('_').map(n => parseInt(n));
+									if (numbers.includes(winningNumber)) {
+										// Determine payout based on number of numbers in the bet
+										let multiplier = 35; // Single number default
+										if (numbers.length === 2) multiplier = 17; // Split bet
+										else if (numbers.length === 3) multiplier = 11; // Street bet
+										else if (numbers.length === 4) multiplier = 8; // Corner bet
+										else if (numbers.length === 5) multiplier = 6; // Five number bet
+										else if (numbers.length === 6) multiplier = 5; // Line bet
+
+										bet.amountWon = bet.amountPlayed * multiplier;
+									} else {
+										bet.amountWon = 0;
+									}
 								} else {
-									bet.amountWon = 0;
+									// Single number bet
+									if (parseInt(bet.blockPlayed) === winningNumber) {
+										bet.amountWon = bet.amountPlayed * 35;
+									} else {
+										bet.amountWon = 0;
+									}
 								}
 								break;
 						}
 						return bet;
 					});
 
-					ticket.totalAmountWon = _.reduce(
-						ticket.bet,
+					ticket.totalAmountWon = ticket.bet.reduce(
 						(sum, bet) => sum + bet.amountWon,
 						0
 					);
@@ -499,7 +538,7 @@ export const updatePlacedBet = async (id, winningNumber) => {
 									multiplier: cashTypeMultiplier * winMultiplier,
 									isWin: true,
 									winningNumber,
-									rouletteId: id
+									rouletteId: rouletteId
 								}
 							);
 
@@ -513,30 +552,36 @@ export const updatePlacedBet = async (id, winningNumber) => {
 						}
 					}
 
-					if (
-						ticket.isAmountDisbursed &&
-						ticket.totalAmountWon > 0
-					) {
-						const amount = ticket.totalAmountWon;
+					// Use findOneAndUpdate to avoid version conflicts
+					const updatedTicket = await RouletteTicket.findOneAndUpdate(
+						{ _id: ticket._id },
+						{
+							$set: {
+								bet: ticket.bet,
+								totalAmountWon: ticket.totalAmountWon
+							}
+						},
+						{ new: true, runValidators: true }
+					).populate('user');
+
+					// Process winnings transaction immediately (no isAmountDisbursed field in RouletteTicket)
+					if (updatedTicket && updatedTicket.totalAmountWon && updatedTicket.totalAmountWon > 0) {
 						await makeTransaction(
-							ticket.user._id,
-							ticket.user.role,
+							updatedTicket.user._id,
+							updatedTicket.user.role,
 							'WON_ROULETTE',
-							amount,
+							updatedTicket.totalAmountWon,
 							null,
 							null,
-							ticket._id,
-							ticket.cashType || 'VIRTUAL' // Use ticket cash type or default to VIRTUAL
+							updatedTicket._id,
+							updatedTicket.cashType || 'VIRTUAL'
 						);
 					}
-					await ticket.save();
-					resolve(ticket);
-				})
+					resolve(updatedTicket || ticket);
+				}),
 		);
-		const tickets = await Promise.all(ticketPromise);
-		return tickets;
+		await Promise.all(ticketPromise);
 	} catch (error) {
 		console.log(error);
-		return [];
 	}
 };
