@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
-	list,
+	getTransactions,
 	transactionSummary,
 	makeTransfer,
 	initiateTransaction,
@@ -53,7 +53,7 @@ router.get(
 	'/list',
 	xApi(),
 	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
-	async (req, res) => done(res, await list(req.user, req.query))
+	async (req, res) => done(res, await getTransactions(req.user, req.query))
 );
 
 router.get(

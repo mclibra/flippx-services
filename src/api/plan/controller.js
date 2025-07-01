@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import { Plan } from './model';
 import { UserPlan } from './userPlanModel';
 import { Transaction } from '../transaction/model';
-import { makeTransaction } from '../transaction/controller';
 
 export const list = async (query) => {
     try {
@@ -41,18 +40,17 @@ export const list = async (query) => {
             entity: {
                 success: true,
                 plans,
-                total,
                 pagination: {
+                    total,
                     offset: parseInt(offset),
                     limit: parseInt(limit),
-                    total,
                 },
             },
         };
     } catch (error) {
         console.log(error);
         return {
-            status: 500,
+            status: 400,
             entity: {
                 success: false,
                 error: error.errors || error.message || 'Failed to fetch plans',
@@ -68,17 +66,18 @@ export const create = async (body, user) => {
             description,
             price,
             currency = 'USD',
-            realCashAmount = 0,
-            virtualCashAmount = 0,
+            realCashAmount,
+            virtualCashAmount,
+            isAvailableForPurchase = true,
         } = body;
 
-        // Validation
-        if (!name || !price) {
+        // Validate required fields
+        if (!name || !price || realCashAmount === undefined || virtualCashAmount === undefined) {
             return {
                 status: 400,
                 entity: {
                     success: false,
-                    error: 'Name and price are required',
+                    error: 'Name, price, realCashAmount, and virtualCashAmount are required',
                 },
             };
         }
@@ -98,12 +97,12 @@ export const create = async (body, user) => {
                 status: 400,
                 entity: {
                     success: false,
-                    error: 'Cash amounts cannot be negative',
+                    error: 'Cash amounts must be greater than or equal to 0',
                 },
             };
         }
 
-        if (realCashAmount === 0 && virtualCashAmount === 0) {
+        if (realCashAmount + virtualCashAmount === 0) {
             return {
                 status: 400,
                 entity: {
@@ -120,6 +119,7 @@ export const create = async (body, user) => {
             currency,
             realCashAmount,
             virtualCashAmount,
+            isAvailableForPurchase,
             createdBy: user._id,
         });
 
@@ -229,7 +229,7 @@ export const update = async ({ id }, body, user) => {
             isAvailableForPurchase,
         } = body;
 
-        // Validation
+        // Validate price if provided
         if (price !== undefined && price <= 0) {
             return {
                 status: 400,
@@ -240,13 +240,23 @@ export const update = async ({ id }, body, user) => {
             };
         }
 
-        if ((realCashAmount !== undefined && realCashAmount < 0) ||
-            (virtualCashAmount !== undefined && virtualCashAmount < 0)) {
+        // Validate cash amounts if provided
+        if (realCashAmount !== undefined && realCashAmount < 0) {
             return {
                 status: 400,
                 entity: {
                     success: false,
-                    error: 'Cash amounts cannot be negative',
+                    error: 'Real cash amount must be greater than or equal to 0',
+                },
+            };
+        }
+
+        if (virtualCashAmount !== undefined && virtualCashAmount < 0) {
+            return {
+                status: 400,
+                entity: {
+                    success: false,
+                    error: 'Virtual cash amount must be greater than or equal to 0',
                 },
             };
         }
@@ -262,29 +272,17 @@ export const update = async ({ id }, body, user) => {
 
         plan.updatedBy = user._id;
 
-        // Check if at least one cash amount is greater than 0
-        if (plan.realCashAmount === 0 && plan.virtualCashAmount === 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'At least one cash amount (real or virtual) must be greater than 0',
-                },
-            };
-        }
+        const updatedPlan = await plan.save();
 
-        await plan.save();
-
-        const updatedPlan = await Plan.findById(id)
+        const populatedPlan = await Plan.findById(updatedPlan._id)
             .populate('createdBy', 'name.firstName name.lastName')
-            .populate('updatedBy', 'name.firstName name.lastName')
-            .populate('deprecatedBy', 'name.firstName name.lastName');
+            .populate('updatedBy', 'name.firstName name.lastName');
 
         return {
             status: 200,
             entity: {
                 success: true,
-                plan: updatedPlan,
+                plan: populatedPlan,
             },
         };
     } catch (error) {
@@ -371,114 +369,159 @@ export const getPlanAnalytics = async ({ id }, query) => {
 
         // Calculate date range based on period
         let dateFilter = {};
-        let dateRange = {};
+        let groupBy = {};
 
-        if (period === 'weekly') {
-            dateRange.start = moment().subtract(7, 'days').toDate();
-            dateRange.end = new Date();
-        } else if (period === 'monthly') {
-            dateRange.start = moment().subtract(30, 'days').toDate();
-            dateRange.end = new Date();
-        } else if (period === 'custom' && startDate && endDate) {
-            dateRange.start = new Date(startDate);
-            dateRange.end = new Date(endDate);
-        } else {
-            // Default to last 7 days
-            dateRange.start = moment().subtract(7, 'days').toDate();
-            dateRange.end = new Date();
+        const now = moment();
+        let start, end;
+
+        switch (period) {
+            case 'weekly':
+                start = now.clone().subtract(7, 'days').startOf('day');
+                end = now.clone().endOf('day');
+                groupBy = {
+                    year: { $year: '$createdAt' },
+                    month: { $month: '$createdAt' },
+                    day: { $dayOfMonth: '$createdAt' },
+                };
+                break;
+            case 'monthly':
+                start = now.clone().subtract(30, 'days').startOf('day');
+                end = now.clone().endOf('day');
+                groupBy = {
+                    year: { $year: '$createdAt' },
+                    month: { $month: '$createdAt' },
+                    day: { $dayOfMonth: '$createdAt' },
+                };
+                break;
+            case 'custom':
+                if (startDate && endDate) {
+                    start = moment(startDate).startOf('day');
+                    end = moment(endDate).endOf('day');
+                    groupBy = {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' },
+                    };
+                } else {
+                    return {
+                        status: 400,
+                        entity: {
+                            success: false,
+                            error: 'Start date and end date are required for custom period',
+                        },
+                    };
+                }
+                break;
+            default:
+                return {
+                    status: 400,
+                    entity: {
+                        success: false,
+                        error: 'Invalid period. Must be weekly, monthly, or custom',
+                    },
+                };
         }
 
-        dateFilter.createdAt = {
-            $gte: dateRange.start,
-            $lte: dateRange.end,
+        dateFilter = {
+            createdAt: {
+                $gte: start.toDate(),
+                $lte: end.toDate(),
+            },
         };
 
-        // Get active users count for this plan
-        const activeUsers = await UserPlan.find({
-            plan: id,
-            status: 'ACTIVE',
-        }).populate('user', 'name.firstName name.lastName phone');
-
-        // Get transactions in the specified period for users with this plan
-        const userPlanPurchases = await UserPlan.find({
-            plan: id,
-            ...dateFilter,
-        }).populate('user', 'name.firstName name.lastName phone');
-
-        // Get transaction statistics
-        const transactionStats = await UserPlan.aggregate([
+        // Get plan purchases over time
+        const purchasesOverTime = await UserPlan.aggregate([
             {
                 $match: {
-                    plan: new mongoose.Types.ObjectId(id),
+                    plan: mongoose.Types.ObjectId(id),
+                    ...dateFilter,
+                },
+            },
+            {
+                $group: {
+                    _id: groupBy,
+                    count: { $sum: 1 },
+                    revenue: { $sum: '$planSnapshot.price' },
+                },
+            },
+            {
+                $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 },
+            },
+        ]);
+
+        // Get total statistics
+        const totalStats = await UserPlan.aggregate([
+            {
+                $match: {
+                    plan: mongoose.Types.ObjectId(id),
+                    ...dateFilter,
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalPurchases: { $sum: 1 },
+                    totalRevenue: { $sum: '$planSnapshot.price' },
+                    activePurchases: {
+                        $sum: {
+                            $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0],
+                        },
+                    },
+                },
+            },
+        ]);
+
+        const stats = totalStats[0] || {
+            totalPurchases: 0,
+            totalRevenue: 0,
+            activePurchases: 0,
+        };
+
+        // Get user statistics
+        const userStats = await UserPlan.aggregate([
+            {
+                $match: {
+                    plan: mongoose.Types.ObjectId(id),
                     ...dateFilter,
                 },
             },
             {
                 $lookup: {
-                    from: 'plans',
-                    localField: 'plan',
+                    from: 'users',
+                    localField: 'user',
                     foreignField: '_id',
-                    as: 'planDetails',
+                    as: 'userInfo',
                 },
             },
             {
-                $unwind: '$planDetails',
+                $unwind: '$userInfo',
             },
             {
                 $group: {
-                    _id: null,
-                    totalTransactions: { $sum: 1 },
-                    totalRevenue: { $sum: '$planDetails.price' },
-                    totalRealCash: { $sum: '$planDetails.realCashAmount' },
-                    totalVirtualCash: { $sum: '$planDetails.virtualCashAmount' },
-                },
-            },
-        ]);
-
-        // Get daily breakdown for charts
-        const dailyBreakdown = await UserPlan.aggregate([
-            {
-                $match: {
-                    plan: new mongoose.Types.ObjectId(id),
-                    ...dateFilter,
-                },
-            },
-            {
-                $group: {
-                    _id: {
-                        year: { $year: '$createdAt' },
-                        month: { $month: '$createdAt' },
-                        day: { $dayOfMonth: '$createdAt' },
-                    },
+                    _id: '$userInfo.role',
                     count: { $sum: 1 },
-                    date: { $first: '$createdAt' },
                 },
             },
-            {
-                $sort: { date: 1 },
-            },
         ]);
-
-        const stats = transactionStats[0] || {
-            totalTransactions: 0,
-            totalRevenue: 0,
-            totalRealCash: 0,
-            totalVirtualCash: 0,
-        };
 
         return {
             status: 200,
             entity: {
                 success: true,
-                plan,
                 analytics: {
-                    period: period,
-                    dateRange,
-                    activeUsersCount: activeUsers.length,
-                    activeUsers: activeUsers.slice(0, 10), // Limit to 10 for response size
-                    transactionStats: stats,
-                    recentPurchases: userPlanPurchases.slice(0, 20), // Limit to 20 recent purchases
-                    dailyBreakdown,
+                    plan: {
+                        id: plan._id,
+                        name: plan.name,
+                        price: plan.price,
+                    },
+                    period: {
+                        type: period,
+                        start: start.toISOString(),
+                        end: end.toISOString(),
+                    },
+                    statistics: stats,
+                    purchasesOverTime,
+                    userStats,
                 },
             },
         };
@@ -488,102 +531,45 @@ export const getPlanAnalytics = async ({ id }, query) => {
             status: 500,
             entity: {
                 success: false,
-                error: error.errors || error.message || 'Failed to fetch plan analytics',
+                error: error.errors || error.message || 'Failed to get plan analytics',
             },
         };
     }
 };
 
-export const purchasePlan = async ({ id }, user) => {
+export const getUserPlans = async (user, query) => {
     try {
-        const plan = await Plan.findById(id);
-        if (!plan) {
-            return {
-                status: 404,
-                entity: {
-                    success: false,
-                    error: 'Plan not found',
-                },
-            };
+        const {
+            offset = 0,
+            limit = 10,
+            status,
+        } = query;
+
+        let filter = { user: user._id };
+
+        if (status) {
+            filter.status = status.toUpperCase();
         }
 
-        if (plan.status !== 'ACTIVE' || !plan.isAvailableForPurchase) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Plan is not available for purchase',
-                },
-            };
-        }
-
-        // Check if user already has an active plan of this type
-        const existingUserPlan = await UserPlan.findOne({
-            user: user._id,
-            plan: id,
-            status: 'ACTIVE',
-        });
-
-        if (existingUserPlan) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'You already have an active subscription to this plan',
-                },
-            };
-        }
-
-        // Credit virtual cash if specified
-        if (plan.virtualCashAmount > 0) {
-            await makeTransaction(
-                user._id,
-                user.role,
-                'PLAN_PURCHASE_VIRTUAL',
-                plan.virtualCashAmount,
-                id,
-                'PLAN',
-                null,
-                'VIRTUAL'
-            );
-        }
-
-        // Credit real cash if specified (goes to non-withdrawable)
-        if (plan.realCashAmount > 0) {
-            await makeTransaction(
-                user._id,
-                user.role,
-                'PLAN_PURCHASE_REAL',
-                plan.realCashAmount,
-                id,
-                'PLAN',
-                null,
-                'REAL'
-            );
-        }
-
-        // Create user plan record
-        const userPlan = await UserPlan.create({
-            user: user._id,
-            plan: id,
-            planSnapshot: {
-                name: plan.name,
-                price: plan.price,
-                realCashAmount: plan.realCashAmount,
-                virtualCashAmount: plan.virtualCashAmount,
-            },
-        });
-
-        const populatedUserPlan = await UserPlan.findById(userPlan._id)
+        const userPlans = await UserPlan.find(filter)
             .populate('plan')
-            .populate('user', 'name.firstName name.lastName phone');
+            .populate('paymentReference')
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .skip(parseInt(offset));
+
+        const total = await UserPlan.countDocuments(filter);
 
         return {
             status: 200,
             entity: {
                 success: true,
-                userPlan: populatedUserPlan,
-                message: `Successfully purchased ${plan.name} plan`,
+                userPlans,
+                pagination: {
+                    total,
+                    offset: parseInt(offset),
+                    limit: parseInt(limit),
+                },
             },
         };
     } catch (error) {
@@ -592,7 +578,7 @@ export const purchasePlan = async ({ id }, user) => {
             status: 500,
             entity: {
                 success: false,
-                error: error.errors || error.message || 'Failed to purchase plan',
+                error: error.errors || error.message || 'Failed to get user plans',
             },
         };
     }

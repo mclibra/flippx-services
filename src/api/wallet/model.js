@@ -47,6 +47,10 @@ const PaymentSchema = new Schema(
 		currency: { type: String, default: 'USD' },
 		method: { type: String, enum: paymentMethods },
 		status: { type: String, enum: paymentStatus, default: 'PENDING' },
+
+		// Plan association (optional)
+		plan: { type: Schema.Types.ObjectId, ref: 'Plan', required: false },
+
 		// Make these optional for manual payments where admin only specifies total amount
 		virtualCashAmount: { type: Number, required: false, default: 0 },
 		realCashAmount: { type: Number, required: false },
@@ -76,14 +80,28 @@ const PaymentSchema = new Schema(
 	}
 );
 
-// Pre-save middleware to set realCashAmount if not provided
-PaymentSchema.pre('save', function (next) {
+// Pre-save middleware to set amounts based on plan or manual input
+PaymentSchema.pre('save', async function (next) {
+	// If plan is associated, set cash amounts based on plan
+	if (this.plan && !this.virtualCashAmount && !this.realCashAmount) {
+		try {
+			const Plan = mongoose.model('Plan');
+			const plan = await Plan.findById(this.plan);
+			if (plan) {
+				this.virtualCashAmount = plan.virtualCashAmount || 0;
+				this.realCashAmount = plan.realCashAmount || 0;
+			}
+		} catch (error) {
+			console.error('Error setting plan amounts:', error);
+		}
+	}
+
 	// For manual payments, if realCashAmount is not set, use the full amount
-	if (this.isManual && !this.realCashAmount) {
+	if (this.isManual && !this.realCashAmount && !this.plan) {
 		this.realCashAmount = this.amount;
 	}
 	// For manual payments, virtualCashAmount defaults to 0
-	if (this.isManual && !this.virtualCashAmount) {
+	if (this.isManual && !this.virtualCashAmount && !this.plan) {
 		this.virtualCashAmount = 0;
 	}
 	next();
