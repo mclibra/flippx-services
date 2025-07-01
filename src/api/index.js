@@ -15,6 +15,7 @@ import roulette from './roulette';
 import domino from './domino';
 import notification from './notification';
 import state from './state';
+import plan from './plan';
 import dashboard from './dashboard';
 import loyalty from './loyalty';
 import payoutConfig from './payout_config';
@@ -38,6 +39,7 @@ router.use('/state', state);
 router.use('/text', text);
 router.use('/dashboard', dashboard);
 router.use('/loyalty', loyalty);
+router.use('/plan', plan);
 router.use('/payout-config', payoutConfig);
 
 export default router;
