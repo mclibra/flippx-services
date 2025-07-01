@@ -1,5 +1,6 @@
 import { Wallet, Payment } from './model';
 import { Plan } from '../plan/model';
+import { User } from '../user/model';
 import { UserPlan } from '../plan/userPlanModel';
 import { Transaction } from '../transaction/model';
 import { makeTransaction } from '../transaction/controller';
@@ -842,7 +843,7 @@ export const createManualPayment = async (user, body) => {
 
 		const {
 			userId,
-			amount,
+			amount: providedAmount,
 			bankTransferReference,
 			bankName,
 			transferDate,
@@ -852,12 +853,12 @@ export const createManualPayment = async (user, body) => {
 		} = body;
 
 		// Validate required fields
-		if (!userId || !amount || amount <= 0) {
+		if (!userId) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'User ID and valid amount are required',
+					error: 'User ID is required',
 				},
 			};
 		}
@@ -873,7 +874,6 @@ export const createManualPayment = async (user, body) => {
 		}
 
 		// Verify user exists
-		const { User } = require('../user/model');
 		const targetUser = await User.findById(userId);
 		if (!targetUser) {
 			return {
@@ -886,7 +886,9 @@ export const createManualPayment = async (user, body) => {
 		}
 
 		let plan = null;
-		// If plan is specified, validate it
+		let finalAmount = providedAmount;
+
+		// If plan is specified, validate it and fetch amount from plan
 		if (planId) {
 			plan = await Plan.findById(planId);
 			if (!plan) {
@@ -909,13 +911,16 @@ export const createManualPayment = async (user, body) => {
 				};
 			}
 
-			// Validate payment amount matches plan price
-			if (Math.abs(amount - plan.price) > 0.01) {
+			// If planId exists, fetch amount from plan
+			finalAmount = plan.price;
+
+			// If amount was also provided, validate it matches the plan price
+			if (providedAmount && Math.abs(providedAmount - plan.price) > 0.01) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Payment amount must match plan price. Expected: $${plan.price}`,
+						error: `Provided amount (${providedAmount}) does not match plan price. Expected: $${plan.price}`,
 					},
 				};
 			}
@@ -936,12 +941,22 @@ export const createManualPayment = async (user, body) => {
 					},
 				};
 			}
+		} else {
+			if (!providedAmount || providedAmount <= 0) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Amount is required when no plan is specified',
+					},
+				};
+			}
 		}
 
 		// Create manual payment record
 		const payment = await Payment.create({
 			user: userId,
-			amount,
+			amount: finalAmount,
 			currency: 'USD',
 			method: 'BANK_TRANSFER',
 			status: 'PENDING',
@@ -959,7 +974,9 @@ export const createManualPayment = async (user, body) => {
 			entity: {
 				success: true,
 				payment,
-				message: 'Manual payment record created successfully',
+				message: planId
+					? `Manual payment record created successfully with amount $${finalAmount} from plan "${plan.name}"`
+					: 'Manual payment record created successfully',
 			},
 		};
 	} catch (error) {
