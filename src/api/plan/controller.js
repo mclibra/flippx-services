@@ -50,7 +50,7 @@ export const list = async (query) => {
     } catch (error) {
         console.log(error);
         return {
-            status: 400,
+            status: 500,
             entity: {
                 success: false,
                 error: error.errors || error.message || 'Failed to fetch plans',
@@ -65,52 +65,11 @@ export const create = async (body, user) => {
             name,
             description,
             price,
-            currency = 'USD',
+            currency,
             realCashAmount,
             virtualCashAmount,
-            isAvailableForPurchase = true,
+            isAvailableForPurchase,
         } = body;
-
-        // Validate required fields
-        if (!name || !price || realCashAmount === undefined || virtualCashAmount === undefined) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Name, price, realCashAmount, and virtualCashAmount are required',
-                },
-            };
-        }
-
-        if (price <= 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Price must be greater than 0',
-                },
-            };
-        }
-
-        if (realCashAmount < 0 || virtualCashAmount < 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Cash amounts must be greater than or equal to 0',
-                },
-            };
-        }
-
-        if (realCashAmount + virtualCashAmount === 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'At least one cash amount (real or virtual) must be greater than 0',
-                },
-            };
-        }
 
         const plan = await Plan.create({
             name,
@@ -209,16 +168,6 @@ export const update = async ({ id }, body, user) => {
             };
         }
 
-        if (plan.status === 'DEPRECATED') {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Cannot update deprecated plan',
-                },
-            };
-        }
-
         const {
             name,
             description,
@@ -229,39 +178,6 @@ export const update = async ({ id }, body, user) => {
             isAvailableForPurchase,
         } = body;
 
-        // Validate price if provided
-        if (price !== undefined && price <= 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Price must be greater than 0',
-                },
-            };
-        }
-
-        // Validate cash amounts if provided
-        if (realCashAmount !== undefined && realCashAmount < 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Real cash amount must be greater than or equal to 0',
-                },
-            };
-        }
-
-        if (virtualCashAmount !== undefined && virtualCashAmount < 0) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: 'Virtual cash amount must be greater than or equal to 0',
-                },
-            };
-        }
-
-        // Update fields
         if (name !== undefined) plan.name = name;
         if (description !== undefined) plan.description = description;
         if (price !== undefined) plan.price = price;
@@ -361,65 +277,53 @@ export const getPlanAnalytics = async ({ id }, query) => {
             };
         }
 
-        const {
-            startDate,
-            endDate,
-            period = 'weekly', // weekly, monthly, custom
-        } = query;
+        const { period = 'weekly' } = query;
 
         // Calculate date range based on period
-        let dateFilter = {};
-        let groupBy = {};
+        let start, end, groupBy, dateFilter;
 
-        const now = moment();
-        let start, end;
-
-        switch (period) {
-            case 'weekly':
-                start = now.clone().subtract(7, 'days').startOf('day');
-                end = now.clone().endOf('day');
-                groupBy = {
-                    year: { $year: '$createdAt' },
-                    month: { $month: '$createdAt' },
-                    day: { $dayOfMonth: '$createdAt' },
-                };
-                break;
-            case 'monthly':
-                start = now.clone().subtract(30, 'days').startOf('day');
-                end = now.clone().endOf('day');
-                groupBy = {
-                    year: { $year: '$createdAt' },
-                    month: { $month: '$createdAt' },
-                    day: { $dayOfMonth: '$createdAt' },
-                };
-                break;
-            case 'custom':
-                if (startDate && endDate) {
-                    start = moment(startDate).startOf('day');
-                    end = moment(endDate).endOf('day');
-                    groupBy = {
-                        year: { $year: '$createdAt' },
-                        month: { $month: '$createdAt' },
-                        day: { $dayOfMonth: '$createdAt' },
-                    };
-                } else {
-                    return {
-                        status: 400,
-                        entity: {
-                            success: false,
-                            error: 'Start date and end date are required for custom period',
-                        },
-                    };
-                }
-                break;
-            default:
+        if (period === 'weekly') {
+            start = moment().startOf('week');
+            end = moment().endOf('week');
+            groupBy = {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' },
+                day: { $dayOfMonth: '$createdAt' },
+            };
+        } else if (period === 'monthly') {
+            start = moment().startOf('month');
+            end = moment().endOf('month');
+            groupBy = {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' },
+                day: { $dayOfMonth: '$createdAt' },
+            };
+        } else if (period === 'custom') {
+            const { startDate, endDate } = query;
+            if (!startDate || !endDate) {
                 return {
                     status: 400,
                     entity: {
                         success: false,
-                        error: 'Invalid period. Must be weekly, monthly, or custom',
+                        error: 'Start date and end date are required for custom period',
                     },
                 };
+            }
+            start = moment(startDate);
+            end = moment(endDate);
+            groupBy = {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' },
+                day: { $dayOfMonth: '$createdAt' },
+            };
+        } else {
+            return {
+                status: 400,
+                entity: {
+                    success: false,
+                    error: 'Invalid period. Must be weekly, monthly, or custom',
+                },
+            };
         }
 
         dateFilter = {
@@ -477,8 +381,8 @@ export const getPlanAnalytics = async ({ id }, query) => {
             activePurchases: 0,
         };
 
-        // Get user statistics
-        const userStats = await UserPlan.aggregate([
+        // Get purchased items (UserPlan records with user information)
+        const purchasedItems = await UserPlan.aggregate([
             {
                 $match: {
                     plan: mongoose.Types.ObjectId(id),
@@ -497,10 +401,59 @@ export const getPlanAnalytics = async ({ id }, query) => {
                 $unwind: '$userInfo',
             },
             {
-                $group: {
-                    _id: '$userInfo.role',
-                    count: { $sum: 1 },
+                $lookup: {
+                    from: 'payments',
+                    localField: 'paymentReference',
+                    foreignField: '_id',
+                    as: 'paymentInfo',
                 },
+            },
+            {
+                $project: {
+                    id: '$_id',
+                    purchaseDate: '$purchaseDate',
+                    status: '$status',
+                    purchaseMethod: '$purchaseMethod',
+                    planSnapshot: '$planSnapshot',
+                    grantReason: '$grantReason',
+                    createdAt: '$createdAt',
+                    updatedAt: '$updatedAt',
+                    user: {
+                        id: '$userInfo._id',
+                        name: '$userInfo.name',
+                        email: '$userInfo.email',
+                        phone: '$userInfo.phone',
+                        role: '$userInfo.role',
+                    },
+                    paymentInfo: {
+                        $cond: {
+                            if: { $gt: [{ $size: '$paymentInfo' }, 0] },
+                            then: {
+                                $let: {
+                                    vars: { payment: { $arrayElemAt: ['$paymentInfo', 0] } },
+                                    in: {
+                                        id: '$$payment._id',
+                                        method: '$$payment.method',
+                                        amount: '$$payment.amount',
+                                        currency: '$$payment.currency',
+                                        status: '$$payment.status',
+                                    }
+                                }
+                            },
+                            else: null
+                        }
+                    },
+                    grantedBy: {
+                        $cond: {
+                            if: { $ne: ['$grantedBy', null] },
+                            then: '$grantedBy',
+                            else: null
+                        }
+                    }
+                },
+            },
+            {
+                $sort: { createdAt: -1 },
             },
         ]);
 
@@ -521,7 +474,7 @@ export const getPlanAnalytics = async ({ id }, query) => {
                     },
                     statistics: stats,
                     purchasesOverTime,
-                    userStats,
+                    purchasedItems,
                 },
             },
         };
