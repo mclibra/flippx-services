@@ -1,25 +1,21 @@
-import { Wallet, Payment } from './model';
-import { Plan } from '../plan/model';
 import { User } from '../user/model';
+import { Plan } from '../plan/model';
 import { UserPlan } from '../plan/userPlanModel';
-import { Transaction } from '../transaction/model';
+import { Wallet, Payment } from './model';
 import { makeTransaction } from '../transaction/controller';
-import { BankAccount } from '../bank_account/model';
-import { Withdrawal } from '../withdrawal/model';
-import { LoyaltyService } from '../loyalty/service';
-import { createPaymentSession, getPaymentSession, verifyWebhookSignature } from '../../services/payoneer';
+import { createPaymentSession, verifyWebhookSignature } from '../../services/payoneer';
 
-export const getUserBalance = async user => {
+export const getUserBalance = async (user) => {
 	try {
-		const wallet = await Wallet.findOne({ user: user._id });
+		let wallet = await Wallet.findOne({ user: user._id });
+
 		if (!wallet) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Wallet not found',
-				},
-			};
+			wallet = await Wallet.create({
+				user: user._id,
+				virtualBalance: 0.0,
+				realBalanceWithdrawable: 0.0,
+				realBalanceNonWithdrawable: 0.0,
+			});
 		}
 
 		return {
@@ -27,180 +23,97 @@ export const getUserBalance = async user => {
 			entity: {
 				success: true,
 				balance: {
-					virtualBalance: wallet.virtualBalance,
-					realBalanceWithdrawable: wallet.realBalanceWithdrawable,
-					realBalanceNonWithdrawable: wallet.realBalanceNonWithdrawable,
-					totalRealBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable,
-					totalBalance: wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable + wallet.virtualBalance,
+					virtual: wallet.virtualBalance,
+					realWithdrawable: wallet.realBalanceWithdrawable,
+					realNonWithdrawable: wallet.realBalanceNonWithdrawable,
+					totalReal: wallet.realBalance,
 				},
 			},
 		};
 	} catch (error) {
-		console.error('Get wallet balance error:', error);
+		console.error('Get user balance error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to get wallet balance',
+				error: error.message || 'Failed to fetch balance',
 			},
 		};
 	}
 };
 
-export const withdrawalRequest = async (user, body) => {
+export const getWalletSummary = async (req) => {
 	try {
-		const { amount, bankAccountId } = body;
+		const { user } = req;
 
-		// **NEW: Document Verification Check**
-		if (
-			!user.idProof ||
-			user.idProof.verificationStatus !== 'VERIFIED' ||
-			!user.addressProof ||
-			user.addressProof.verificationStatus !== 'VERIFIED'
-		) {
+		// Verify admin permissions
+		if (user.role !== 'ADMIN') {
 			return {
 				status: 403,
 				entity: {
 					success: false,
-					error: 'Document verification required to request withdrawal. Please upload and get your ID and address documents verified.',
+					error: 'Unauthorized - Admin access required',
 				},
 			};
 		}
 
-		// Validate amount
-		if (!amount || amount <= 0) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Invalid withdrawal amount',
+		// Get all wallets summary
+		const walletSummary = await Wallet.aggregate([
+			{
+				$group: {
+					_id: null,
+					totalUsers: { $sum: 1 },
+					totalVirtualBalance: { $sum: '$virtualBalance' },
+					totalRealWithdrawable: { $sum: '$realBalanceWithdrawable' },
+					totalRealNonWithdrawable: { $sum: '$realBalanceNonWithdrawable' },
+					totalPendingWithdrawals: { $sum: '$pendingWithdrawals' },
 				},
-			};
-		}
+			},
+		]);
 
-		if (!bankAccountId) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Bank account is required',
+		// Get payments summary
+		const paymentsSummary = await Payment.aggregate([
+			{
+				$group: {
+					_id: '$status',
+					count: { $sum: 1 },
+					totalAmount: { $sum: '$amount' },
 				},
+			},
+		]);
+
+		// Format payments data
+		const paymentsData = {};
+		paymentsSummary.forEach((item) => {
+			paymentsData[item._id] = {
+				count: item.count,
+				totalAmount: item.totalAmount,
 			};
-		}
-
-		// **NEW: Check tier-based withdrawal limits**
-		try {
-			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
-			if (!withdrawalLimitResult.success) {
-				return {
-					status: 500,
-					entity: {
-						success: false,
-						error: 'Failed to validate withdrawal limits. Please try again.',
-					},
-				};
-			}
-
-			if (amount > withdrawalLimitResult.availableAmount) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: `Withdrawal amount exceeds your weekly limit. Available: $${withdrawalLimitResult.availableAmount}`,
-					},
-				};
-			}
-		} catch (loyaltyError) {
-			console.error('Loyalty service error:', loyaltyError);
-			return {
-				status: 500,
-				entity: {
-					success: false,
-					error: 'Failed to validate withdrawal limits. Please try again.',
-				},
-			};
-		}
-
-		// Get user wallet
-		const wallet = await Wallet.findOne({ user: user._id });
-		if (!wallet) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Wallet not found',
-				},
-			};
-		}
-
-		// Check if user has sufficient withdrawable balance
-		if (wallet.realBalanceWithdrawable < amount) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: `Insufficient withdrawable balance. Available: $${wallet.realBalanceWithdrawable}`,
-				},
-			};
-		}
-
-		// Verify bank account belongs to user
-		const bankAccount = await BankAccount.findOne({
-			_id: bankAccountId,
-			user: user._id,
 		});
-
-		if (!bankAccount) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Bank account not found',
-				},
-			};
-		}
-
-		// Calculate fees (if any)
-		const fee = 0; // No fee for now
-		const netAmount = amount - fee;
-
-		// Create withdrawal request
-		const withdrawal = await Withdrawal.create({
-			user: user._id,
-			bankAccount: bankAccountId,
-			amount,
-			fee,
-			netAmount,
-			status: 'PENDING',
-		});
-
-		// Create transaction to track pending withdrawal
-		await makeTransaction(
-			user._id,
-			user.role,
-			'WITHDRAWAL_REQUEST',
-			amount,
-			withdrawal._id,
-			'WITHDRAWAL',
-			bankAccountId,
-			'REAL'
-		);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				withdrawal,
-				message: 'Withdrawal request submitted successfully',
+				summary: {
+					wallets: walletSummary[0] || {
+						totalUsers: 0,
+						totalVirtualBalance: 0,
+						totalRealWithdrawable: 0,
+						totalRealNonWithdrawable: 0,
+						totalPendingWithdrawals: 0,
+					},
+					payments: paymentsData,
+				},
 			},
 		};
 	} catch (error) {
-		console.error('Withdrawal request error:', error);
+		console.error('Get wallet summary error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to create withdrawal request',
+				error: error.message || 'Failed to fetch wallet summary',
 			},
 		};
 	}
@@ -208,26 +121,26 @@ export const withdrawalRequest = async (user, body) => {
 
 export const initiateVirtualCashPurchase = async (req, res) => {
 	try {
-		const { amount, currency = 'USD', virtualCashAmount, realCashAmount, planId } = req.body;
-		const user = req.user;
+		const { user } = req;
+		const { amount, currency = 'USD', planId, virtualCashAmount = 0, realCashAmount = 0 } = req.body;
 
-		// Validate required fields
+		// Validate required parameters
 		if (!amount || amount <= 0) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid amount specified',
+					error: 'Valid amount is required',
 				},
 			};
 		}
 
 		let plan = null;
-		let description = '';
-		let finalVirtualCashAmount = virtualCashAmount || 0;
-		let finalRealCashAmount = realCashAmount || 0;
+		let finalVirtualCashAmount = virtualCashAmount;
+		let finalRealCashAmount = realCashAmount;
+		let description = 'Virtual Cash Purchase';
 
-		// If plan is specified, validate and use plan amounts
+		// If plan is specified, validate it and use plan amounts
 		if (planId) {
 			plan = await Plan.findById(planId);
 			if (!plan) {
@@ -250,13 +163,13 @@ export const initiateVirtualCashPurchase = async (req, res) => {
 				};
 			}
 
-			// Validate payment amount matches plan price
+			// Validate amount matches plan price
 			if (Math.abs(amount - plan.price) > 0.01) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Payment amount must match plan price. Expected: $${plan.price}`,
+						error: `Amount mismatch. Provided: $${amount}, Expected: $${plan.price}`,
 					},
 				};
 			}
@@ -369,17 +282,455 @@ export const initiateVirtualCashPurchase = async (req, res) => {
 					plan: plan ? { id: plan._id, name: plan.name } : null,
 					virtualCashAmount: payment.virtualCashAmount,
 					realCashAmount: payment.realCashAmount,
-					status: payment.status,
 				},
 			},
 		};
 	} catch (error) {
-		console.error('Initiate virtual cash purchase error:', error);
+		console.error('Virtual cash purchase initiation error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
 				error: error.message || 'Failed to initiate purchase',
+			},
+		};
+	}
+};
+
+export const createPayment = async (user, body) => {
+	try {
+		// Verify admin permissions
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized - Admin access required',
+				},
+			};
+		}
+
+		const { userId, amount, paymentMethod, planId, description } = body;
+
+		// Validate required fields
+		if (!userId || !amount || !paymentMethod) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'User ID, amount, and payment method are required',
+				},
+			};
+		}
+
+		// Verify user exists
+		const targetUser = await User.findById(userId);
+		if (!targetUser) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+
+		let plan = null;
+		if (planId) {
+			plan = await Plan.findById(planId);
+			if (!plan) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'Plan not found',
+					},
+				};
+			}
+
+			// Validate amount matches plan price if plan is specified
+			if (Math.abs(amount - plan.price) > 0.01) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Amount mismatch. Provided: $${amount}, Expected: $${plan.price}`,
+					},
+				};
+			}
+		}
+
+		// Create payment record
+		const payment = await Payment.create({
+			user: user._id,
+			amount,
+			method: paymentMethod,
+			plan: planId || null,
+			description: description || `${paymentMethod} payment`,
+			status: 'PENDING',
+		});
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payment,
+				message: 'Payment created successfully',
+			},
+		};
+	} catch (error) {
+		console.error('Payment creation error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to create payment',
+			},
+		};
+	}
+};
+
+export const createManualPayment = async (user, body) => {
+	try {
+		// Verify admin permissions
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized - Admin access required',
+				},
+			};
+		}
+
+		const {
+			userId,
+			amount: providedAmount,
+			bankTransferReference,
+			bankName,
+			transferDate,
+			depositorName,
+			notes,
+			planId, // Optional plan ID
+		} = body;
+
+		// Validate required fields
+		if (!userId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'User ID is required',
+				},
+			};
+		}
+
+		if (!bankTransferReference) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Bank transfer reference is required',
+				},
+			};
+		}
+
+		// Verify user exists
+		const targetUser = await User.findById(userId);
+		if (!targetUser) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+
+		let plan = null;
+		let finalAmount = providedAmount;
+
+		// If plan is specified, validate it and fetch amount from plan
+		if (planId) {
+			plan = await Plan.findById(planId);
+			if (!plan) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'Plan not found',
+					},
+				};
+			}
+
+			if (plan.status !== 'ACTIVE' || !plan.isAvailableForPurchase) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Plan is not available for purchase',
+					},
+				};
+			}
+
+			// If planId exists, fetch amount from plan
+			finalAmount = plan.price;
+
+			// If amount was also provided, validate it matches the plan price
+			if (providedAmount && Math.abs(providedAmount - plan.price) > 0.01) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Provided amount (${providedAmount}) does not match plan price. Expected: $${plan.price}`,
+					},
+				};
+			}
+
+			// Check if user already has an active plan of this type
+			const existingUserPlan = await UserPlan.findOne({
+				user: userId,
+				plan: planId,
+				status: 'ACTIVE',
+			});
+
+			if (existingUserPlan) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'User already has an active subscription to this plan',
+					},
+				};
+			}
+		} else {
+			if (!providedAmount || providedAmount <= 0) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Amount is required when no plan is specified',
+					},
+				};
+			}
+		}
+
+		// Generate unique session ID for manual payments to avoid duplicate key error
+		const sessionId = `manual_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+		// Create manual payment record
+		const payment = await Payment.create({
+			user: userId,
+			sessionId, // Add unique sessionId to prevent duplicate key error
+			amount: finalAmount,
+			currency: 'USD',
+			method: 'BANK_TRANSFER',
+			status: 'PENDING',
+			plan: planId || null,
+			isManual: true,
+			bankTransferReference,
+			bankName: bankName || null,
+			transferDate: transferDate ? new Date(transferDate) : new Date(),
+			depositorName: depositorName || null,
+			notes: notes || null,
+		});
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payment,
+				message: planId
+					? `Manual payment record created successfully with amount $${finalAmount} from plan "${plan.name}"`
+					: 'Manual payment record created successfully',
+			},
+		};
+	} catch (error) {
+		console.error('Manual payment creation error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to create manual payment',
+			},
+		};
+	}
+};
+
+export const confirmPayment = async (user, { paymentId }) => {
+	try {
+		// Find the payment
+		const payment = await Payment.findById(paymentId).populate('plan');
+		if (!payment) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Payment not found',
+				},
+			};
+		}
+
+		// Verify payment belongs to user (unless admin)
+		if (user.role !== 'ADMIN' && payment.user.toString() !== user._id.toString()) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized to confirm this payment',
+				},
+			};
+		}
+
+		// Check if already processed
+		if (payment.status !== 'PENDING') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Payment is already ${payment.status.toLowerCase()}`,
+				},
+			};
+		}
+
+		// Update payment status
+		payment.status = 'COMPLETED';
+		payment.confirmedAt = new Date();
+		payment.confirmedBy = user._id;
+		await payment.save();
+
+		// Process wallet credits and user plan creation
+		await processPaymentCompletion(payment);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Payment confirmed and wallet credited successfully',
+				payment: {
+					id: payment._id,
+					amount: payment.amount,
+					virtualCashAmount: payment.virtualCashAmount,
+					realCashAmount: payment.realCashAmount,
+					plan: payment.plan ? { id: payment.plan._id, name: payment.plan.name } : null,
+					status: payment.status,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Confirm payment error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to confirm payment',
+			},
+		};
+	}
+};
+
+export const getAllPayments = async (user, query) => {
+	try {
+		// Verify admin permissions
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized - Admin access required',
+				},
+			};
+		}
+
+		const { page = 1, limit = 20, status, method, userId } = query;
+
+		// Build filter
+		const filter = {};
+		if (status) filter.status = status;
+		if (method) filter.method = method;
+		if (userId) filter.user = userId;
+
+		// Calculate skip
+		const skip = (page - 1) * limit;
+
+		// Get payments with pagination
+		const payments = await Payment.find(filter)
+			.populate('user', 'firstName lastName email')
+			.populate('plan', 'name price')
+			.populate('confirmedBy', 'firstName lastName')
+			.sort({ createdAt: -1 })
+			.skip(skip)
+			.limit(parseInt(limit));
+
+		// Get total count
+		const total = await Payment.countDocuments(filter);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payments,
+				pagination: {
+					page: parseInt(page),
+					limit: parseInt(limit),
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Get all payments error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch payments',
+			},
+		};
+	}
+};
+
+export const getUserPayments = async ({ _id, query }) => {
+	try {
+		const { page = 1, limit = 10, status } = query;
+
+		// Build filter
+		const filter = { user: _id };
+		if (status) filter.status = status;
+
+		// Calculate skip
+		const skip = (page - 1) * limit;
+
+		// Get user's payments
+		const payments = await Payment.find(filter)
+			.populate('plan', 'name price')
+			.sort({ createdAt: -1 })
+			.skip(skip)
+			.limit(parseInt(limit));
+
+		// Get total count
+		const total = await Payment.countDocuments(filter);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				payments,
+				pagination: {
+					page: parseInt(page),
+					limit: parseInt(limit),
+					total,
+					pages: Math.ceil(total / limit),
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Get user payments error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch user payments',
 			},
 		};
 	}
@@ -412,7 +763,7 @@ export const handlePurchaseSuccess = async (req, res) => {
 		}
 
 		// Check if already processed
-		if (payment.status === 'COMPLETED') {
+		if (payment.status !== 'PENDING') {
 			return {
 				status: 200,
 				entity: {
@@ -427,26 +778,8 @@ export const handlePurchaseSuccess = async (req, res) => {
 			};
 		}
 
-		// Verify payment with Payoneer
-		const payoneerSession = await getPaymentSession(payment.providerResponse.session_id);
-
-		// Check if payment was actually successful
-		if (payoneerSession.status !== 'COMPLETED' && payoneerSession.status !== 'PAID') {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Payment not completed successfully',
-				},
-			};
-		}
-
 		// Update payment status
 		payment.status = 'COMPLETED';
-		payment.providerResponse = {
-			...payment.providerResponse,
-			completion_data: payoneerSession,
-		};
 		await payment.save();
 
 		// Process wallet credits and user plan creation
@@ -718,540 +1051,9 @@ const processPaymentCompletion = async (payment) => {
 				realCashAmount: payment.plan.realCashAmount,
 				virtualCashAmount: payment.plan.virtualCashAmount,
 			},
+			purchaseMethod: payment.isManual ? 'MANUAL_PAYMENT' : 'PAYMENT_GATEWAY',
 		});
 
 		console.log(`Created user plan ${userPlan._id} for payment ${payment._id}`);
-	}
-
-	// Record deposit for loyalty tracking
-	try {
-		const loyaltyResult = await LoyaltyService.recordUserDeposit(
-			payment.user,
-			payment.amount
-		);
-		if (!loyaltyResult.success) {
-			console.warn(`Failed to record deposit for user ${payment.user}:`, loyaltyResult.error);
-		}
-	} catch (loyaltyError) {
-		console.error(`Error recording deposit for user ${payment.user}:`, loyaltyError);
-	}
-};
-
-export const createPayment = async (user, body) => {
-	try {
-		const { amount, paymentMethod, description, planId } = body;
-
-		// Validate payment data
-		if (!amount || amount <= 0) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Invalid payment amount',
-				},
-			};
-		}
-
-		if (!paymentMethod) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Payment method is required',
-				},
-			};
-		}
-
-		let plan = null;
-		// If plan is specified, validate it
-		if (planId) {
-			plan = await Plan.findById(planId);
-			if (!plan) {
-				return {
-					status: 404,
-					entity: {
-						success: false,
-						error: 'Plan not found',
-					},
-				};
-			}
-
-			if (plan.status !== 'ACTIVE' || !plan.isAvailableForPurchase) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'Plan is not available for purchase',
-					},
-				};
-			}
-
-			// Validate payment amount matches plan price
-			if (Math.abs(amount - plan.price) > 0.01) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: `Payment amount must match plan price. Expected: $${plan.price}`,
-					},
-				};
-			}
-		}
-
-		// Create payment record
-		const payment = await Payment.create({
-			user: user._id,
-			amount,
-			method: paymentMethod,
-			plan: planId || null,
-			description: description || `${paymentMethod} payment`,
-			status: 'PENDING',
-		});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				payment,
-				message: 'Payment created successfully',
-			},
-		};
-	} catch (error) {
-		console.error('Payment creation error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to create payment',
-			},
-		};
-	}
-};
-
-export const createManualPayment = async (user, body) => {
-	try {
-		// Verify admin permissions
-		if (user.role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized - Admin access required',
-				},
-			};
-		}
-
-		const {
-			userId,
-			amount: providedAmount,
-			bankTransferReference,
-			bankName,
-			transferDate,
-			depositorName,
-			notes,
-			planId, // Optional plan ID
-		} = body;
-
-		// Validate required fields
-		if (!userId) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'User ID is required',
-				},
-			};
-		}
-
-		if (!bankTransferReference) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Bank transfer reference is required',
-				},
-			};
-		}
-
-		// Verify user exists
-		const targetUser = await User.findById(userId);
-		if (!targetUser) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'User not found',
-				},
-			};
-		}
-
-		let plan = null;
-		let finalAmount = providedAmount;
-
-		// If plan is specified, validate it and fetch amount from plan
-		if (planId) {
-			plan = await Plan.findById(planId);
-			if (!plan) {
-				return {
-					status: 404,
-					entity: {
-						success: false,
-						error: 'Plan not found',
-					},
-				};
-			}
-
-			if (plan.status !== 'ACTIVE' || !plan.isAvailableForPurchase) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'Plan is not available for purchase',
-					},
-				};
-			}
-
-			// If planId exists, fetch amount from plan
-			finalAmount = plan.price;
-
-			// If amount was also provided, validate it matches the plan price
-			if (providedAmount && Math.abs(providedAmount - plan.price) > 0.01) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: `Provided amount (${providedAmount}) does not match plan price. Expected: $${plan.price}`,
-					},
-				};
-			}
-
-			// Check if user already has an active plan of this type
-			const existingUserPlan = await UserPlan.findOne({
-				user: userId,
-				plan: planId,
-				status: 'ACTIVE',
-			});
-
-			if (existingUserPlan) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'User already has an active subscription to this plan',
-					},
-				};
-			}
-		} else {
-			if (!providedAmount || providedAmount <= 0) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'Amount is required when no plan is specified',
-					},
-				};
-			}
-		}
-
-		// Create manual payment record
-		const payment = await Payment.create({
-			user: userId,
-			amount: finalAmount,
-			currency: 'USD',
-			method: 'BANK_TRANSFER',
-			status: 'PENDING',
-			plan: planId || null,
-			isManual: true,
-			bankTransferReference,
-			bankName: bankName || null,
-			transferDate: transferDate ? new Date(transferDate) : new Date(),
-			depositorName: depositorName || null,
-			notes: notes || null,
-		});
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				payment,
-				message: planId
-					? `Manual payment record created successfully with amount $${finalAmount} from plan "${plan.name}"`
-					: 'Manual payment record created successfully',
-			},
-		};
-	} catch (error) {
-		console.error('Manual payment creation error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to create manual payment',
-			},
-		};
-	}
-};
-
-export const confirmPayment = async (user, { paymentId }) => {
-	try {
-		// Find the payment
-		const payment = await Payment.findById(paymentId).populate('plan');
-		if (!payment) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Payment not found',
-				},
-			};
-		}
-
-		// Verify payment belongs to user (unless admin)
-		if (user.role !== 'ADMIN' && payment.user.toString() !== user._id.toString()) {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized to confirm this payment',
-				},
-			};
-		}
-
-		// Check if already processed
-		if (payment.status !== 'PENDING') {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: `Payment is already ${payment.status.toLowerCase()}`,
-				},
-			};
-		}
-
-		// Update payment status
-		payment.status = 'COMPLETED';
-		payment.confirmedAt = new Date();
-		payment.confirmedBy = user._id;
-		await payment.save();
-
-		// Process wallet credits and user plan creation
-		await processPaymentCompletion(payment);
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				message: 'Payment confirmed and wallet credited successfully',
-				payment: {
-					id: payment._id,
-					amount: payment.amount,
-					virtualCashAmount: payment.virtualCashAmount,
-					realCashAmount: payment.realCashAmount,
-					plan: payment.plan ? { id: payment.plan._id, name: payment.plan.name } : null,
-					status: payment.status,
-				},
-			},
-		};
-	} catch (error) {
-		console.error('Confirm payment error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to confirm payment',
-			},
-		};
-	}
-};
-
-export const getAllPayments = async (user, query) => {
-	try {
-		// Verify admin permissions
-		if (user.role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized - Admin access required',
-				},
-			};
-		}
-
-		const {
-			offset = 0,
-			limit = 10,
-			status,
-			method,
-			userId,
-			planId,
-		} = query;
-
-		let filter = {};
-
-		if (status) {
-			filter.status = status.toUpperCase();
-		}
-
-		if (method) {
-			filter.method = method.toUpperCase();
-		}
-
-		if (userId) {
-			filter.user = userId;
-		}
-
-		if (planId) {
-			filter.plan = planId;
-		}
-
-		const payments = await Payment.find(filter)
-			.populate('user', 'name.firstName name.lastName phone')
-			.populate('plan', 'name price')
-			.populate('confirmedBy', 'name.firstName name.lastName')
-			.sort({ createdAt: -1 })
-			.limit(parseInt(limit))
-			.skip(parseInt(offset));
-
-		const total = await Payment.countDocuments(filter);
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				payments,
-				pagination: {
-					total,
-					offset: parseInt(offset),
-					limit: parseInt(limit),
-				},
-			},
-		};
-	} catch (error) {
-		console.error('Get all payments error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to get payments',
-			},
-		};
-	}
-};
-
-export const getUserPayments = async (user) => {
-	try {
-		const { query } = user;
-		const {
-			offset = 0,
-			limit = 10,
-			status,
-		} = query;
-
-		let filter = { user: user._id };
-
-		if (status) {
-			filter.status = status.toUpperCase();
-		}
-
-		const payments = await Payment.find(filter)
-			.populate('plan', 'name price')
-			.sort({ createdAt: -1 })
-			.limit(parseInt(limit))
-			.skip(parseInt(offset));
-
-		const total = await Payment.countDocuments(filter);
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				payments,
-				pagination: {
-					total,
-					offset: parseInt(offset),
-					limit: parseInt(limit),
-				},
-			},
-		};
-	} catch (error) {
-		console.error('Get user payments error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to get user payments',
-			},
-		};
-	}
-};
-
-export const getWalletSummary = async (req) => {
-	try {
-		const { query } = req;
-		const { startDate, endDate } = query;
-
-		let dateFilter = {};
-		if (startDate && endDate) {
-			dateFilter.createdAt = {
-				$gte: new Date(startDate),
-				$lte: new Date(endDate),
-			};
-		}
-
-		// Get wallet statistics
-		const totalWallets = await Wallet.countDocuments();
-		const activeWallets = await Wallet.countDocuments({ active: true });
-
-		// Get payment statistics
-		const totalPayments = await Payment.countDocuments(dateFilter);
-		const completedPayments = await Payment.countDocuments({
-			...dateFilter,
-			status: 'COMPLETED',
-		});
-
-		// Get payment amounts
-		const paymentAmounts = await Payment.aggregate([
-			{ $match: { ...dateFilter, status: 'COMPLETED' } },
-			{
-				$group: {
-					_id: null,
-					totalAmount: { $sum: '$amount' },
-					totalVirtualAmount: { $sum: '$virtualCashAmount' },
-					totalRealAmount: { $sum: '$realCashAmount' },
-				},
-			},
-		]);
-
-		const amounts = paymentAmounts[0] || {
-			totalAmount: 0,
-			totalVirtualAmount: 0,
-			totalRealAmount: 0,
-		};
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				summary: {
-					wallets: {
-						total: totalWallets,
-						active: activeWallets,
-					},
-					payments: {
-						total: totalPayments,
-						completed: completedPayments,
-						amounts,
-					},
-				},
-			},
-		};
-	} catch (error) {
-		console.error('Get wallet summary error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to get wallet summary',
-			},
-		};
 	}
 };
