@@ -655,9 +655,9 @@ export const getAllPayments = async (user, query) => {
 
 		// Get payments with pagination
 		const payments = await Payment.find(filter)
-			.populate('user', 'firstName lastName email')
+			.populate('user', 'name phone email')
 			.populate('plan', 'name price')
-			.populate('confirmedBy', 'firstName lastName')
+			.populate('confirmedBy', 'name phone email')
 			.sort({ createdAt: -1 })
 			.skip(skip)
 			.limit(parseInt(limit));
