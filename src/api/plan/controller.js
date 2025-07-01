@@ -390,15 +390,23 @@ export const getPlanAnalytics = async ({ id }, query) => {
                 },
             },
             {
+                $addFields: {
+                    userObjectId: { $toObjectId: '$user' }
+                }
+            },
+            {
                 $lookup: {
                     from: 'users',
-                    localField: 'user',
+                    localField: 'userObjectId',
                     foreignField: '_id',
                     as: 'userInfo',
                 },
             },
             {
-                $unwind: '$userInfo',
+                $unwind: {
+                    path: '$userInfo',
+                    preserveNullAndEmptyArrays: true
+                },
             },
             {
                 $lookup: {
@@ -419,11 +427,23 @@ export const getPlanAnalytics = async ({ id }, query) => {
                     createdAt: '$createdAt',
                     updatedAt: '$updatedAt',
                     user: {
-                        id: '$userInfo._id',
-                        name: '$userInfo.name',
-                        email: '$userInfo.email',
-                        phone: '$userInfo.phone',
-                        role: '$userInfo.role',
+                        $cond: {
+                            if: '$userInfo',
+                            then: {
+                                id: '$userInfo._id',
+                                name: '$userInfo.name',
+                                email: '$userInfo.email',
+                                phone: '$userInfo.phone',
+                                role: '$userInfo.role',
+                            },
+                            else: {
+                                id: '$user',
+                                name: null,
+                                email: null,
+                                phone: null,
+                                role: null,
+                            }
+                        }
                     },
                     paymentInfo: {
                         $cond: {
@@ -432,11 +452,11 @@ export const getPlanAnalytics = async ({ id }, query) => {
                                 $let: {
                                     vars: { payment: { $arrayElemAt: ['$paymentInfo', 0] } },
                                     in: {
-                                        id: '$$payment._id',
-                                        method: '$$payment.method',
-                                        amount: '$$payment.amount',
-                                        currency: '$$payment.currency',
-                                        status: '$$payment.status',
+                                        id: '$payment._id',
+                                        method: '$payment.method',
+                                        amount: '$payment.amount',
+                                        currency: '$payment.currency',
+                                        status: '$payment.status',
                                     }
                                 }
                             },
