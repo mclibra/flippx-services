@@ -282,6 +282,54 @@ export const makeTransaction = async (
 				break;
 			}
 
+			case 'PLAN_PURCHASE_VIRTUAL':
+			case 'PLAN_PURCHASE_REAL': {
+				if (cashType === 'REAL') {
+					// For plan purchases, real cash goes to non-withdrawable
+					walletData.realBalanceNonWithdrawable += transactionAmount;
+					await walletData.save();
+
+					await Transaction.create({
+						user: userId,
+						cashType,
+						referenceType: 'PLAN',
+						referenceIndex: ticketId, // This will be the plan ID
+						transactionType: 'CREDIT',
+						transactionIdentifier,
+						transactionAmount,
+						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
+						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						transactionData: {
+							planId: ticketId,
+							transactionType: 'PLAN_PURCHASE',
+						},
+						status: 'COMPLETED',
+					});
+				} else {
+					// For virtual cash
+					walletData.virtualBalance += transactionAmount;
+					await walletData.save();
+
+					await Transaction.create({
+						user: userId,
+						cashType,
+						referenceType: 'PLAN',
+						referenceIndex: ticketId, // This will be the plan ID
+						transactionType: 'CREDIT',
+						transactionIdentifier,
+						transactionAmount,
+						previousBalance: previousVirtualBalance,
+						newBalance: walletData.virtualBalance,
+						transactionData: {
+							planId: ticketId,
+							transactionType: 'PLAN_PURCHASE',
+						},
+						status: 'COMPLETED',
+					});
+				}
+				break;
+			}
+
 			// WITHDRAW for agents/dealers withdrawing from users
 			case 'WITHDRAW': {
 				if (!referenceIndex) {
