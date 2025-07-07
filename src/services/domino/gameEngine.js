@@ -186,14 +186,41 @@ export class DominoGameEngine {
         // Check if any player has no tiles left
         const emptyHandPlayer = players.find(p => p.hand.length === 0);
         if (emptyHandPlayer) {
+            if (winRule === 'POINT_BASED') {
+                // For point-based, calculate points for the round winner
+                const roundScores = this.calculateRoundScores(players, emptyHandPlayer.position);
+                const roundWinner = emptyHandPlayer.position;
+                const winnerScore = roundScores.find(s => s.position === roundWinner);
+
+                // Check if target points reached
+                if (winnerScore.totalScore >= targetPoints) {
+                    return {
+                        winner: roundWinner,
+                        endReason: 'POINTS_REACHED',
+                        roundWinner,
+                        finalScores: roundScores,
+                        gameCompleted: true
+                    };
+                } else {
+                    return {
+                        winner: null,
+                        endReason: 'ROUND_WON',
+                        roundWinner,
+                        finalScores: roundScores,
+                        gameCompleted: false
+                    };
+                }
+            }
+
             return {
                 winner: emptyHandPlayer.position,
                 endReason: 'LAST_TILE',
-                roundWinner: emptyHandPlayer.position
+                roundWinner: emptyHandPlayer.position,
+                gameCompleted: true
             };
         }
 
-        // Check if all players passed consecutively
+        // Check if all players passed consecutively (blocked game)
         const allPassed = players.every(p => p.consecutivePasses >= 1);
         if (allPassed) {
             // Find player with lowest dots
@@ -204,21 +231,20 @@ export class DominoGameEngine {
             }));
 
             playerDots.sort((a, b) => a.dots - b.dots);
-
-            const roundWinner = playerDots[0].position;
+            const roundWinner = playerDots[0].position; // Player with lowest dots wins
 
             // For point-based games, check if target reached
             if (winRule === 'POINT_BASED') {
-                // Add points to winner
-                const pointsToAdd = playerDots.slice(1).reduce((sum, p) => sum + p.dots, 0);
-                const winnerTotalScore = playerDots[0].totalScore + pointsToAdd;
+                // FIXED: Calculate points correctly
+                const roundScores = this.calculateRoundScores(players, roundWinner);
+                const winnerScore = roundScores.find(s => s.position === roundWinner);
 
-                if (winnerTotalScore >= targetPoints) {
+                if (winnerScore.totalScore >= targetPoints) {
                     return {
                         winner: roundWinner,
                         endReason: 'POINTS_REACHED',
                         roundWinner,
-                        finalScores: playerDots,
+                        finalScores: roundScores,
                         gameCompleted: true
                     };
                 } else {
@@ -226,7 +252,7 @@ export class DominoGameEngine {
                         winner: null,
                         endReason: 'LOWEST_DOTS',
                         roundWinner,
-                        finalScores: playerDots,
+                        finalScores: roundScores,
                         gameCompleted: false
                     };
                 }
@@ -236,7 +262,12 @@ export class DominoGameEngine {
                 winner: roundWinner,
                 endReason: 'LOWEST_DOTS',
                 roundWinner,
-                finalScores: playerDots,
+                finalScores: playerDots.map(p => ({
+                    position: p.position,
+                    dotsRemaining: p.dots,
+                    roundScore: 0,
+                    totalScore: p.totalScore
+                })),
                 gameCompleted: true
             };
         }
@@ -244,7 +275,7 @@ export class DominoGameEngine {
         return { winner: null, gameCompleted: false };
     }
 
-    // Calculate round scores for point-based games
+    // Calculate round scores for point-based games - FIXED VERSION
     static calculateRoundScores(players, roundWinner) {
         const scores = players.map(p => ({
             position: p.position,
@@ -253,7 +284,7 @@ export class DominoGameEngine {
             totalScore: p.totalScore
         }));
 
-        // Winner gets points equal to sum of all other players' remaining dots
+        // FIXED: Winner gets points equal to sum of ALL OTHER players' remaining dots
         const winnerScore = scores.find(s => s.position === roundWinner);
         const losersDots = scores.filter(s => s.position !== roundWinner)
             .reduce((sum, s) => sum + s.dotsRemaining, 0);
@@ -315,5 +346,32 @@ export class DominoGameEngine {
         }
 
         return { isValid: errors.length === 0, errors };
+    }
+
+    static startNewRound(players, tilesPerPlayer = 7) {
+        // Reset player hands and states
+        const resetPlayers = players.map(p => ({
+            ...p,
+            hand: [],
+            consecutivePasses: 0,
+            lastAction: new Date()
+        }));
+
+        // Generate new tile set and distribute
+        const tiles = this.generateTileSet();
+        const { playerHands, drawPile } = this.distributeTiles(tiles, resetPlayers.length, tilesPerPlayer);
+
+        // Assign hands to players
+        resetPlayers.forEach((player, index) => {
+            player.hand = playerHands[index];
+        });
+
+        return {
+            players: resetPlayers,
+            drawPile,
+            board: [],
+            currentPlayer: 0, // Start with first player
+            gameState: 'ACTIVE'
+        };
     }
 }

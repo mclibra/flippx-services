@@ -432,31 +432,24 @@ export const fillWithComputerPlayers = async (room) => {
     }
 };
 
-export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
+export const makeMove = async ({ gameId, action, tile, side }, user) => {
     try {
-        const game = await DominoGame.findById(gameId).populate('room');
+        const game = await DominoGame.findById(gameId)
+            .populate('room')
+            .populate('players.user', 'name');
 
         if (!game || game.gameState !== 'ACTIVE') {
             return {
                 status: 400,
-                entity: { success: false, error: 'Game not active' }
+                entity: { success: false, error: 'Game not found or not active' }
             };
         }
 
-        // Find player position
         const playerPosition = game.players.findIndex(p =>
-            p.user && p.user.toString() === user._id
+            p.user && p.user._id.toString() === user._id
         );
 
-        if (playerPosition === -1) {
-            return {
-                status: 403,
-                entity: { success: false, error: 'You are not in this game' }
-            };
-        }
-
-        // Validate it's player's turn
-        if (game.currentPlayer !== playerPosition) {
+        if (playerPosition === -1 || game.currentPlayer !== playerPosition) {
             return {
                 status: 400,
                 entity: { success: false, error: 'Not your turn' }
@@ -464,18 +457,59 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
         }
 
         const player = game.players[playerPosition];
-        let moveResult;
 
         switch (action) {
             case 'PLACE':
-                moveResult = await placeTile(game, playerPosition, tile, side);
+                if (!tile) {
+                    return {
+                        status: 400,
+                        entity: { success: false, error: 'Tile required for PLACE action' }
+                    };
+                }
+
+                if (!player.hand.includes(tile)) {
+                    return {
+                        status: 400,
+                        entity: { success: false, error: 'Tile not in hand' }
+                    };
+                }
+
+                const canPlace = DominoGameEngine.canPlaceTile(tile, game.board);
+                if (!canPlace.canPlace) {
+                    return {
+                        status: 400,
+                        entity: { success: false, error: 'Invalid tile placement' }
+                    };
+                }
+
+                if (side && !canPlace.sides.includes(side)) {
+                    return {
+                        status: 400,
+                        entity: { success: false, error: 'Invalid side for placement' }
+                    };
+                }
+
+                // Place tile
+                game.board = DominoGameEngine.placeTile(tile, game.board, side || canPlace.sides[0]);
+                player.hand = player.hand.filter(t => t !== tile);
                 break;
+
             case 'DRAW':
-                moveResult = await drawTile(game, playerPosition);
+                if (game.drawPile.length === 0) {
+                    return {
+                        status: 400,
+                        entity: { success: false, error: 'No tiles left to draw' }
+                    };
+                }
+
+                const drawnTile = game.drawPile.pop();
+                player.hand.push(drawnTile);
                 break;
+
             case 'PASS':
-                moveResult = await passTurn(game, playerPosition);
+                player.consecutivePasses += 1;
                 break;
+
             default:
                 return {
                     status: 400,
@@ -483,14 +517,8 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
                 };
         }
 
-        if (!moveResult.success) {
-            return {
-                status: 400,
-                entity: moveResult
-            };
-        }
-
         // Record move
+        player.lastAction = new Date();
         game.moves.push({
             player: playerPosition,
             action,
@@ -512,7 +540,7 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             game.room.gameSettings.targetPoints
         );
 
-        if (gameEndCheck.winner !== null || gameEndCheck.gameCompleted) {
+        if (gameEndCheck.winner !== null || gameEndCheck.gameCompleted || !gameEndCheck.gameCompleted) {
             await endDominoGame(game, gameEndCheck);
         } else {
             // Move to next player
@@ -521,9 +549,8 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
 
             // Process computer player turns
             await processComputerTurns(game);
+            await game.save();
         }
-
-        await game.save();
 
         // Broadcast game update
         broadcastGameUpdate(game.room.roomId, {
@@ -534,7 +561,8 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
                 tile
             },
             gameEnded: gameEndCheck.gameCompleted,
-            winner: gameEndCheck.winner
+            winner: gameEndCheck.winner,
+            roundEnded: !gameEndCheck.gameCompleted && gameEndCheck.roundWinner !== undefined
         });
 
         return {
@@ -543,7 +571,9 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
                 success: true,
                 gameState: game,
                 gameEnded: gameEndCheck.gameCompleted,
-                winner: gameEndCheck.winner
+                roundEnded: !gameEndCheck.gameCompleted && gameEndCheck.roundWinner !== undefined,
+                winner: gameEndCheck.winner,
+                roundWinner: gameEndCheck.roundWinner
             }
         };
     } catch (error) {
@@ -685,68 +715,130 @@ const processComputerTurns = async (game) => {
 
 const endDominoGame = async (game, gameEndResult) => {
     try {
-        game.gameState = 'COMPLETED';
-        game.winner = gameEndResult.winner;
-        game.endReason = gameEndResult.endReason;
-        game.completedAt = new Date();
-        game.duration = Math.floor((new Date() - game.createdAt) / 1000);
+        // Update game state based on result
+        if (gameEndResult.gameCompleted) {
+            // Game is completely finished
+            game.gameState = 'COMPLETED';
+            game.winner = gameEndResult.winner;
+            game.endReason = gameEndResult.endReason;
+            game.completedAt = new Date();
+            game.duration = Math.floor((new Date() - game.createdAt) / 1000);
+        } else {
+            // Round ended but game continues (point-based only)
+            game.endReason = gameEndResult.endReason;
+            game.gameNumber = (game.gameNumber || 1) + 1;
+        }
 
-        // Calculate final scores
+        // Update final scores
         if (gameEndResult.finalScores) {
             game.finalScores = gameEndResult.finalScores;
+
+            // FIXED: Update player total scores in the database
+            gameEndResult.finalScores.forEach(score => {
+                const player = game.players[score.position];
+                if (player) {
+                    player.totalScore = score.totalScore;
+                    player.score = score.roundScore; // Current round score
+                }
+            });
         } else {
             // Calculate for simple win
             game.finalScores = game.players.map(p => ({
                 position: p.position,
                 dotsRemaining: DominoGameEngine.calculateDots(p.hand),
-                roundScore: p.position === game.winner ? 1 : 0,
+                roundScore: p.position === gameEndResult.winner ? 0 : DominoGameEngine.calculateDots(p.hand),
                 totalScore: p.totalScore
             }));
         }
 
-        // Process payout and loyalty rewards
-        if (game.winner !== null && game.winner !== undefined) {
-            const winnerPlayer = game.players[game.winner];
+        // Handle point-based round continuation
+        if (!gameEndResult.gameCompleted && game.room.gameSettings.winRule === 'POINT_BASED') {
+            // Start new round
+            const newRoundData = DominoGameEngine.startNewRound(
+                game.players,
+                game.room.gameSettings.tilesPerPlayer
+            );
 
-            if (winnerPlayer.user) { // Only pay real users, not computer players
-                // Process winning transaction using WON_DOMINO identifier
-                await makeTransaction(
-                    winnerPlayer.user,
-                    'USER',
-                    'WON_DOMINO',
-                    game.winnerPayout,
-                    null,
-                    null,
-                    game._id,
-                    game.room.cashType
-                );
+            // Update game with new round data
+            game.players = newRoundData.players;
+            game.drawPile = newRoundData.drawPile;
+            game.board = newRoundData.board;
+            game.currentPlayer = newRoundData.currentPlayer;
+            game.gameState = newRoundData.gameState;
+            game.turnStartTime = new Date();
 
-                // Award loyalty XP for winning using LoyaltyService
-                await awardDominoLoyaltyPoints(winnerPlayer.user, true, game.room.entryFee, game.room.cashType);
-            }
+            // Reset move tracking for new round
+            game.moves = [];
+            game.totalMoves = 0;
+
+            await game.save();
+
+            // Broadcast new round started
+            broadcastToRoom(game.room.roomId, 'new-round-started', {
+                gameState: game,
+                roundWinner: gameEndResult.roundWinner,
+                roundScores: gameEndResult.finalScores,
+                message: `Round ${game.gameNumber} started! ${game.players[gameEndResult.roundWinner]?.playerName || 'Player'} won the previous round.`
+            });
+
+            return game;
         }
 
-        // Award participation XP to other human players using LoyaltyService
-        for (const player of game.players) {
-            if (player.user && player.position !== game.winner) {
-                await awardDominoLoyaltyPoints(player.user, false, game.room.entryFee, game.room.cashType);
+        // Game is completed - handle final payouts and cleanup
+        if (gameEndResult.gameCompleted) {
+            // Calculate and save final financial data
+            game.finalScores = game.finalScores.map((p, index) => ({
+                position: p.position,
+                dotsRemaining: p.dotsRemaining,
+                roundScore: p.roundScore,
+                totalScore: p.totalScore
+            }));
+
+            // Process payout and loyalty rewards
+            if (game.winner !== null && game.winner !== undefined) {
+                const winnerPlayer = game.players[game.winner];
+
+                if (winnerPlayer.user) { // Only pay real users, not computer players
+                    // Process winning transaction using WON_DOMINO identifier
+                    await makeTransaction(
+                        winnerPlayer.user,
+                        'USER',
+                        'WON_DOMINO',
+                        game.winnerPayout,
+                        null,
+                        null,
+                        game._id,
+                        game.room.cashType
+                    );
+
+                    // Award loyalty XP for winning using LoyaltyService
+                    await awardDominoLoyaltyPoints(winnerPlayer.user, true, game.room.entryFee, game.room.cashType);
+                }
             }
+
+            // Award participation XP to other human players using LoyaltyService
+            for (const player of game.players) {
+                if (player.user && player.position !== game.winner) {
+                    await awardDominoLoyaltyPoints(player.user, false, game.room.entryFee, game.room.cashType);
+                }
+            }
+
+            // Update room status
+            await DominoRoom.findByIdAndUpdate(game.room._id, {
+                status: 'COMPLETED',
+                completedAt: new Date()
+            });
+
+            // Broadcast game ended
+            broadcastToRoom(game.room.roomId, 'game-ended', {
+                gameState: game,
+                winner: game.winner,
+                finalScores: game.finalScores,
+                payout: game.winnerPayout
+            });
         }
 
-        // Update room status
-        await DominoRoom.findByIdAndUpdate(game.room._id, {
-            status: 'COMPLETED',
-            completedAt: new Date()
-        });
-
-        // Broadcast game ended
-        broadcastToRoom(game.room.roomId, 'game-ended', {
-            gameState: game,
-            winner: game.winner,
-            finalScores: game.finalScores,
-            payout: game.winnerPayout
-        });
-
+        await game.save();
         return game;
     } catch (error) {
         console.error('Error ending domino game:', error);
