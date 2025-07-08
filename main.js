@@ -2,6 +2,7 @@ import http from 'http';
 import { env, mongo, port, ip, apiRoot } from './config';
 import mongoose from './src/services/mongoose';
 import express from './src/services/express';
+import { initializeSocket } from './src/services/socket';
 import { createAdmin, createSystemAccount } from './src/seedDb';
 import api from './src/api';
 import './src/services/cron/lottery';
@@ -16,6 +17,8 @@ mongoose.connect(mongo.uri, {
 });
 
 const server = http.createServer(app);
+
+initializeSocket(server);
 
 // eslint-disable-next-line no-undef
 setImmediate(async () => {

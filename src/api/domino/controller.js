@@ -5,6 +5,7 @@ import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
 import { broadcastToRoom, broadcastGameUpdate } from '../../services/socket/dominoSocket';
+import { stringify } from 'uuid';
 
 // ===================== ROOM MANAGEMENT =====================
 
@@ -115,7 +116,7 @@ export const joinOrCreateRoom = async (body, user) => {
             entryFee,
             'gameSettings.winRule': winRule,
             $expr: { $lt: [{ $size: "$players" }, "$playerCount"] }
-        }).populate('players.user', 'name');
+        });
 
         if (availableRoom) {
             // Join existing room
@@ -177,7 +178,6 @@ const joinExistingRoom = async (room, user) => {
         );
 
         await room.save();
-        await room.populate('players.user', 'name');
         await room.populate('createdBy', 'name');
 
         // Broadcast player joined
@@ -352,6 +352,8 @@ export const startDominoGame = async (room) => {
             room.gameSettings.tilesPerPlayer
         );
 
+        console.log('room.players', JSON.stringify(room.players));
+
         // Map room players to game players
         const gamePlayers = players.map((gamePlayer, index) => ({
             ...gamePlayer,
@@ -389,9 +391,11 @@ export const startDominoGame = async (room) => {
         for (const player of room.players) {
             if (player.user && player.playerType === 'HUMAN') {
                 try {
-                    const loyaltyResult = await LoyaltyService.recordUserPlayActivity(player.user);
+                    // FIX: Extract user ID string from user object if it's populated
+                    const userId = typeof player.user === 'object' ? player.user._id : player.user;
+                    const loyaltyResult = await LoyaltyService.recordUserPlayActivity(userId);
                     if (!loyaltyResult.success) {
-                        console.warn(`Failed to record play activity for user ${player.user}:`, loyaltyResult.error);
+                        console.warn(`Failed to record play activity for user ${userId}:`, loyaltyResult.error);
                     }
                 } catch (error) {
                     console.error(`Error recording play activity for user ${player.user}:`, error);

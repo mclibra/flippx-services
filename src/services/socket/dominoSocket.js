@@ -1,7 +1,34 @@
+import { jwtVerify } from '../jwt';
+
 let dominoNamespace = null;
 
 export const initializeDominoSocket = (io) => {
     dominoNamespace = io.of('/domino');
+
+    // Add authentication middleware for the namespace
+    dominoNamespace.use(async (socket, next) => {
+        try {
+            const token = socket.handshake.auth.token;
+
+            if (!token) {
+                return next(new Error('Authentication error: No token provided'));
+            }
+
+            // Verify JWT token
+            const decoded = jwtVerify(token);
+
+            if (!decoded || !decoded.id) {
+                return next(new Error('Authentication error: Invalid token'));
+            }
+
+            // Attach user ID to socket
+            socket.userId = decoded.id;
+            next();
+        } catch (error) {
+            console.error('Domino socket authentication error:', error);
+            next(new Error('Authentication error: ' + error.message));
+        }
+    });
 
     dominoNamespace.on('connection', (socket) => {
         console.log(`User connected to domino: ${socket.userId}`);
@@ -104,6 +131,11 @@ export const initializeDominoSocket = (io) => {
                 console.error('Error reconnecting to domino room:', error);
                 socket.emit('error', { message: 'Failed to reconnect to room' });
             }
+        });
+
+        // Handle socket errors
+        socket.on('error', (error) => {
+            console.error(`Socket error for user ${socket.userId}:`, error);
         });
     });
 };
