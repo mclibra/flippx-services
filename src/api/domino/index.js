@@ -3,8 +3,7 @@ import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
     getRooms,
-    createRoom,
-    joinRoom,
+    joinOrCreateRoom,
     leaveRoom,
     makeMove,
     getGameState,
@@ -25,14 +24,9 @@ router.get('/rooms', xApi(), token({ required: true }), async (req, res) =>
     done(res, await getRooms(req.query, req.user))
 );
 
-// Create new room
-router.post('/rooms', xApi(), token({ required: true }), async (req, res) =>
-    done(res, await createRoom(req.body, req.user))
-);
-
-// Join existing room
-router.post('/rooms/:roomId/join', xApi(), token({ required: true }), async (req, res) =>
-    done(res, await joinRoom(req.params, req.user))
+// Join or create room - NEW ENDPOINT
+router.post('/join', xApi(), token({ required: true }), async (req, res) =>
+    done(res, await joinOrCreateRoom(req.body, req.user))
 );
 
 // Leave room

@@ -59,100 +59,86 @@ export const initializeDominoSocket = (io) => {
                     { _id: socket.userId }
                 );
 
-                if (result.entity.success) {
-                    // Broadcast to all players in room
-                    socket.emit('move-result', result.entity);
-                } else {
-                    socket.emit('move-error', result.entity);
-                }
-            } catch (error) {
-                console.error('Error processing domino move:', error);
-                socket.emit('move-error', { success: false, error: 'Failed to process move' });
-            }
-        });
-
-        // Chat message
-        socket.on('send-message', async (data) => {
-            try {
-                const { sendMessage } = await import('../../api/domino/controller');
-                const result = await sendMessage(
-                    { roomId: data.roomId },
-                    { message: data.message },
-                    { _id: socket.userId }
-                );
-
                 if (!result.entity.success) {
-                    socket.emit('message-error', result.entity);
+                    socket.emit('move-error', { error: result.entity.error });
                 }
-                // Success is handled by broadcastToRoom in the controller
             } catch (error) {
-                console.error('Error sending domino message:', error);
-                socket.emit('message-error', { success: false, error: 'Failed to send message' });
+                console.error('Error processing move:', error);
+                socket.emit('move-error', { error: 'Failed to process move' });
             }
         });
 
-        // Turn timeout
-        socket.on('turn-timeout', async (gameId) => {
-            try {
-                const { handleTurnTimeout } = await import('../../api/domino/controller');
-                await handleTurnTimeout(gameId, socket.userId);
-            } catch (error) {
-                console.error('Error handling turn timeout:', error);
-            }
-        });
+        // Handle disconnection
+        socket.on('disconnect', () => {
+            console.log(`User disconnected from domino: ${socket.userId}`);
 
-        // Player ready state
-        socket.on('player-ready', async (data) => {
-            try {
-                socket.to(data.roomId).emit('player-ready-state', {
+            if (socket.roomId) {
+                socket.to(socket.roomId).emit('player-disconnected', {
                     userId: socket.userId,
-                    isReady: data.isReady,
                     timestamp: new Date()
                 });
-            } catch (error) {
-                console.error('Error updating player ready state:', error);
             }
         });
 
-        // Disconnect handling
-        socket.on('disconnect', () => {
+        // Handle reconnection
+        socket.on('reconnect-to-room', async (roomId) => {
             try {
-                console.log(`User disconnected from domino: ${socket.userId}`);
+                socket.join(roomId);
+                socket.roomId = roomId;
 
-                if (socket.roomId) {
-                    socket.to(socket.roomId).emit('player-disconnected', {
-                        userId: socket.userId,
-                        timestamp: new Date()
-                    });
+                // Mark player as reconnected in database
+                const { DominoRoom } = await import('../../api/domino/model');
+                await DominoRoom.updateOne(
+                    { roomId, 'players.user': socket.userId },
+                    { $set: { 'players.$.isConnected': true } }
+                );
 
-                    // Handle disconnection in game logic
-                    const { handlePlayerDisconnection } = require('../../api/domino/controller');
-                    handlePlayerDisconnection(socket.roomId, socket.userId);
-                }
+                socket.to(roomId).emit('player-reconnected', {
+                    userId: socket.userId,
+                    timestamp: new Date()
+                });
+
+                console.log(`User ${socket.userId} reconnected to domino room ${roomId}`);
+
             } catch (error) {
-                console.error('Error handling domino disconnect:', error);
+                console.error('Error reconnecting to domino room:', error);
+                socket.emit('error', { message: 'Failed to reconnect to room' });
             }
         });
     });
-
-    return dominoNamespace;
 };
 
-// Helper functions for broadcasting
+// Broadcast message to all players in a room
 export const broadcastToRoom = (roomId, event, data) => {
     if (dominoNamespace) {
         dominoNamespace.to(roomId).emit(event, data);
     }
 };
 
-export const broadcastGameUpdate = (roomId, data) => {
+// Broadcast game update to all players in a room
+export const broadcastGameUpdate = (roomId, event, data) => {
     if (dominoNamespace) {
-        dominoNamespace.to(roomId).emit('game-update', data);
+        dominoNamespace.to(roomId).emit(event, data);
     }
 };
 
-export const broadcastToUser = (userId, event, data) => {
+// Send message to specific user
+export const sendToUser = (userId, event, data) => {
     if (dominoNamespace) {
-        dominoNamespace.to(userId).emit(event, data);
+        const userSockets = Array.from(dominoNamespace.sockets.values())
+            .filter(socket => socket.userId === userId);
+
+        userSockets.forEach(socket => {
+            socket.emit(event, data);
+        });
     }
+};
+
+// Get online players count in a room
+export const getRoomPlayerCount = (roomId) => {
+    if (dominoNamespace) {
+        const room = dominoNamespace.adapter.rooms.get(roomId);
+        return room ? room.size : 0;
+    }
+    return 0;
 };
