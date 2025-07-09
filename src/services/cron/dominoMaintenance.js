@@ -1,8 +1,33 @@
 import cron from 'node-cron';
 import { DominoRoom, DominoGame, DominoGameConfig } from '../../api/domino/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { handleTurnTimeout, sendTurnWarnings } from '../../api/domino/controller';
+import { handleTurnTimeout, sendTurnWarnings, startDominoGame } from '../../api/domino/controller';
 import { broadcastToRoom } from '../socket/dominoSocket';
+
+// Start games when rooms are full - runs every 10 seconds
+cron.schedule('*/10 * * * * *', async () => {
+    try {
+        const oneHourAgo = new Date(Date.now() - 10 * 1000);
+        // Find waiting rooms that are full
+        const fullRooms = await DominoRoom.find({
+            status: 'WAITING',
+            $expr: { $eq: ['$playerCount', { $size: '$players' }] },
+            createdAt: { $lt: oneHourAgo }
+        });
+
+        for (const room of fullRooms) {
+            try {
+                console.log(`Starting game for full room ${room.roomId} with ${room.players.length}/${room.playerCount} players`);
+                await startDominoGame(room);
+            } catch (error) {
+                console.error(`Error starting game for room ${room.roomId}:`, error);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error checking for full rooms:', error);
+    }
+});
 
 // Clean up abandoned rooms every hour
 cron.schedule('0 * * * *', async () => {

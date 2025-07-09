@@ -306,7 +306,6 @@ const sendTurnReminder = async (game, timeRemaining) => {
 
 export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
     try {
-        console.log('Making move with data => ', action, tile, side);
         const game = await DominoGame.findById(gameId).populate('room');
 
         if (!game) {
@@ -385,7 +384,6 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
         });
 
         // Send turn notifications if game is still active
-        console.log('Current game state => ', game.gameState, playerIndex);
         if (game.gameState === 'ACTIVE') {
             await notifyTurnChange(game, playerIndex);
         }
@@ -466,7 +464,7 @@ export const handleGameCompletion = async (game) => {
                     const xpResult = await LoyaltyService.awardUserXP(
                         winnerPlayer.user,
                         totalXP,
-                        'GAME_WIN',
+                        'GAME_REWARD',
                         `Domino game win - ${game.endReason} - Entry fee: $${room.entryFee} (${room.cashType})`,
                         {
                             gameType: 'DOMINO',
@@ -494,7 +492,7 @@ export const handleGameCompletion = async (game) => {
             }
         }
 
-        room.status = game.gameState === 'BLOCKED' ? 'BLOCKED' : 'COMPLETED';
+        room.status = 'COMPLETED';
         room.completedAt = new Date();
         await room.save();
 
@@ -565,10 +563,9 @@ export const handleTurnTimeout = async (gameId, userId) => {
             }
         }
 
-        console.log(`Game State => `, moveResult.gameState.gameState);
-        console.log(`Current board => `, moveResult.gameState.board);
-        console.log(`All moves => `, moveResult.gameState.moves);
         console.log(`Move result => `, moveResult.move);
+        console.log(`Game State => `, moveResult.gameState.gameState);
+        console.log(`All moves => `, moveResult.gameState.moves);
 
         if (moveResult.success) {
             // Selectively update game state fields without overwriting the room reference

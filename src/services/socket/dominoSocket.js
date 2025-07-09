@@ -406,11 +406,6 @@ const joinExistingRoomSocket = async (room, userId) => {
         await room.save();
         await room.populate('createdBy', 'name');
 
-        // Check if room is full and start game
-        if (room.players.length === room.playerCount) {
-            await startDominoGame(room);
-        }
-
         return { success: true, room, action: 'joined' };
 
     } catch (error) {
