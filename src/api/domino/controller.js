@@ -6,56 +6,6 @@ import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
 import { broadcastToRoom, broadcastGameUpdate, sendToUser } from '../../services/socket/dominoSocket';
 
-// ===================== ROOM MANAGEMENT =====================
-
-export const getRooms = async (query, user) => {
-    try {
-        const {
-            cashType,
-            playerCount,
-            entryFee,
-            status = 'WAITING',
-            limit = 20,
-            offset = 0
-        } = query;
-
-        let queryFilter = { status };
-
-        if (cashType) queryFilter.cashType = cashType.toUpperCase();
-        if (playerCount) queryFilter.playerCount = parseInt(playerCount);
-        if (entryFee) queryFilter.entryFee = parseInt(entryFee);
-
-        const rooms = await DominoRoom.find(queryFilter)
-            .populate('players.user', 'name')
-            .populate('createdBy', 'name')
-            .sort({ createdAt: -1 })
-            .limit(parseInt(limit))
-            .skip(parseInt(offset));
-
-        const total = await DominoRoom.countDocuments(queryFilter);
-
-        return {
-            status: 200,
-            entity: {
-                success: true,
-                rooms,
-                total,
-                pagination: {
-                    limit: parseInt(limit),
-                    offset: parseInt(offset),
-                    hasMore: (parseInt(offset) + parseInt(limit)) < total
-                }
-            }
-        };
-    } catch (error) {
-        console.error('Error fetching rooms:', error);
-        return {
-            status: 500,
-            entity: { success: false, error: error.message }
-        };
-    }
-};
-
 export const leaveRoom = async ({ roomId }, user) => {
     try {
         const room = await DominoRoom.findOne({ roomId });
@@ -223,7 +173,7 @@ export const fillWithComputerPlayers = async (room) => {
         const computerNames = config?.computerPlayerNames || ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma'];
 
         while (room.players.length < room.playerCount) {
-            const botName = computerNames[room.players.length - 1] || `Bot_${room.players.length}`;
+            const botName = computerNames[room.players.length - 1];
 
             room.players.push({
                 user: null,
@@ -236,9 +186,6 @@ export const fillWithComputerPlayers = async (room) => {
         }
 
         await room.save();
-
-        // Start game immediately
-        await startDominoGame(room);
 
         return room;
     } catch (error) {
@@ -412,118 +359,6 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
     }
 };
 
-export const handleGameCompletion = async (game) => {
-    console.log(`Handling game completion for `, game);
-    try {
-        const room = game.room;
-
-        if (game.totalPot > 0 && game.winner !== null && game.winner !== undefined) {
-            const winnerPlayer = game.players[game.winner];
-
-            if (winnerPlayer && winnerPlayer.user) {
-                const winAmount = game.winnerPayout || game.totalPot;
-
-                // Process payout
-                const payoutResult = await makeTransaction(
-                    winnerPlayer.user,
-                    'USER', // This must be fetched dynamically
-                    'WON_DOMINO',
-                    winAmount,
-                    game._id,
-                    room.cashType,
-                );
-
-                if (payoutResult.success) {
-                    console.log(`Payout of ${winAmount} ${room.cashType} processed for winner ${winnerPlayer.user}`);
-                } else {
-                    console.error(`Failed to process payout for winner ${winnerPlayer.user}:`, payoutResult.error);
-                }
-
-                // Award XP for winning based on game outcome
-                try {
-                    const baseXP = room.entryFee * 2; // Base XP calculation
-                    const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1;
-
-                    // Bonus XP for different end reasons
-                    let endReasonMultiplier = 1;
-                    switch (game.endReason) {
-                        case 'LAST_TILE':
-                            endReasonMultiplier = 1.5; // Bonus for completing hand
-                            break;
-                        case 'BLOCKED_NO_MOVES':
-                        case 'BLOCKED_ALL_PASSED':
-                        case 'LOWEST_DOTS':
-                            endReasonMultiplier = 1.2; // Slight bonus for blocked game wins
-                            break;
-                        default:
-                            endReasonMultiplier = 1;
-                    }
-
-                    const totalXP = Math.floor(baseXP * cashTypeMultiplier * endReasonMultiplier);
-
-                    const xpResult = await LoyaltyService.awardUserXP(
-                        winnerPlayer.user,
-                        totalXP,
-                        'GAME_REWARD',
-                        `Domino game win - ${game.endReason} - Entry fee: $${room.entryFee} (${room.cashType})`,
-                        {
-                            gameType: 'DOMINO',
-                            gameId: game._id,
-                            roomId: room._id,
-                            entryFee: room.entryFee,
-                            cashType: room.cashType,
-                            endReason: game.endReason,
-                            gameState: game.gameState,
-                            baseXP,
-                            cashTypeMultiplier,
-                            endReasonMultiplier,
-                        }
-                    );
-
-                    if (!xpResult.success) {
-                        console.warn(`Failed to award win XP for user ${winnerPlayer.user}:`, xpResult.error);
-                    } else {
-                        console.log(`Awarded ${totalXP} XP to user ${winnerPlayer.user} for domino win`);
-                    }
-                } catch (xpError) {
-                    console.error(`Error awarding win XP for user ${winnerPlayer.user}:`, xpError);
-                    // Don't fail game completion if XP awarding fails
-                }
-            }
-        }
-
-        room.status = 'COMPLETED';
-        room.completedAt = new Date();
-        await room.save();
-
-        broadcastToRoom(room.roomId, 'game-completed', {
-            gameState: game,
-            winner: game.winner,
-            finalScores: game.finalScores,
-            roomState: room,
-            endReason: game.endReason,
-            isBlocked: game.gameState === 'BLOCKED',
-            drawPileCount: game.drawPile.length,
-            totalMoves: game.totalMoves,
-            duration: game.duration
-        });
-
-        if (game.gameState === 'BLOCKED') {
-            broadcastToRoom(room.roomId, 'game-blocked', {
-                reason: game.endReason,
-                winner: game.winner,
-                finalScores: game.finalScores,
-                blockingCondition: game.endReason === 'BLOCKED_NO_MOVES'
-                    ? 'No playable tiles and no tiles to draw'
-                    : 'All players passed 3 consecutive times'
-            });
-        }
-
-    } catch (error) {
-        console.error('Error handling game completion:', error);
-    }
-};
-
 export const handleTurnTimeout = async (gameId, userId) => {
     try {
         const game = await DominoGame.findById(gameId).populate('room');
@@ -650,96 +485,6 @@ export const sendTurnWarnings = async () => {
         console.error('Error sending turn warnings:', error);
     }
 };
-
-// ===================== GAME STATE AND HISTORY =====================
-
-export const getGameState = async ({ gameId }, user) => {
-    try {
-        const game = await DominoGame.findById(gameId)
-            .populate('room')
-            .populate('players.user', 'name');
-
-        if (!game) {
-            return {
-                status: 404,
-                entity: { success: false, error: 'Game not found' }
-            };
-        }
-
-        const playerIndex = game.players.findIndex(p => p.user._id.toString() === user._id.toString());
-
-        const sanitizedGame = JSON.parse(JSON.stringify(game));
-        sanitizedGame.players.forEach((player, index) => {
-            if (index !== playerIndex) {
-                player.hand = player.hand.map(() => 'hidden'); // Keep count but hide tiles
-            }
-        });
-
-        return {
-            status: 200,
-            entity: {
-                success: true,
-                gameState: sanitizedGame,
-                playerPosition: playerIndex,
-                drawPileCount: game.drawPile.length,
-                availableTiles: game.drawPile.length
-            }
-        };
-
-    } catch (error) {
-        console.error('Error getting game state:', error);
-        return {
-            status: 500,
-            entity: { success: false, error: 'Internal server error' }
-        };
-    }
-};
-
-export const getUserGameHistory = async (user, query) => {
-    try {
-        const { limit = 20, offset = 0, status } = query;
-
-        let queryFilter = {
-            'players.user': user._id
-        };
-
-        if (status) {
-            queryFilter.gameState = status.toUpperCase();
-        }
-
-        const games = await DominoGame.find(queryFilter)
-            .populate('room')
-            .populate('players.user', 'name')
-            .sort({ createdAt: -1 })
-            .limit(parseInt(limit))
-            .skip(parseInt(offset));
-
-        const total = await DominoGame.countDocuments(queryFilter);
-
-        return {
-            status: 200,
-            entity: {
-                success: true,
-                games,
-                total,
-                pagination: {
-                    limit: parseInt(limit),
-                    offset: parseInt(offset),
-                    hasMore: (parseInt(offset) + parseInt(limit)) < total
-                }
-            }
-        };
-
-    } catch (error) {
-        console.error('Error getting user game history:', error);
-        return {
-            status: 500,
-            entity: { success: false, error: error.message }
-        };
-    }
-};
-
-// ===================== CHAT FUNCTIONALITY =====================
 
 export const sendMessage = async ({ roomId }, { message }, user) => {
     try {
@@ -1013,5 +758,110 @@ export const removeDisconnectedPlayersFromWaitingRooms = async () => {
             status: 500,
             entity: { success: false, error: error.message }
         };
+    }
+};
+
+
+const handleGameCompletion = async (game) => {
+    try {
+        const room = game.room;
+
+        // Process payouts and loyalty for winner
+        if (game.winner !== undefined) {
+            const winnerPlayer = game.players[game.winner];
+
+            // Check if winner is a bot (computer player) in a VIRTUAL room
+            const isBotWinnerInVirtualRoom = winnerPlayer.playerType === 'COMPUTER' &&
+                room.cashType === 'VIRTUAL' &&
+                !winnerPlayer.user;
+
+            if (isBotWinnerInVirtualRoom) {
+                // Bot wins in VIRTUAL room - send winnings to system account
+                console.log(`Bot ${winnerPlayer.playerName} won in VIRTUAL room ${room.roomId}, sending winnings to system account`);
+
+                // Get system account
+                const systemUser = await User.findOne({ role: 'SYSTEM' });
+
+                if (systemUser) {
+                    // Credit system account with bot's winnings
+                    await makeTransaction(
+                        systemUser._id,
+                        'SYSTEM',
+                        'WON_DOMINO',
+                        game.winnerPayout,
+                        game._id,
+                        room.cashType
+                    );
+
+                    console.log(`Credited $${game.winnerPayout} VIRTUAL winnings to system account for bot win in room ${room.roomId}`);
+                } else {
+                    console.error('System account not found for bot winning transaction');
+                }
+            } else if (winnerPlayer.user) {
+                // Human player wins - existing logic
+                // Credit winner with payout using DOMINO_WIN transaction
+                await makeTransaction(
+                    winnerPlayer.user,
+                    'USER',
+                    'WON_DOMINO',
+                    game.winnerPayout,
+                    game._id,
+                    room.cashType
+                );
+
+                // Award XP for winning (consistent with other games)
+                try {
+                    const { LoyaltyService } = await import('../loyalty/service');
+
+                    // Calculate XP based on winnings
+                    const baseXP = Math.max(10, Math.floor(game.winnerPayout / 2)); // 1 XP per $2 won, minimum 10 XP
+                    const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+                    const winMultiplier = 1.5; // Bonus for winning
+                    const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+
+                    const xpResult = await LoyaltyService.awardUserXP(
+                        winnerPlayer.user,
+                        totalXP,
+                        'GAME_REWARD',
+                        `Domino game won - Winnings: ${game.winnerPayout} (${room.cashType})`,
+                        {
+                            gameType: 'DOMINO',
+                            gameId: game._id,
+                            roomId: room._id,
+                            winnings: game.winnerPayout,
+                            cashType: room.cashType,
+                            baseXP,
+                            multiplier: cashTypeMultiplier * winMultiplier,
+                            position: game.winner,
+                            endReason: game.endReason,
+                            isWin: true
+                        }
+                    );
+
+                    if (!xpResult.success) {
+                        console.warn(`Failed to award win XP for user ${winnerPlayer.user}:`, xpResult.error);
+                    } else {
+                        console.log(`Awarded ${totalXP} XP to user ${winnerPlayer.user} for domino win`);
+                    }
+                } catch (xpError) {
+                    console.error(`Error awarding win XP for user ${winnerPlayer.user}:`, xpError);
+                    // Don't fail game completion if XP awarding fails
+                }
+            }
+        }
+
+        room.status = 'COMPLETED';
+        room.completedAt = new Date();
+        await room.save();
+
+        broadcastToRoom(room.roomId, 'game-completed', {
+            gameState: game,
+            winner: game.winner,
+            finalScores: game.finalScores,
+            roomState: room
+        });
+
+    } catch (error) {
+        console.error('Error handling game completion:', error);
     }
 };

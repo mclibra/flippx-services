@@ -5,7 +5,7 @@ import { DominoGameEngine } from '../domino/gameEngine';
 import { User } from '../../api/user/model';
 import { Wallet } from '../../api/wallet/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { startDominoGame, makeMove } from '../../api/domino/controller';
+import { makeMove } from '../../api/domino/controller';
 
 let dominoNamespace = null;
 
@@ -106,20 +106,6 @@ export const initializeDominoSocket = (io) => {
                     success: false,
                     error: 'Failed to join or create room'
                 });
-            }
-        });
-
-        // Leave room
-        socket.on('leave-room', async (roomId) => {
-            try {
-                socket.leave(roomId);
-                socket.to(roomId).emit('player-left', {
-                    userId: socket.userId,
-                    timestamp: new Date()
-                });
-                socket.roomId = null;
-            } catch (error) {
-                console.error('Error leaving domino room:', error);
             }
         });
 

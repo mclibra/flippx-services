@@ -1,33 +1,8 @@
 import cron from 'node-cron';
 import { DominoRoom, DominoGame, DominoGameConfig } from '../../api/domino/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { handleTurnTimeout, sendTurnWarnings, startDominoGame } from '../../api/domino/controller';
+import { handleTurnTimeout, sendTurnWarnings, fillWithComputerPlayers, removeDisconnectedPlayersFromWaitingRooms } from '../../api/domino/controller';
 import { broadcastToRoom } from '../socket/dominoSocket';
-
-// Start games when rooms are full - runs every 10 seconds
-cron.schedule('*/10 * * * * *', async () => {
-    try {
-        const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
-        // Find waiting rooms that are full
-        const fullRooms = await DominoRoom.find({
-            status: 'WAITING',
-            $expr: { $eq: ['$playerCount', { $size: '$players' }] },
-            createdAt: { $lt: tenSecondsAgo }
-        });
-
-        for (const room of fullRooms) {
-            try {
-                console.log(`Starting game for full room ${room.roomId} with ${room.players.length}/${room.playerCount} players`);
-                await startDominoGame(room);
-            } catch (error) {
-                console.error(`Error starting game for room ${room.roomId}:`, error);
-            }
-        }
-
-    } catch (error) {
-        console.error('Error checking for full rooms:', error);
-    }
-});
 
 // Clean up abandoned rooms every hour
 cron.schedule('0 * * * *', async () => {
@@ -79,86 +54,49 @@ cron.schedule('0 * * * *', async () => {
     }
 });
 
-// Handle disconnected players in WAITING rooms every 10 seconds
+// Handle VIRTUAL rooms that need bot filling after 30 seconds
 cron.schedule('*/10 * * * * *', async () => {
     try {
         const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
 
-        // Find WAITING rooms with disconnected players who haven't reconnected in 30+ seconds
-        const roomsWithDisconnectedPlayers = await DominoRoom.find({
+        // Find VIRTUAL rooms that have been waiting for 30+ seconds and are not full
+        const virtualRoomsNeedingBots = await DominoRoom.find({
             status: 'WAITING',
-            players: {
-                $elemMatch: {
-                    isConnected: false,
-                    disconnectedAt: { $lt: thirtySecondsAgo },
-                    playerType: 'HUMAN',
-                    user: { $ne: null }
-                }
-            }
+            cashType: 'VIRTUAL',
+            createdAt: { $lt: thirtySecondsAgo },
+            $expr: { $lt: [{ $size: "$players" }, "$playerCount"] }
         });
 
-        for (const room of roomsWithDisconnectedPlayers) {
+        for (const room of virtualRoomsNeedingBots) {
             try {
-                // Find all disconnected players who have exceeded the timeout
-                const playersToRemove = room.players.filter(player =>
-                    !player.isConnected &&
-                    player.disconnectedAt &&
-                    player.disconnectedAt < thirtySecondsAgo &&
-                    player.playerType === 'HUMAN' &&
-                    player.user
-                );
+                console.log(`Filling VIRTUAL room ${room.roomId} with bots after 30 second timeout`);
 
-                for (const player of playersToRemove) {
-                    console.log(`Removing disconnected player ${player.user} from waiting room ${room.roomId} after 30 second timeout`);
+                // Fill room with computer players and start game
+                await fillWithComputerPlayers(room);
 
-                    // Refund entry fee using DOMINO_REFUND transaction identifier
-                    await makeTransaction(
-                        player.user,
-                        'USER',
-                        'DOMINO_REFUND',
-                        room.entryFee,
-                        room._id,
-                        room.cashType
-                    );
+                // Broadcast to any remaining human players that bots have joined
+                broadcastToRoom(room.roomId, 'room-filled-with-bots', {
+                    roomState: room,
+                    message: 'Room has been filled with computer players and game is starting!'
+                });
 
-                    // Remove player from room
-                    const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === player.user.toString());
-                    if (playerIndex !== -1) {
-                        room.players.splice(playerIndex, 1);
-
-                        // Update positions for remaining players
-                        room.players.forEach((remainingPlayer, index) => {
-                            remainingPlayer.position = index;
-                        });
-
-                        // Update total pot
-                        room.totalPot -= room.entryFee;
-                    }
-                }
-
-                // If room is empty after removing disconnected players, delete it
-                if (room.players.length === 0) {
-                    await DominoRoom.findByIdAndDelete(room._id);
-                    console.log(`Deleted empty room ${room.roomId} after removing all disconnected players`);
-                } else {
-                    // Save the updated room
-                    await room.save();
-
-                    // Broadcast the updated room state to remaining players
-                    broadcastToRoom(room.roomId, 'player-removed-timeout', {
-                        removedPlayers: playersToRemove.map(p => p.user),
-                        roomState: room,
-                        reason: 'DISCONNECTION_TIMEOUT'
-                    });
-                }
-
+                console.log(`Successfully filled room ${room.roomId} with bots and started game`);
             } catch (error) {
-                console.error(`Error removing disconnected players from room ${room.roomId}:`, error);
+                console.error(`Error filling room ${room.roomId} with bots:`, error);
             }
         }
 
     } catch (error) {
-        console.error('Error in disconnected player cleanup:', error);
+        console.error('Error in virtual room bot filling:', error);
+    }
+});
+
+// Handle disconnected players in WAITING rooms every 10 seconds
+cron.schedule('*/10 * * * * *', async () => {
+    try {
+        await removeDisconnectedPlayersFromWaitingRooms();
+    } catch (error) {
+        console.error('Error in processing disconnected player cleanup:', error);
     }
 });
 
@@ -172,12 +110,12 @@ cron.schedule('*/10 * * * * *', async () => {
 });
 
 // Handle turn timeouts every 30 seconds
-cron.schedule('*/10 * * * * *', async () => {
+cron.schedule('*/30 * * * * *', async () => {
     try {
         const config = await DominoGameConfig.findOne();
         const timeoutSeconds = config?.turnTimeLimit || 60;
 
-        const timeoutThreshold = new Date(Date.now() - (timeoutSeconds * 1000));
+        const timeoutThreshold = new Date(Date.now() - (timeoutSeconds + 5) * 1000); // Add 5 second buffer
 
         // Find active games with expired turns
         const expiredGames = await DominoGame.find({
@@ -188,6 +126,7 @@ cron.schedule('*/10 * * * * *', async () => {
         for (const game of expiredGames) {
             try {
                 const currentPlayer = game.players[game.currentPlayer];
+
                 if (currentPlayer && currentPlayer.playerType === 'HUMAN' && currentPlayer.user) {
                     console.log(`Handling turn timeout for user ${currentPlayer.user} in game ${game._id}`);
                     await handleTurnTimeout(game._id, currentPlayer.user);
@@ -222,7 +161,8 @@ cron.schedule('0 2 * * *', async () => {
 
         console.log(`Found ${oldGames} old games and ${oldRooms} old rooms to potentially clean up`);
 
-        // For now, just log the counts. In production, you might want to archive or delete old data
+        // For now, just log the counts.
+        // In production, you might want to archive or delete old data
         // await DominoGame.deleteMany({ gameState: 'COMPLETED', completedAt: { $lt: thirtyDaysAgo } });
         // await DominoRoom.deleteMany({ status: { $in: ['COMPLETED', 'CANCELLED'] }, completedAt: { $lt: thirtyDaysAgo } });
 
@@ -237,6 +177,7 @@ cron.schedule('0 3 * * 0', async () => {
         console.log('Running domino statistics optimization...');
 
         // Clean up orphaned chat messages from deleted rooms
+        const { DominoChat } = require('../../api/domino/model');
         const orphanedChats = await DominoChat.find({
             room: { $exists: false }
         });
