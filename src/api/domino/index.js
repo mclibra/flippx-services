@@ -5,9 +5,7 @@ import {
     sendMessage,
     getChatHistory,
     updateGameConfig,
-    getGameConfig,
-    removeDisconnectedPlayersFromWaitingRooms,
-    sendTurnWarnings
+    getGameConfig
 } from './controller';
 
 const router = new Router();
@@ -35,18 +33,5 @@ router.put('/config', xApi(), token({ required: true, roles: ['ADMIN'] }), async
 router.get('/config', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) =>
     done(res, await getGameConfig())
 );
-
-// ===================== ADMIN MAINTENANCE =====================
-
-// Manually trigger cleanup of disconnected players (Admin only)
-router.post('/admin/cleanup-disconnected', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) =>
-    done(res, await removeDisconnectedPlayersFromWaitingRooms())
-);
-
-// Manually trigger turn warnings (Admin only)
-router.post('/admin/send-turn-warnings', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) => {
-    await sendTurnWarnings();
-    done(res, { status: 200, entity: { success: true, message: 'Turn warnings sent' } });
-});
 
 export default router;

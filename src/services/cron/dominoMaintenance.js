@@ -1,11 +1,12 @@
 import cron from 'node-cron';
 import { DominoRoom, DominoGame, DominoGameConfig } from '../../api/domino/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { handleTurnTimeout, startDominoGame } from '../../api/domino/controller';
+import { handleTurnTimeout, sendTurnWarnings, removeDisconnectedPlayersFromWaitingRooms } from '../../api/domino/controller';
 
 // Start games when rooms are full - runs every 10 seconds
 cron.schedule('*/10 * * * * *', async () => {
     try {
+        const { startDominoGame } = await import('../../api/domino/controller');
         const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
         // Find waiting rooms that are full
         const fullRooms = await DominoRoom.find({
@@ -25,6 +26,27 @@ cron.schedule('*/10 * * * * *', async () => {
 
     } catch (error) {
         console.error('Error checking for full rooms:', error);
+    }
+});
+
+// Send turn warnings via socket - runs every 15 seconds
+cron.schedule('*/15 * * * * *', async () => {
+    try {
+        await sendTurnWarnings();
+    } catch (error) {
+        console.error('Error in socket-based turn warnings:', error);
+    }
+});
+
+// Remove disconnected players from waiting rooms via socket - runs every 30 seconds
+cron.schedule('*/30 * * * * *', async () => {
+    try {
+        const result = await removeDisconnectedPlayersFromWaitingRooms();
+        if (result.entity.removedPlayers > 0) {
+            console.log(`Socket-based cleanup: Removed ${result.entity.removedPlayers} disconnected players from ${result.entity.roomsProcessed} waiting rooms`);
+        }
+    } catch (error) {
+        console.error('Error in socket-based disconnected player cleanup:', error);
     }
 });
 
