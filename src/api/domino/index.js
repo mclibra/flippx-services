@@ -2,25 +2,15 @@ import { Router } from 'express';
 import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
-    getRooms,
-    leaveRoom,
-    getGameState,
-    getUserGameHistory,
     sendMessage,
     getChatHistory,
     updateGameConfig,
     getGameConfig,
-    handleTurnTimeout,
     removeDisconnectedPlayersFromWaitingRooms,
     sendTurnWarnings
 } from './controller';
 
 const router = new Router();
-
-// Leave room
-router.post('/rooms/:roomId/leave', xApi(), token({ required: true }), async (req, res) =>
-    done(res, await leaveRoom(req.params, req.user))
-);
 
 // ===================== CHAT FUNCTIONALITY =====================
 

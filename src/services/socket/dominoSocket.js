@@ -109,10 +109,55 @@ export const initializeDominoSocket = (io) => {
             }
         });
 
-        // Game move
+        socket.on('leave-room', async (data) => {
+            try {
+                const { roomId } = data;
+
+                console.log(`User ${socket.userId} requesting to leave room: ${roomId}`);
+
+                const result = await leaveRoomSocket(socket.userId, roomId);
+
+                if (result.success) {
+                    // Leave socket room
+                    socket.leave(roomId);
+                    socket.roomId = null;
+
+                    // Send success response to user
+                    socket.emit('room-left', {
+                        success: true,
+                        message: result.message,
+                        roomId: roomId
+                    });
+
+                    // Broadcast to other players if room still exists
+                    if (result.roomState) {
+                        socket.to(roomId).emit('player-left', {
+                            userId: socket.userId,
+                            roomState: result.roomState,
+                            timestamp: new Date()
+                        });
+                    }
+
+                    console.log(`User ${socket.userId} successfully left room ${roomId}`);
+                } else {
+                    socket.emit('leave-room-error', {
+                        success: false,
+                        error: result.error
+                    });
+                }
+
+            } catch (error) {
+                console.error('Error in leave-room:', error);
+                socket.emit('leave-room-error', {
+                    success: false,
+                    error: 'Failed to leave room'
+                });
+            }
+        });
+
+        // Game move - EXISTING SOCKET EVENT
         socket.on('make-move', async (data) => {
             try {
-
                 const result = await makeMove(
                     { gameId: data.gameId },
                     { action: data.action, tile: data.tile, side: data.side },
@@ -128,7 +173,7 @@ export const initializeDominoSocket = (io) => {
             }
         });
 
-        // Handle disconnection
+        // Handle disconnection - EXISTING SOCKET EVENT
         socket.on('disconnect', () => {
             console.log(`User disconnected from domino: ${socket.userId}`);
 
@@ -143,7 +188,7 @@ export const initializeDominoSocket = (io) => {
             }
         });
 
-        // Handle reconnection
+        // Handle reconnection - EXISTING SOCKET EVENT
         socket.on('reconnect-to-room', async (roomId) => {
             try {
                 socket.join(roomId);
@@ -174,7 +219,7 @@ export const initializeDominoSocket = (io) => {
             }
         });
 
-        // Handle socket errors
+        // Handle socket errors - EXISTING SOCKET EVENT
         socket.on('error', (error) => {
             console.error(`Socket error for user ${socket.userId}:`, error);
         });
@@ -455,7 +500,87 @@ const createNewRoomSocket = async (options, userId) => {
     }
 };
 
-// Helper function to mark player as disconnected
+const leaveRoomSocket = async (userId, roomId) => {
+    try {
+        const room = await DominoRoom.findOne({ roomId });
+
+        if (!room) {
+            return {
+                success: false,
+                error: 'Room not found'
+            };
+        }
+
+        if (room.status !== 'WAITING') {
+            return {
+                success: false,
+                error: 'Cannot leave room after game has started'
+            };
+        }
+
+        // Find and remove player
+        const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === userId.toString());
+
+        if (playerIndex === -1) {
+            return {
+                success: false,
+                error: 'You are not in this room'
+            };
+        }
+
+        // Get user details for transaction (using same pattern as API)
+        const user = await User.findById(userId);
+        if (!user) {
+            return {
+                success: false,
+                error: 'User not found'
+            };
+        }
+
+        // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
+        await makeTransaction(
+            user._id,
+            user.role,
+            'DOMINO_REFUND',
+            room.entryFee,
+            room._id,
+            room.cashType
+        );
+
+        // Remove player and update positions (same logic as API)
+        room.players.splice(playerIndex, 1);
+        room.players.forEach((player, index) => {
+            player.position = index;
+        });
+
+        room.totalPot -= room.entryFee;
+
+        let roomState = null;
+
+        // If room is empty, delete it (same logic as API)
+        if (room.players.length === 0) {
+            await DominoRoom.findByIdAndDelete(room._id);
+            console.log(`Deleted empty room ${roomId} after last player left`);
+        } else {
+            await room.save();
+            roomState = room;
+        }
+
+        return {
+            success: true,
+            message: 'Left room successfully',
+            roomState: roomState
+        };
+
+    } catch (error) {
+        console.error('Error in leaveRoomSocket:', error);
+        return {
+            success: false,
+            error: error.message || 'Failed to leave room'
+        };
+    }
+};
+
 const markPlayerDisconnected = async (userId, roomId) => {
     try {
         await DominoRoom.updateOne(

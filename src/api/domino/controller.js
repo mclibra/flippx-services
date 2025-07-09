@@ -6,80 +6,6 @@ import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
 import { broadcastToRoom, broadcastGameUpdate, sendToUser } from '../../services/socket/dominoSocket';
 
-export const leaveRoom = async ({ roomId }, user) => {
-    try {
-        const room = await DominoRoom.findOne({ roomId });
-
-        if (!room) {
-            return {
-                status: 404,
-                entity: { success: false, error: 'Room not found' }
-            };
-        }
-
-        if (room.status !== 'WAITING') {
-            return {
-                status: 400,
-                entity: { success: false, error: 'Cannot leave room after game has started' }
-            };
-        }
-
-        // Find and remove player
-        const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === user._id.toString());
-
-        if (playerIndex === -1) {
-            return {
-                status: 400,
-                entity: { success: false, error: 'You are not in this room' }
-            };
-        }
-
-        // Refund entry fee using DOMINO_REFUND transaction identifier
-        await makeTransaction(
-            user._id,
-            user.role,
-            'DOMINO_REFUND',
-            room.entryFee,
-            room._id,
-            room.cashType
-        );
-
-        // Remove player and update positions
-        room.players.splice(playerIndex, 1);
-        room.players.forEach((player, index) => {
-            player.position = index;
-        });
-
-        room.totalPot -= room.entryFee;
-
-        // If room is empty, delete it
-        if (room.players.length === 0) {
-            await DominoRoom.findByIdAndDelete(room._id);
-        } else {
-            await room.save();
-        }
-
-        // Broadcast player left
-        broadcastToRoom(roomId, 'player-left', {
-            userId: user._id,
-            roomState: room
-        });
-
-        return {
-            status: 200,
-            entity: { success: true, message: 'Left room successfully' }
-        };
-    } catch (error) {
-        console.error('Error leaving room:', error);
-        return {
-            status: 500,
-            entity: { success: false, error: error.message }
-        };
-    }
-};
-
-// ===================== GAME LOGIC =====================
-
 export const startDominoGame = async (room) => {
     try {
         const gameConfig = await DominoGameConfig.findOne();
@@ -163,33 +89,6 @@ export const startDominoGame = async (room) => {
         return game;
     } catch (error) {
         console.error('Error starting domino game:', error);
-        throw error;
-    }
-};
-
-export const fillWithComputerPlayers = async (room) => {
-    try {
-        const config = await DominoGameConfig.findOne();
-        const computerNames = config?.computerPlayerNames || ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma'];
-
-        while (room.players.length < room.playerCount) {
-            const botName = computerNames[room.players.length - 1];
-
-            room.players.push({
-                user: null,
-                playerName: botName,
-                playerType: 'COMPUTER',
-                position: room.players.length,
-                isReady: true,
-                isConnected: true
-            });
-        }
-
-        await room.save();
-
-        return room;
-    } catch (error) {
-        console.error('Error filling with computer players:', error);
         throw error;
     }
 };
@@ -461,7 +360,6 @@ export const handleTurnTimeout = async (gameId, userId) => {
     }
 };
 
-// New function to send turn warnings (call this from a cron job)
 export const sendTurnWarnings = async () => {
     try {
         const warningThreshold = 15; // 15 seconds remaining
