@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import { DominoRoom, DominoGame, DominoGameConfig } from '../../api/domino/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { handleTurnTimeout } from '../../api/domino/controller';
+import { handleTurnTimeout, sendTurnWarnings } from '../../api/domino/controller';
+import { broadcastToRoom } from '../socket/dominoSocket';
 
 // Clean up abandoned rooms every hour
 cron.schedule('0 * * * *', async () => {
@@ -55,6 +56,100 @@ cron.schedule('0 * * * *', async () => {
     }
 });
 
+// Handle disconnected players in WAITING rooms every 10 seconds
+cron.schedule('*/10 * * * * *', async () => {
+    try {
+        const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+
+        // Find WAITING rooms with disconnected players who haven't reconnected in 30+ seconds
+        const roomsWithDisconnectedPlayers = await DominoRoom.find({
+            status: 'WAITING',
+            players: {
+                $elemMatch: {
+                    isConnected: false,
+                    disconnectedAt: { $lt: thirtySecondsAgo },
+                    playerType: 'HUMAN',
+                    user: { $ne: null }
+                }
+            }
+        });
+
+        for (const room of roomsWithDisconnectedPlayers) {
+            try {
+                // Find all disconnected players who have exceeded the timeout
+                const playersToRemove = room.players.filter(player =>
+                    !player.isConnected &&
+                    player.disconnectedAt &&
+                    player.disconnectedAt < thirtySecondsAgo &&
+                    player.playerType === 'HUMAN' &&
+                    player.user
+                );
+
+                for (const player of playersToRemove) {
+                    console.log(`Removing disconnected player ${player.user} from waiting room ${room.roomId} after 30 second timeout`);
+
+                    // Refund entry fee using DOMINO_REFUND transaction identifier
+                    await makeTransaction(
+                        player.user,
+                        'USER',
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        null,
+                        null,
+                        room._id,
+                        room.cashType
+                    );
+
+                    // Remove player from room
+                    const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === player.user.toString());
+                    if (playerIndex !== -1) {
+                        room.players.splice(playerIndex, 1);
+
+                        // Update positions for remaining players
+                        room.players.forEach((remainingPlayer, index) => {
+                            remainingPlayer.position = index;
+                        });
+
+                        // Update total pot
+                        room.totalPot -= room.entryFee;
+                    }
+                }
+
+                // If room is empty after removing disconnected players, delete it
+                if (room.players.length === 0) {
+                    await DominoRoom.findByIdAndDelete(room._id);
+                    console.log(`Deleted empty room ${room.roomId} after removing all disconnected players`);
+                } else {
+                    // Save the updated room
+                    await room.save();
+
+                    // Broadcast the updated room state to remaining players
+                    broadcastToRoom(room.roomId, 'player-removed-timeout', {
+                        removedPlayers: playersToRemove.map(p => p.user),
+                        roomState: room,
+                        reason: 'DISCONNECTION_TIMEOUT'
+                    });
+                }
+
+            } catch (error) {
+                console.error(`Error removing disconnected players from room ${room.roomId}:`, error);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error in disconnected player cleanup:', error);
+    }
+});
+
+// Send turn warnings every 10 seconds
+cron.schedule('*/10 * * * * *', async () => {
+    try {
+        await sendTurnWarnings();
+    } catch (error) {
+        console.error('Error sending turn warnings:', error);
+    }
+});
+
 // Handle turn timeouts every 30 seconds
 cron.schedule('*/30 * * * * *', async () => {
     try {
@@ -105,10 +200,11 @@ cron.schedule('0 2 * * *', async () => {
             completedAt: { $lt: thirtyDaysAgo }
         });
 
-        console.log(`Found ${oldGames} old domino games and ${oldRooms} old rooms for potential archival`);
+        console.log(`Found ${oldGames} old games and ${oldRooms} old rooms to potentially clean up`);
 
-        // Optional: Archive to separate collections or external storage
-        // This is just logging for now - implement archival strategy based on your needs
+        // For now, just log the counts. In production, you might want to archive or delete old data
+        // await DominoGame.deleteMany({ gameState: 'COMPLETED', completedAt: { $lt: thirtyDaysAgo } });
+        // await DominoRoom.deleteMany({ status: { $in: ['COMPLETED', 'CANCELLED'] }, completedAt: { $lt: thirtyDaysAgo } });
 
     } catch (error) {
         console.error('Error in domino data cleanup:', error);

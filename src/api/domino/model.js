@@ -39,6 +39,8 @@ const DominoRoomSchema = new Schema(
             isReady: { type: Boolean, default: false },
             joinedAt: { type: Date, default: Date.now },
             isConnected: { type: Boolean, default: true },
+            lastConnectedAt: { type: Date, default: Date.now },
+            disconnectedAt: { type: Date, default: null },
         }],
         gameSettings: {
             tilesPerPlayer: { type: Number, enum: [7, 9] },
@@ -183,13 +185,13 @@ const DominoTournamentSchema = new Schema(
     {
         name: { type: String, required: true },
         entryFee: { type: Number, required: true },
-        cashType: { type: String, enum: ['REAL', 'VIRTUAL'], required: true },
         maxParticipants: { type: Number, required: true },
         status: {
             type: String,
-            enum: ['REGISTRATION', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
-            default: 'REGISTRATION'
+            enum: ['UPCOMING', 'REGISTRATION', 'IN_PROGRESS', 'COMPLETED'],
+            default: 'UPCOMING'
         },
+        startTime: { type: Date, required: true },
         participants: [{
             user: { type: String, ref: 'User' },
             registeredAt: { type: Date, default: Date.now },
@@ -197,36 +199,23 @@ const DominoTournamentSchema = new Schema(
             finalPosition: { type: Number },
         }],
         prizePool: { type: Number },
-        prizeDistribution: [{
+        payoutStructure: [{
             position: { type: Number },
             amount: { type: Number },
             percentage: { type: Number },
         }],
-        startDate: { type: Date },
-        endDate: { type: Date },
-        createdBy: { type: String, ref: 'User', required: true },
+        houseEdge: { type: Number, default: 0 },
     },
     {
         timestamps: true,
+        toJSON: {
+            virtuals: true,
+            transform: (obj, ret) => {
+                delete ret._id;
+            },
+        },
     }
 );
-
-// DominoRoom indexes
-DominoRoomSchema.index({ "roomId": 1 }, { unique: true })
-DominoRoomSchema.index({ "status": 1, "cashType": 1, "playerCount": 1 })
-DominoRoomSchema.index({ "createdAt": -1 })
-DominoRoomSchema.index({ "players.user": 1 })
-
-// DominoGame indexes  
-DominoGameSchema.index({ "room": 1 })
-DominoGameSchema.index({ "gameState": 1 })
-DominoGameSchema.index({ "players.user": 1 })
-DominoGameSchema.index({ "createdAt": -1 })
-DominoGameSchema.index({ "winner": 1, "gameState": 1 })
-
-// DominoChat indexes
-DominoChatSchema.index({ "room": 1, "createdAt": -1 })
-DominoChatSchema.index({ "user": 1 })
 
 export const DominoGameConfig = mongoose.model('DominoGameConfig', DominoGameConfigSchema);
 export const DominoRoom = mongoose.model('DominoRoom', DominoRoomSchema);

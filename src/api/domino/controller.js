@@ -4,8 +4,7 @@ import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
-import { broadcastToRoom, broadcastGameUpdate } from '../../services/socket/dominoSocket';
-import { stringify } from 'uuid';
+import { broadcastToRoom, broadcastGameUpdate, sendToUser } from '../../services/socket/dominoSocket';
 
 // ===================== ROOM MANAGEMENT =====================
 
@@ -54,214 +53,6 @@ export const getRooms = async (query, user) => {
             status: 500,
             entity: { success: false, error: error.message }
         };
-    }
-};
-
-export const joinOrCreateRoom = async (body, user) => {
-    try {
-        const {
-            playerCount,
-            entryFee,
-            cashType,
-            winRule = 'STANDARD'
-        } = body;
-
-        // Validate inputs
-        if (![2, 3, 4].includes(playerCount)) {
-            return {
-                status: 400,
-                entity: { success: false, error: 'Player count must be 2, 3, or 4' }
-            };
-        }
-
-        // Validate user balance
-        const wallet = await Wallet.findOne({ user: user._id });
-        if (!wallet) {
-            return {
-                status: 404,
-                entity: { success: false, error: 'User wallet not found' }
-            };
-        }
-
-        const balance = cashType === 'REAL' ? wallet.realBalance : wallet.virtualBalance;
-
-        if (balance < entryFee) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: `Insufficient ${cashType.toLowerCase()} balance. Required: $${entryFee}, Available: $${balance}`
-                }
-            };
-        }
-
-        // Check if user is already in any waiting room
-        const existingRoom = await DominoRoom.findOne({
-            'players.user': user._id,
-            status: 'WAITING'
-        });
-
-        if (existingRoom) {
-            return {
-                status: 400,
-                entity: { success: false, error: 'You are already in a waiting room' }
-            };
-        }
-
-        // First, try to find an existing room with vacancy that matches criteria
-        const availableRoom = await DominoRoom.findOne({
-            status: 'WAITING',
-            cashType,
-            playerCount,
-            entryFee,
-            'gameSettings.winRule': winRule,
-            $expr: { $lt: [{ $size: "$players" }, "$playerCount"] }
-        });
-
-        if (availableRoom) {
-            // Join existing room
-            return await joinExistingRoom(availableRoom, user);
-        } else {
-            // Create new room
-            return await createNewRoom(body, user);
-        }
-
-    } catch (error) {
-        console.error('Error in joinOrCreateRoom:', error);
-        return {
-            status: 500,
-            entity: { success: false, error: error.message }
-        };
-    }
-};
-
-const joinExistingRoom = async (room, user) => {
-    try {
-        // Check user balance and deduct entry fee
-        const wallet = await Wallet.findOne({ user: user._id });
-        const balance = room.cashType === 'REAL' ? wallet.realBalance : wallet.virtualBalance;
-
-        if (balance < room.entryFee) {
-            return {
-                status: 400,
-                entity: {
-                    success: false,
-                    error: `Insufficient ${room.cashType.toLowerCase()} balance. Required: $${room.entryFee}, Available: $${balance}`
-                }
-            };
-        }
-
-        // Get user details
-        const userData = await User.findById(user._id);
-
-        // Add player to room
-        room.players.push({
-            user: user._id,
-            playerName: `${userData.name.firstName} ${userData.name.lastName}`,
-            position: room.players.length,
-            isReady: true,
-            isConnected: true
-        });
-
-        room.totalPot += room.entryFee;
-
-        // Deduct entry fee using DOMINO_ENTRY transaction identifier
-        await makeTransaction(
-            user._id,
-            user.role,
-            'DOMINO_ENTRY',
-            room.entryFee,
-            null,
-            null,
-            room._id,
-            room.cashType
-        );
-
-        await room.save();
-        await room.populate('createdBy', 'name');
-
-        // Broadcast player joined
-        broadcastToRoom(room.roomId, 'player-joined', {
-            userId: user._id,
-            roomState: room
-        });
-
-        // Check if room is full and start game with computer players if needed
-        if (room.players.length === room.playerCount) {
-            await startDominoGame(room);
-        }
-
-        return {
-            status: 200,
-            entity: { success: true, room, action: 'joined' }
-        };
-
-    } catch (error) {
-        console.error('Error joining existing room:', error);
-        throw error;
-    }
-};
-
-const createNewRoom = async (body, user) => {
-    try {
-        const {
-            playerCount,
-            entryFee,
-            cashType,
-            winRule = 'STANDARD',
-            roomType = 'PUBLIC'
-        } = body;
-
-        // Get user details
-        const userData = await User.findById(user._id);
-
-        // Create room
-        const roomId = DominoGameEngine.generateRoomId();
-        const room = await DominoRoom.create({
-            roomId,
-            roomType,
-            playerCount,
-            entryFee,
-            cashType,
-            gameSettings: {
-                tilesPerPlayer: playerCount <= 2 ? 9 : 7,
-                winRule,
-                targetPoints: 100
-            },
-            players: [{
-                user: user._id,
-                playerName: `${userData.name.firstName} ${userData.name.lastName}`,
-                position: 0,
-                isReady: true,
-                isConnected: true
-            }],
-            createdBy: user._id,
-            totalPot: entryFee
-        });
-
-        // Deduct entry fee using DOMINO_ENTRY transaction identifier
-        await makeTransaction(
-            user._id,
-            user.role,
-            'DOMINO_ENTRY',
-            entryFee,
-            null,
-            null,
-            room._id,
-            cashType
-        );
-
-        await room.populate('players.user', 'name');
-        await room.populate('createdBy', 'name');
-
-        return {
-            status: 200,
-            entity: { success: true, room, action: 'created' }
-        };
-
-    } catch (error) {
-        console.error('Error creating new room:', error);
-        throw error;
     }
 };
 
@@ -346,40 +137,44 @@ export const startDominoGame = async (room) => {
         const gameConfig = await DominoGameConfig.findOne();
         const houseEdge = gameConfig?.houseEdge || 0;
 
-        // Deal tiles
-        const { players, drawPile } = DominoGameEngine.dealTiles(
-            room.playerCount,
-            room.gameSettings.tilesPerPlayer
-        );
+        // Calculate house amount and winner payout
+        const houseAmount = Math.floor(room.totalPot * (houseEdge / 100));
+        const winnerPayout = room.totalPot - houseAmount;
 
-        console.log('room.players', JSON.stringify(room.players));
+        // Deal tiles to players
+        const tilesPerPlayer = room.gameSettings.tilesPerPlayer;
+        const { players: gamePlayersWithTiles, drawPile } = DominoGameEngine.dealTiles(room.players.length, tilesPerPlayer);
 
-        // Map room players to game players
-        const gamePlayers = players.map((gamePlayer, index) => ({
-            ...gamePlayer,
-            user: room.players[index].user,
-            playerName: room.players[index].playerName,
-            playerType: room.players[index].playerType
+        // Map room players to game players with tiles
+        const gamePlayers = room.players.map((player, index) => ({
+            position: index,
+            user: player.user,
+            playerType: player.playerType || 'HUMAN',
+            playerName: player.playerName,
+            hand: gamePlayersWithTiles[index].hand,
+            score: 0,
+            totalScore: 0,
+            isConnected: player.isConnected,
+            lastAction: new Date(),
+            consecutivePasses: 0
         }));
 
-        // Calculate financials
-        const totalPot = room.totalPot;
-        const houseAmount = Math.floor(totalPot * (houseEdge / 100));
-        const winnerPayout = totalPot - houseAmount;
-
-        // Create game
+        // Create game document
         const game = await DominoGame.create({
             room: room._id,
+            currentPlayer: 0,
+            gameState: 'ACTIVE',
+            board: [],
             players: gamePlayers,
             drawPile,
-            board: [],
-            currentPlayer: 0,
+            moves: [],
             turnStartTime: new Date(),
             turnTimeLimit: gameConfig?.turnTimeLimit || 60,
-            totalPot,
+            totalPot: room.totalPot,
             houseEdge,
             houseAmount,
-            winnerPayout
+            winnerPayout,
+            startedAt: new Date()
         });
 
         // Update room status
@@ -391,11 +186,13 @@ export const startDominoGame = async (room) => {
         for (const player of room.players) {
             if (player.user && player.playerType === 'HUMAN') {
                 try {
-                    // FIX: Extract user ID string from user object if it's populated
+                    // Extract user ID string from user object if it's populated
                     const userId = typeof player.user === 'object' ? player.user._id : player.user;
                     const loyaltyResult = await LoyaltyService.recordUserPlayActivity(userId);
                     if (!loyaltyResult.success) {
                         console.warn(`Failed to record play activity for user ${userId}:`, loyaltyResult.error);
+                    } else {
+                        console.log(`Play activity recorded for user ${userId} - Domino game start`);
                     }
                 } catch (error) {
                     console.error(`Error recording play activity for user ${player.user}:`, error);
@@ -404,12 +201,16 @@ export const startDominoGame = async (room) => {
             }
         }
 
-        // Broadcast game started
+        // Broadcast game start
         broadcastToRoom(room.roomId, 'game-started', {
             gameId: game._id,
             gameState: game,
+            roomState: room,
             message: 'Game has started!'
         });
+
+        // Send turn notification to first player
+        await notifyTurnChange(game);
 
         return game;
     } catch (error) {
@@ -448,6 +249,70 @@ export const fillWithComputerPlayers = async (room) => {
     }
 };
 
+// Enhanced function to notify players about turn changes
+const notifyTurnChange = async (game, previousPlayer = null) => {
+    const currentPlayer = game.players[game.currentPlayer];
+    const roomId = game.room.roomId || game.room;
+
+    // Send specific turn notifications
+    if (currentPlayer && currentPlayer.user) {
+        // Notify the current player it's their turn
+        sendToUser(currentPlayer.user, 'your-turn', {
+            gameId: game._id,
+            timeLimit: game.turnTimeLimit || 60,
+            turnStartTime: game.turnStartTime,
+            validMoves: DominoGameEngine.getValidMoves(currentPlayer.hand, game.board),
+            message: "It's your turn to play!"
+        });
+    }
+
+    // Notify all other players about the turn change
+    game.players.forEach((player, index) => {
+        if (index !== game.currentPlayer && player.user) {
+            sendToUser(player.user, 'turn-changed', {
+                gameId: game._id,
+                currentPlayer: game.currentPlayer,
+                currentPlayerName: currentPlayer?.playerName,
+                waitingFor: currentPlayer?.playerName || `Player ${game.currentPlayer + 1}`,
+                isYourTurn: false,
+                message: `Waiting for ${currentPlayer?.playerName || `Player ${game.currentPlayer + 1}`} to play`
+            });
+        }
+    });
+
+    // Broadcast general turn update to room
+    broadcastToRoom(roomId, 'turn-update', {
+        gameId: game._id,
+        currentPlayer: game.currentPlayer,
+        currentPlayerName: currentPlayer?.playerName,
+        turnStartTime: game.turnStartTime,
+        timeLimit: game.turnTimeLimit || 60,
+        previousPlayer
+    });
+};
+
+// Enhanced function to send turn reminders/warnings
+const sendTurnReminder = async (game, timeRemaining) => {
+    const currentPlayer = game.players[game.currentPlayer];
+    const roomId = game.room.roomId || game.room;
+
+    if (currentPlayer && currentPlayer.user) {
+        sendToUser(currentPlayer.user, 'turn-reminder', {
+            gameId: game._id,
+            timeRemaining,
+            message: `Hurry up! You have ${timeRemaining} seconds left to make your move.`
+        });
+    }
+
+    // Notify other players about the time warning
+    broadcastToRoom(roomId, 'turn-time-warning', {
+        gameId: game._id,
+        currentPlayer: game.currentPlayer,
+        timeRemaining,
+        playerName: currentPlayer?.playerName
+    });
+};
+
 export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
     try {
         const game = await DominoGame.findById(gameId)
@@ -481,6 +346,8 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             };
         }
 
+        const previousPlayer = game.currentPlayer;
+
         // Process the move using game engine
         const moveResult = DominoGameEngine.processMove(game, playerIndex, action, tile, side);
 
@@ -491,15 +358,45 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             };
         }
 
-        // Update game state
-        Object.assign(game, moveResult.gameState);
+        // Selectively update game state fields without overwriting populated references
+        const updatedGameState = moveResult.gameState;
+
+        // Update specific fields from the game state result
+        game.currentPlayer = updatedGameState.currentPlayer;
+        game.gameState = updatedGameState.gameState;
+        game.players = updatedGameState.players;
+        game.board = updatedGameState.board;
+        game.drawPile = updatedGameState.drawPile;
+        game.moves = updatedGameState.moves;
+        game.totalMoves = updatedGameState.totalMoves;
+        game.turnStartTime = updatedGameState.turnStartTime;
+
+        // Only update completion fields if game is completed
+        if (updatedGameState.gameState === 'COMPLETED') {
+            game.winner = updatedGameState.winner;
+            game.endReason = updatedGameState.endReason;
+            game.finalScores = updatedGameState.finalScores;
+            game.completedAt = updatedGameState.completedAt;
+            game.duration = updatedGameState.duration;
+        }
+
         await game.save();
 
         // Broadcast move to all players
         broadcastGameUpdate(game.room.roomId, 'game-update', {
             gameState: game,
-            lastMove: moveResult.move
+            lastMove: moveResult.move,
+            moveBy: {
+                position: playerIndex,
+                playerName: game.players[playerIndex].playerName,
+                action: action
+            }
         });
+
+        // Send turn notifications if game is still active
+        if (game.gameState === 'ACTIVE') {
+            await notifyTurnChange(game, previousPlayer);
+        }
 
         // Check if game is completed
         if (game.gameState === 'COMPLETED') {
@@ -524,7 +421,7 @@ const handleGameCompletion = async (game) => {
     try {
         const room = game.room;
 
-        // Process payouts
+        // Process payouts and loyalty for winner
         if (game.winner !== undefined) {
             const winnerPlayer = game.players[game.winner];
             if (winnerPlayer.user) {
@@ -532,13 +429,50 @@ const handleGameCompletion = async (game) => {
                 await makeTransaction(
                     winnerPlayer.user,
                     'USER',
-                    'DOMINO_WIN',
+                    'WON_DOMINO',
                     game.winnerPayout,
                     null,
                     null,
                     game._id,
                     room.cashType
                 );
+
+                // Award XP for winning (consistent with other games)
+                try {
+                    // Calculate XP based on winnings
+                    const baseXP = Math.max(10, Math.floor(game.winnerPayout / 2)); // 1 XP per $2 won, minimum 10 XP
+                    const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+                    const winMultiplier = 1.5; // Bonus for winning
+                    const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+
+                    const xpResult = await LoyaltyService.awardUserXP(
+                        winnerPlayer.user,
+                        totalXP,
+                        'GAME_REWARD',
+                        `Domino game won - Winnings: ${game.winnerPayout} (${room.cashType})`,
+                        {
+                            gameType: 'DOMINO',
+                            gameId: game._id,
+                            roomId: room._id,
+                            winnings: game.winnerPayout,
+                            cashType: room.cashType,
+                            baseXP,
+                            multiplier: cashTypeMultiplier * winMultiplier,
+                            position: game.winner,
+                            endReason: game.endReason,
+                            isWin: true
+                        }
+                    );
+
+                    if (!xpResult.success) {
+                        console.warn(`Failed to award win XP for user ${winnerPlayer.user}:`, xpResult.error);
+                    } else {
+                        console.log(`Awarded ${totalXP} XP to user ${winnerPlayer.user} for domino win`);
+                    }
+                } catch (xpError) {
+                    console.error(`Error awarding win XP for user ${winnerPlayer.user}:`, xpError);
+                    // Don't fail game completion if XP awarding fails
+                }
             }
         }
 
@@ -549,15 +483,116 @@ const handleGameCompletion = async (game) => {
 
         // Broadcast game completion
         broadcastToRoom(room.roomId, 'game-completed', {
+            gameState: game,
             winner: game.winner,
             finalScores: game.finalScores,
-            winnerPayout: game.winnerPayout
+            roomState: room
         });
 
     } catch (error) {
         console.error('Error handling game completion:', error);
     }
 };
+
+export const handleTurnTimeout = async (gameId, userId) => {
+    try {
+        const game = await DominoGame.findById(gameId)
+            .populate('room');
+
+        if (!game || game.gameState !== 'ACTIVE') {
+            return;
+        }
+
+        const previousPlayer = game.currentPlayer;
+        const timedOutPlayer = game.players[game.currentPlayer];
+
+        // Auto-pass for the current player
+        const moveResult = DominoGameEngine.processMove(game, game.currentPlayer, 'PASS');
+
+        if (moveResult.success) {
+            // Selectively update game state fields without overwriting the room reference
+            const updatedGameState = moveResult.gameState;
+
+            // Update specific fields from the game state result
+            game.currentPlayer = updatedGameState.currentPlayer;
+            game.gameState = updatedGameState.gameState;
+            game.players = updatedGameState.players;
+            game.board = updatedGameState.board;
+            game.drawPile = updatedGameState.drawPile;
+            game.moves = updatedGameState.moves;
+            game.totalMoves = updatedGameState.totalMoves;
+            game.turnStartTime = updatedGameState.turnStartTime;
+
+            // Only update completion fields if game is completed
+            if (updatedGameState.gameState === 'COMPLETED') {
+                game.winner = updatedGameState.winner;
+                game.endReason = updatedGameState.endReason;
+                game.finalScores = updatedGameState.finalScores;
+                game.completedAt = updatedGameState.completedAt;
+                game.duration = updatedGameState.duration;
+            }
+
+            await game.save();
+
+            // Notify the timed-out player
+            if (timedOutPlayer && timedOutPlayer.user) {
+                sendToUser(timedOutPlayer.user, 'turn-timeout-notification', {
+                    gameId: game._id,
+                    message: 'Your turn timed out and you automatically passed.',
+                    autoAction: 'PASS'
+                });
+            }
+
+            // Broadcast timeout and move
+            broadcastGameUpdate(game.room.roomId, 'turn-timeout', {
+                gameState: game,
+                timedOutPlayer: previousPlayer,
+                timedOutPlayerName: timedOutPlayer?.playerName,
+                autoAction: 'PASS'
+            });
+
+            // Send turn notifications if game is still active
+            if (game.gameState === 'ACTIVE') {
+                await notifyTurnChange(game, previousPlayer);
+            }
+
+            // Check if game is completed
+            if (game.gameState === 'COMPLETED') {
+                await handleGameCompletion(game);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error handling turn timeout:', error);
+    }
+};
+
+// New function to send turn warnings (call this from a cron job)
+export const sendTurnWarnings = async () => {
+    try {
+        const warningThreshold = 15; // 15 seconds remaining
+        const now = new Date();
+        const warningTime = new Date(now.getTime() - (45 * 1000)); // 45 seconds ago (60-15=45)
+
+        // Find games where turn started 45 seconds ago (15 seconds remaining)
+        const gamesNeedingWarning = await DominoGame.find({
+            gameState: 'ACTIVE',
+            turnStartTime: {
+                $gte: new Date(warningTime.getTime() - 5000), // 5 second buffer
+                $lte: warningTime
+            }
+        }).populate('room');
+
+        for (const game of gamesNeedingWarning) {
+            await sendTurnReminder(game, warningThreshold);
+        }
+
+    } catch (error) {
+        console.error('Error sending turn warnings:', error);
+    }
+};
+
+// ===================== GAME STATE AND HISTORY =====================
 
 export const getGameState = async ({ gameId }, user) => {
     try {
@@ -572,7 +607,7 @@ export const getGameState = async ({ gameId }, user) => {
             };
         }
 
-        // Check if user is in the game
+        // Check if user is in this game
         const playerInGame = game.players.find(p =>
             p.user && p.user._id.toString() === user._id
         );
@@ -586,7 +621,7 @@ export const getGameState = async ({ gameId }, user) => {
 
         return {
             status: 200,
-            entity: { success: true, game }
+            entity: { success: true, gameState: game }
         };
 
     } catch (error) {
@@ -602,19 +637,22 @@ export const getUserGameHistory = async (user, query) => {
     try {
         const { limit = 20, offset = 0, status } = query;
 
-        let matchQuery = { 'players.user': user._id };
+        let queryFilter = {
+            'players.user': user._id
+        };
+
         if (status) {
-            matchQuery.gameState = status.toUpperCase();
+            queryFilter.gameState = status.toUpperCase();
         }
 
-        const games = await DominoGame.find(matchQuery)
-            .populate('room', 'roomId playerCount entryFee cashType')
+        const games = await DominoGame.find(queryFilter)
+            .populate('room')
             .populate('players.user', 'name')
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
             .skip(parseInt(offset));
 
-        const total = await DominoGame.countDocuments(matchQuery);
+        const total = await DominoGame.countDocuments(queryFilter);
 
         return {
             status: 200,
@@ -638,6 +676,8 @@ export const getUserGameHistory = async (user, query) => {
         };
     }
 };
+
+// ===================== CHAT FUNCTIONALITY =====================
 
 export const sendMessage = async ({ roomId }, { message }, user) => {
     try {
@@ -697,11 +737,9 @@ export const sendMessage = async ({ roomId }, { message }, user) => {
 
         return {
             status: 200,
-            entity: {
-                success: true,
-                message: chatMessage
-            }
+            entity: { success: true, message: chatMessage }
         };
+
     } catch (error) {
         console.error('Error sending message:', error);
         return {
@@ -737,6 +775,7 @@ export const getChatHistory = async ({ roomId }, query, user) => {
         }
 
         const messages = await DominoChat.find({ room: room._id })
+            .populate('user', 'name')
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
             .skip(parseInt(offset));
@@ -765,6 +804,8 @@ export const getChatHistory = async ({ roomId }, query, user) => {
         };
     }
 };
+
+// ===================== ADMIN CONFIGURATION =====================
 
 export const updateGameConfig = async (body, user) => {
     try {
@@ -806,38 +847,111 @@ export const getGameConfig = async () => {
     }
 };
 
-export const handleTurnTimeout = async (gameId, userId) => {
+// ===================== DISCONNECTION HANDLING =====================
+
+export const removeDisconnectedPlayersFromWaitingRooms = async () => {
     try {
-        const game = await DominoGame.findById(gameId)
-            .populate('room');
+        const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+        let totalRemovedPlayers = 0;
+        let roomsProcessed = 0;
 
-        if (!game || game.gameState !== 'ACTIVE') {
-            return;
-        }
+        // Find WAITING rooms with disconnected players who haven't reconnected in 30+ seconds
+        const roomsWithDisconnectedPlayers = await DominoRoom.find({
+            status: 'WAITING',
+            players: {
+                $elemMatch: {
+                    isConnected: false,
+                    disconnectedAt: { $lt: thirtySecondsAgo },
+                    playerType: 'HUMAN',
+                    user: { $ne: null }
+                }
+            }
+        });
 
-        // Find current player
-        const currentPlayer = game.players[game.currentPlayer];
+        for (const room of roomsWithDisconnectedPlayers) {
+            try {
+                // Find all disconnected players who have exceeded the timeout
+                const playersToRemove = room.players.filter(player =>
+                    !player.isConnected &&
+                    player.disconnectedAt &&
+                    player.disconnectedAt < thirtySecondsAgo &&
+                    player.playerType === 'HUMAN' &&
+                    player.user
+                );
 
-        // Auto-pass for the current player
-        const moveResult = DominoGameEngine.processMove(game, game.currentPlayer, 'PASS');
+                const removedUserIds = [];
 
-        if (moveResult.success) {
-            Object.assign(game, moveResult.gameState);
-            await game.save();
+                for (const player of playersToRemove) {
+                    console.log(`Removing disconnected player ${player.user} from waiting room ${room.roomId} after 30 second timeout`);
 
-            // Broadcast timeout and move
-            broadcastGameUpdate(game.room.roomId, 'turn-timeout', {
-                gameState: game,
-                timedOutPlayer: game.currentPlayer
-            });
+                    // Refund entry fee using DOMINO_REFUND transaction identifier
+                    await makeTransaction(
+                        player.user,
+                        'USER',
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        null,
+                        null,
+                        room._id,
+                        room.cashType
+                    );
 
-            // Check if game is completed
-            if (game.gameState === 'COMPLETED') {
-                await handleGameCompletion(game);
+                    removedUserIds.push(player.user);
+
+                    // Remove player from room
+                    const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === player.user.toString());
+                    if (playerIndex !== -1) {
+                        room.players.splice(playerIndex, 1);
+                        totalRemovedPlayers++;
+                    }
+                }
+
+                // Update positions for remaining players
+                room.players.forEach((remainingPlayer, index) => {
+                    remainingPlayer.position = index;
+                });
+
+                // Update total pot
+                room.totalPot -= (room.entryFee * playersToRemove.length);
+
+                // If room is empty after removing disconnected players, delete it
+                if (room.players.length === 0) {
+                    await DominoRoom.findByIdAndDelete(room._id);
+                    console.log(`Deleted empty room ${room.roomId} after removing all disconnected players`);
+                } else {
+                    // Save the updated room
+                    await room.save();
+
+                    // Broadcast the updated room state to remaining players
+                    broadcastToRoom(room.roomId, 'player-removed-timeout', {
+                        removedPlayers: removedUserIds,
+                        roomState: room,
+                        reason: 'DISCONNECTION_TIMEOUT'
+                    });
+                }
+
+                roomsProcessed++;
+
+            } catch (error) {
+                console.error(`Error removing disconnected players from room ${room.roomId}:`, error);
             }
         }
 
+        return {
+            status: 200,
+            entity: {
+                success: true,
+                removedPlayers: totalRemovedPlayers,
+                roomsProcessed: roomsProcessed,
+                message: `Removed ${totalRemovedPlayers} disconnected players from ${roomsProcessed} waiting rooms`
+            }
+        };
+
     } catch (error) {
-        console.error('Error handling turn timeout:', error);
+        console.error('Error in removeDisconnectedPlayersFromWaitingRooms:', error);
+        return {
+            status: 500,
+            entity: { success: false, error: error.message }
+        };
     }
 };

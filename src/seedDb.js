@@ -1,6 +1,7 @@
 import config from '../config';
 import { User } from './api/user/model';
 import { Wallet } from './api/wallet/model';
+import { DominoGameConfig } from './api/domino/model';
 
 export const createAdmin = async () => {
 	const adminData = config.adminData;
@@ -17,6 +18,27 @@ export const createAdmin = async () => {
 			return null;
 		}
 		return admin;
+	} catch (error) {
+		return null;
+	}
+};
+
+export const createDominoConfig = async () => {
+	const configData = config.dominoConfigData;
+	try {
+		let dominoConfigData = await DominoGameConfig.findOne({
+			isActive: true
+		}).exec();
+		if (!dominoConfigData) {
+			dominoConfigData = await DominoGameConfig.create(configData);
+			console.log('Domino config created with ID:', dominoConfigData._id);
+		} else {
+			console.log(
+				'Domino config already exists with ID:',
+				dominoConfigData._id
+			);
+		}
+		return dominoConfigData;
 	} catch (error) {
 		return null;
 	}

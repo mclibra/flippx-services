@@ -61,6 +61,14 @@ const environments = {
 			role: 'SYSTEM',
 			isActive: true,
 		},
+		dominoConfigData: {
+			turnTimeLimit: 30,
+			houseEdge: 10,
+			entryFees: [5, 10, 20, 30, 50, 100],
+			maxPlayersPerRoom: 4,
+			isActive: true,
+			computerPlayerNames: ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta'],
+		}
 	},
 
 	production: {

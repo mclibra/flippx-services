@@ -3,7 +3,6 @@ import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
     getRooms,
-    joinOrCreateRoom,
     leaveRoom,
     makeMove,
     getGameState,
@@ -12,24 +11,21 @@ import {
     getChatHistory,
     updateGameConfig,
     getGameConfig,
-    handleTurnTimeout
+    handleTurnTimeout,
+    removeDisconnectedPlayersFromWaitingRooms,
+    sendTurnWarnings
 } from './controller';
 
 const router = new Router();
 
 // ===================== ROOM MANAGEMENT =====================
 
-// Get available rooms
+// Get available rooms (for browsing/display purposes)
 router.get('/rooms', xApi(), token({ required: true }), async (req, res) =>
     done(res, await getRooms(req.query, req.user))
 );
 
-// Join or create room - NEW ENDPOINT
-router.post('/join', xApi(), token({ required: true }), async (req, res) =>
-    done(res, await joinOrCreateRoom(req.body, req.user))
-);
-
-// Leave room
+// Leave room (still needed for HTTP fallback)
 router.post('/rooms/:roomId/leave', xApi(), token({ required: true }), async (req, res) =>
     done(res, await leaveRoom(req.params, req.user))
 );
@@ -82,5 +78,18 @@ router.put('/config', xApi(), token({ required: true, roles: ['ADMIN'] }), async
 router.get('/config', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) =>
     done(res, await getGameConfig())
 );
+
+// ===================== ADMIN MAINTENANCE =====================
+
+// Manually trigger cleanup of disconnected players (Admin only)
+router.post('/admin/cleanup-disconnected', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) =>
+    done(res, await removeDisconnectedPlayersFromWaitingRooms())
+);
+
+// Manually trigger turn warnings (Admin only)
+router.post('/admin/send-turn-warnings', xApi(), token({ required: true, roles: ['ADMIN'] }), async (req, res) => {
+    await sendTurnWarnings();
+    done(res, { status: 200, entity: { success: true, message: 'Turn warnings sent' } });
+});
 
 export default router;

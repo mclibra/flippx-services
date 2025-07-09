@@ -3,7 +3,7 @@ import { env, mongo, port, ip, apiRoot } from './config';
 import mongoose from './src/services/mongoose';
 import express from './src/services/express';
 import { initializeSocket } from './src/services/socket';
-import { createAdmin, createSystemAccount } from './src/seedDb';
+import { createAdmin, createSystemAccount, createDominoConfig } from './src/seedDb';
 import api from './src/api';
 import './src/services/cron/lottery';
 import './src/services/cron/loyaltyTasks';
@@ -39,6 +39,14 @@ setImmediate(async () => {
 			console.log('System account initialized');
 		} else {
 			console.log('Unable to create system account');
+		}
+
+		// Create domino game config
+		const dominoGameConfig = await createDominoConfig();
+		if (dominoGameConfig) {
+			console.log('Domino game config initialized');
+		} else {
+			console.log('Unable to create domino game config');
 		}
 	} catch (error) {
 		console.log(error);

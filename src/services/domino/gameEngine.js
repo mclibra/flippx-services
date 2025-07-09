@@ -181,6 +181,278 @@ export class DominoGameEngine {
         return { action: 'PASS' };
     }
 
+    // Main move processing function - THIS WAS MISSING
+    static processMove(game, playerIndex, action, tile = null, side = null) {
+        try {
+            // Create a deep copy of the game state to avoid mutations
+            const gameState = JSON.parse(JSON.stringify(game));
+            const player = gameState.players[playerIndex];
+
+            if (!player) {
+                return {
+                    success: false,
+                    error: 'Invalid player index'
+                };
+            }
+
+            const move = {
+                player: playerIndex,
+                action,
+                tile,
+                side,
+                timestamp: new Date(),
+                boardStateBefore: JSON.stringify(gameState.board)
+            };
+
+            switch (action) {
+                case 'PLACE':
+                    return this.processPlaceMove(gameState, playerIndex, tile, side, move);
+                case 'DRAW':
+                    return this.processDrawMove(gameState, playerIndex, move);
+                case 'PASS':
+                    return this.processPassMove(gameState, playerIndex, move);
+                default:
+                    return {
+                        success: false,
+                        error: 'Invalid action'
+                    };
+            }
+        } catch (error) {
+            console.error('Error processing move:', error);
+            return {
+                success: false,
+                error: 'Internal error processing move'
+            };
+        }
+    }
+
+    static processPlaceMove(gameState, playerIndex, tile, side, move) {
+        const player = gameState.players[playerIndex];
+
+        // Validate tile is in player's hand
+        const tileIndex = player.hand.indexOf(tile);
+        if (tileIndex === -1) {
+            return {
+                success: false,
+                error: 'Tile not in hand'
+            };
+        }
+
+        // Validate tile can be placed
+        const canPlace = this.canPlaceTile(tile, gameState.board);
+        if (!canPlace.canPlace) {
+            return {
+                success: false,
+                error: 'Tile cannot be placed on board'
+            };
+        }
+
+        // Validate side
+        if (!canPlace.sides.includes(side)) {
+            return {
+                success: false,
+                error: 'Invalid side for tile placement'
+            };
+        }
+
+        // Remove tile from hand
+        player.hand.splice(tileIndex, 1);
+
+        // Place tile on board
+        this.placeTileOnBoard(tile, gameState.board, side);
+
+        // Add to move history
+        move.boardStateAfter = JSON.stringify(gameState.board);
+        gameState.moves.push(move);
+
+        // Reset consecutive passes
+        player.consecutivePasses = 0;
+
+        // Update total moves
+        gameState.totalMoves = (gameState.totalMoves || 0) + 1;
+
+        // Update last action
+        player.lastAction = new Date();
+
+        // Check for game completion
+        const winnerCheck = this.checkGameCompletion(gameState);
+        if (winnerCheck.isComplete) {
+            gameState.gameState = 'COMPLETED';
+            gameState.winner = winnerCheck.winner;
+            gameState.endReason = winnerCheck.endReason;
+            gameState.finalScores = winnerCheck.finalScores;
+            gameState.completedAt = new Date();
+
+            // Calculate duration
+            if (gameState.startedAt) {
+                gameState.duration = Math.floor((new Date() - new Date(gameState.startedAt)) / 1000);
+            }
+        } else {
+            // Move to next player
+            gameState.currentPlayer = this.getNextPlayer(gameState);
+            gameState.turnStartTime = new Date();
+        }
+
+        return {
+            success: true,
+            gameState,
+            move
+        };
+    }
+
+    static processDrawMove(gameState, playerIndex, move) {
+        const player = gameState.players[playerIndex];
+
+        // Check if draw pile is empty
+        if (gameState.drawPile.length === 0) {
+            return {
+                success: false,
+                error: 'Draw pile is empty'
+            };
+        }
+
+        // Draw tile from pile
+        const drawnTile = gameState.drawPile.shift();
+        player.hand.push(drawnTile);
+
+        // Add to move history
+        move.tile = drawnTile;
+        gameState.moves.push(move);
+
+        // Reset consecutive passes
+        player.consecutivePasses = 0;
+
+        // Update total moves
+        gameState.totalMoves = (gameState.totalMoves || 0) + 1;
+
+        // Update last action
+        player.lastAction = new Date();
+
+        // Check if drawn tile can be played immediately
+        const hasValidMoves = this.hasValidMoves(player.hand, gameState.board);
+
+        if (hasValidMoves) {
+            // Player can continue their turn with new tile
+            gameState.turnStartTime = new Date();
+        } else {
+            // Auto-pass since no valid moves even with new tile
+            return this.processPassMove(gameState, playerIndex, {
+                player: playerIndex,
+                action: 'PASS',
+                timestamp: new Date(),
+                reason: 'NO_VALID_MOVES_AFTER_DRAW'
+            });
+        }
+
+        return {
+            success: true,
+            gameState,
+            move
+        };
+    }
+
+    static processPassMove(gameState, playerIndex, move) {
+        const player = gameState.players[playerIndex];
+
+        // Increment consecutive passes
+        player.consecutivePasses++;
+
+        // Add to move history
+        gameState.moves.push(move);
+
+        // Update total moves
+        gameState.totalMoves = (gameState.totalMoves || 0) + 1;
+
+        // Update last action
+        player.lastAction = new Date();
+
+        // Check if all players have passed consecutively
+        const allPlayersPassed = gameState.players.every(p => p.consecutivePasses > 0);
+
+        if (allPlayersPassed) {
+            // Game is blocked
+            const winnerCheck = this.checkGameCompletion(gameState, true);
+            gameState.gameState = 'COMPLETED';
+            gameState.winner = winnerCheck.winner;
+            gameState.endReason = 'ALL_PASSED';
+            gameState.finalScores = winnerCheck.finalScores;
+            gameState.completedAt = new Date();
+
+            // Calculate duration
+            if (gameState.startedAt) {
+                gameState.duration = Math.floor((new Date() - new Date(gameState.startedAt)) / 1000);
+            }
+        } else {
+            // Move to next player
+            gameState.currentPlayer = this.getNextPlayer(gameState);
+            gameState.turnStartTime = new Date();
+        }
+
+        return {
+            success: true,
+            gameState,
+            move
+        };
+    }
+
+    // Check if game is complete
+    static checkGameCompletion(gameState, forcedEnd = false) {
+        console.log('Checking Game Completion => ', JSON.stringify(gameState));
+        // Check if any player has no tiles left
+        const emptyHandPlayer = gameState.players.find(p => p.hand.length === 0);
+        if (emptyHandPlayer) {
+            return {
+                isComplete: true,
+                winner: emptyHandPlayer.position,
+                endReason: 'LAST_TILE',
+                finalScores: this.calculateFinalScores(gameState.players)
+            };
+        }
+
+        // If forced end (all passed), find winner by lowest dots
+        if (forcedEnd) {
+            const playerScores = gameState.players.map(p => ({
+                position: p.position,
+                dots: this.calculateDots(p.hand)
+            }));
+
+            const lowestDots = Math.min(...playerScores.map(s => s.dots));
+            const winner = playerScores.find(s => s.dots === lowestDots);
+
+            return {
+                isComplete: true,
+                winner: winner.position,
+                endReason: 'LOWEST_DOTS',
+                finalScores: this.calculateFinalScores(gameState.players)
+            };
+        }
+
+        return { isComplete: false };
+    }
+
+    // Calculate final scores
+    static calculateFinalScores(players) {
+        return players.map(player => ({
+            position: player.position,
+            dotsRemaining: this.calculateDots(player.hand),
+            tilesRemaining: player.hand.length
+        }));
+    }
+
+    // Get next player in turn order
+    static getNextPlayer(gameState) {
+        let nextPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
+
+        // Skip disconnected players if needed
+        let attempts = 0;
+        while (!gameState.players[nextPlayer].isConnected && attempts < gameState.players.length) {
+            nextPlayer = (nextPlayer + 1) % gameState.players.length;
+            attempts++;
+        }
+
+        return nextPlayer;
+    }
+
     // Determine game winner
     static determineWinner(players, winRule, targetPoints = 100) {
         // Check if any player has no tiles left
@@ -215,59 +487,25 @@ export class DominoGameEngine {
             return {
                 winner: emptyHandPlayer.position,
                 endReason: 'LAST_TILE',
-                roundWinner: emptyHandPlayer.position,
+                finalScores: this.calculateFinalScores(players),
                 gameCompleted: true
             };
         }
 
-        // Check if all players passed consecutively (blocked game)
-        const allPassed = players.every(p => p.consecutivePasses >= 1);
-        if (allPassed) {
-            // Find player with lowest dots
-            const playerDots = players.map(p => ({
+        // Check for blocked game (all players passed)
+        if (players.every(p => p.consecutivePasses > 0)) {
+            const playerScores = players.map(p => ({
                 position: p.position,
-                dots: this.calculateDots(p.hand),
-                totalScore: p.totalScore
+                dots: this.calculateDots(p.hand)
             }));
 
-            playerDots.sort((a, b) => a.dots - b.dots);
-            const roundWinner = playerDots[0].position; // Player with lowest dots wins
-
-            // For point-based games, check if target reached
-            if (winRule === 'POINT_BASED') {
-                // FIXED: Calculate points correctly
-                const roundScores = this.calculateRoundScores(players, roundWinner);
-                const winnerScore = roundScores.find(s => s.position === roundWinner);
-
-                if (winnerScore.totalScore >= targetPoints) {
-                    return {
-                        winner: roundWinner,
-                        endReason: 'POINTS_REACHED',
-                        roundWinner,
-                        finalScores: roundScores,
-                        gameCompleted: true
-                    };
-                } else {
-                    return {
-                        winner: null,
-                        endReason: 'LOWEST_DOTS',
-                        roundWinner,
-                        finalScores: roundScores,
-                        gameCompleted: false
-                    };
-                }
-            }
+            const lowestDots = Math.min(...playerScores.map(s => s.dots));
+            const winner = playerScores.find(s => s.dots === lowestDots);
 
             return {
-                winner: roundWinner,
+                winner: winner.position,
                 endReason: 'LOWEST_DOTS',
-                roundWinner,
-                finalScores: playerDots.map(p => ({
-                    position: p.position,
-                    dotsRemaining: p.dots,
-                    roundScore: 0,
-                    totalScore: p.totalScore
-                })),
+                finalScores: this.calculateFinalScores(players),
                 gameCompleted: true
             };
         }
@@ -275,45 +513,34 @@ export class DominoGameEngine {
         return { winner: null, gameCompleted: false };
     }
 
-    // Calculate round scores for point-based games - FIXED VERSION
+    // Calculate round scores for point-based games
     static calculateRoundScores(players, roundWinner) {
-        const scores = players.map(p => ({
-            position: p.position,
-            dotsRemaining: this.calculateDots(p.hand),
-            roundScore: 0,
-            totalScore: p.totalScore
-        }));
+        return players.map(player => {
+            const dotsRemaining = this.calculateDots(player.hand);
+            let roundScore = 0;
 
-        // FIXED: Winner gets points equal to sum of ALL OTHER players' remaining dots
-        const winnerScore = scores.find(s => s.position === roundWinner);
-        const losersDots = scores.filter(s => s.position !== roundWinner)
-            .reduce((sum, s) => sum + s.dotsRemaining, 0);
+            if (player.position === roundWinner) {
+                // Winner gets points from all other players' remaining tiles
+                roundScore = players
+                    .filter(p => p.position !== roundWinner)
+                    .reduce((sum, p) => sum + this.calculateDots(p.hand), 0);
+            }
 
-        winnerScore.roundScore = losersDots;
-        winnerScore.totalScore += losersDots;
-
-        return scores;
+            return {
+                position: player.position,
+                dotsRemaining,
+                roundScore,
+                totalScore: (player.totalScore || 0) + roundScore
+            };
+        });
     }
 
-    // Generate unique room ID
+    // Generate room ID
     static generateRoomId() {
+        const prefix = 'DOM';
+        const randomPart = crypto.randomBytes(4).toString('hex');
         const timestamp = Date.now().toString(36);
-        const randomBytes = crypto.randomBytes(3).toString('hex').toUpperCase();
-        return `DOM_${timestamp}_${randomBytes}`;
-    }
-
-    // Find next active player
-    static getNextPlayer(currentPlayer, players) {
-        let nextPlayer = (currentPlayer + 1) % players.length;
-        let attempts = 0;
-
-        // Skip disconnected players, but max 1 full cycle
-        while (attempts < players.length && !players[nextPlayer].isConnected) {
-            nextPlayer = (nextPlayer + 1) % players.length;
-            attempts++;
-        }
-
-        return nextPlayer;
+        return `${prefix}_${randomPart}_${timestamp}`;
     }
 
     // Validate game state
@@ -358,12 +585,12 @@ export class DominoGameEngine {
         }));
 
         // Generate new tile set and distribute
-        const tiles = this.generateTileSet();
-        const { playerHands, drawPile } = this.distributeTiles(tiles, resetPlayers.length, tilesPerPlayer);
+        const tiles = this.generateDominoSet();
+        const { players: playersWithHands, drawPile } = this.dealTiles(resetPlayers.length, tilesPerPlayer);
 
         // Assign hands to players
         resetPlayers.forEach((player, index) => {
-            player.hand = playerHands[index];
+            player.hand = playersWithHands[index].hand;
         });
 
         return {
