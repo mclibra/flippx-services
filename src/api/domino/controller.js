@@ -133,6 +133,7 @@ const sendTurnReminder = async (game, timeRemaining) => {
     const currentPlayer = game.players[game.currentPlayer];
     const roomId = game.room.roomId || game.room;
 
+    console.log('Sending turn-reminder to user ', currentPlayer.user);
     if (currentPlayer && currentPlayer.user) {
         sendToUser(currentPlayer.user, 'turn-reminder', {
             gameId: game._id,
@@ -364,7 +365,7 @@ export const sendTurnWarnings = async () => {
     try {
         const warningThreshold = 15; // 15 seconds remaining
         const now = new Date();
-        const warningTime = new Date(now.getTime() - (45 * 1000)); // 45 seconds ago (60-15=45)
+        const warningTime = new Date(now.getTime() - (warningThreshold * 1000));
 
         // Find games where turn started 45 seconds ago (15 seconds remaining)
         const gamesNeedingWarning = await DominoGame.find({
@@ -376,6 +377,7 @@ export const sendTurnWarnings = async () => {
         }).populate('room');
 
         for (const game of gamesNeedingWarning) {
+            console.log('Sending turn warnings for game ', game._id);
             await sendTurnReminder(game, warningThreshold);
         }
 
