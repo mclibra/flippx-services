@@ -117,9 +117,7 @@ export const initiateWithdrawal = async req => {
 			user.role,
 			'WITHDRAWAL_PENDING',
 			amount,
-			'WITHDRAWAL',
 			withdrawal._id.toString(),
-			bankAccountId,
 			'REAL'
 		);
 
@@ -270,9 +268,7 @@ export const rejectWithdrawal = async req => {
 			withdrawal.user.role,
 			'WITHDRAWAL_REJECTED',
 			withdrawal.amount,
-			'WITHDRAWAL',
 			withdrawal._id.toString(),
-			null,
 			'REAL'
 		);
 

@@ -1,10 +1,11 @@
 import { jwtVerify } from '../jwt';
+import { LoyaltyService } from '../../api/loyalty/service';
 import { DominoRoom, DominoGameConfig } from '../../api/domino/model';
 import { DominoGameEngine } from '../domino/gameEngine';
 import { User } from '../../api/user/model';
 import { Wallet } from '../../api/wallet/model';
 import { makeTransaction } from '../../api/transaction/controller';
-import { startDominoGame } from '../../api/domino/controller';
+import { startDominoGame, makeMove } from '../../api/domino/controller';
 
 let dominoNamespace = null;
 
@@ -165,7 +166,7 @@ export const initializeDominoSocket = (io) => {
         // Game move
         socket.on('make-move', async (data) => {
             try {
-                const { makeMove } = await import('../../api/domino/controller');
+
                 const result = await makeMove(
                     { gameId: data.gameId },
                     { action: data.action, tile: data.tile, side: data.side },
@@ -365,16 +366,12 @@ const joinExistingRoomSocket = async (room, userId) => {
             'USER',
             'DOMINO_ENTRY',
             room.entryFee,
-            null,
-            null,
             room._id,
             room.cashType
         );
 
         // Award XP for room joining (consistent with other games)
         try {
-            const { LoyaltyService } = await import('../../api/loyalty/service');
-
             // Calculate XP based on entry fee
             const baseXP = Math.max(5, Math.floor(room.entryFee / 3)); // 1 XP per $3 entry fee, minimum 5 XP
             const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
@@ -469,16 +466,12 @@ const createNewRoomSocket = async (options, userId) => {
             'USER',
             'DOMINO_ENTRY',
             entryFee,
-            null,
-            null,
             room._id,
             cashType
         );
 
         // Award XP for room creation (consistent with other games)
         try {
-            const { LoyaltyService } = await import('../../api/loyalty/service');
-
             // Calculate XP based on entry fee
             const baseXP = Math.max(5, Math.floor(entryFee / 3)); // 1 XP per $3 entry fee, minimum 5 XP
             const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
@@ -554,6 +547,7 @@ export const broadcastGameUpdate = (roomId, event, data) => {
 
 // Send message to specific user
 export const sendToUser = (userId, event, data) => {
+    console.log(`Sending ${event} to user ${userId}`);
     if (dominoNamespace) {
         const userSockets = Array.from(dominoNamespace.sockets.values())
             .filter(socket => socket.userId === userId);

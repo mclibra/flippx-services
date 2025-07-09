@@ -120,8 +120,6 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 					user.role,
 					'ROULETTE_BET',
 					totalAmountPlayed,
-					null,
-					null,
 					rouletteTicket._id,
 					cashType // Pass cash type to transaction function
 				);
@@ -571,10 +569,8 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 							updatedTicket.user.role,
 							'WON_ROULETTE',
 							updatedTicket.totalAmountWon,
-							null,
-							null,
 							updatedTicket._id,
-							updatedTicket.cashType || 'VIRTUAL'
+							updatedTicket.cashType
 						);
 					}
 					resolve(updatedTicket || ticket);

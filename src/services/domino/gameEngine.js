@@ -366,15 +366,15 @@ export class DominoGameEngine {
         // Update last action
         player.lastAction = new Date();
 
-        // Check if all players have passed consecutively
-        const allPlayersPassed = gameState.players.every(p => p.consecutivePasses > 0);
+        // Check if game should be blocked using enhanced logic
+        const blockCheck = this.checkGameBlocked(gameState);
 
-        if (allPlayersPassed) {
-            // Game is blocked
+        if (blockCheck.isBlocked) {
+            // Game is blocked - end it
             const winnerCheck = this.checkGameCompletion(gameState, true);
-            gameState.gameState = 'COMPLETED';
+            gameState.gameState = 'BLOCKED';  // Use BLOCKED instead of COMPLETED
             gameState.winner = winnerCheck.winner;
-            gameState.endReason = 'ALL_PASSED';
+            gameState.endReason = blockCheck.reason === 'NO_MOVES_NO_TILES' ? 'BLOCKED_NO_MOVES' : 'BLOCKED_ALL_PASSED';
             gameState.finalScores = winnerCheck.finalScores;
             gameState.completedAt = new Date();
 
@@ -383,7 +383,6 @@ export class DominoGameEngine {
                 gameState.duration = Math.floor((new Date() - new Date(gameState.startedAt)) / 1000);
             }
         } else {
-            // Move to next player
             gameState.currentPlayer = this.getNextPlayer(gameState);
             gameState.turnStartTime = new Date();
         }
@@ -395,9 +394,40 @@ export class DominoGameEngine {
         };
     }
 
-    // Check if game is complete
+    static checkGameBlocked(gameState) {
+        // Check condition 1: No players have playable tiles AND no tiles to draw
+        const noPlayableTiles = gameState.players.every(player =>
+            !this.hasValidMoves(player.hand, gameState.board)
+        );
+        const noTilesToDraw = gameState.drawPile.length === 0;
+
+        console.log(`Checking if game is blocked`);
+        console.log(`noPlayableTiles => ${noPlayableTiles} and noTilesToDraw => ${noTilesToDraw}`)
+
+        if (noPlayableTiles && noTilesToDraw) {
+            return {
+                isBlocked: true,
+                reason: 'NO_MOVES_NO_TILES'
+            };
+        }
+
+        // Check condition 2: All players have passed for last 2 attempts
+        // This means consecutivePasses >= 3 for ALL players
+        const allPlayersPassedThreeTimes = gameState.players.every(player => player.consecutivePasses >= 2);
+
+        console.log(`All players have passed for last 2 attempts: ${allPlayersPassedThreeTimes}`);
+
+        if (allPlayersPassedThreeTimes) {
+            return {
+                isBlocked: true,
+                reason: 'ALL_PASSED_TWO_TIMES'
+            };
+        }
+
+        return { isBlocked: false };
+    }
+
     static checkGameCompletion(gameState, forcedEnd = false) {
-        console.log('Checking Game Completion => ', JSON.stringify(gameState));
         // Check if any player has no tiles left
         const emptyHandPlayer = gameState.players.find(p => p.hand.length === 0);
         if (emptyHandPlayer) {
@@ -409,7 +439,7 @@ export class DominoGameEngine {
             };
         }
 
-        // If forced end (all passed), find winner by lowest dots
+        // If forced end (blocked game), find winner by lowest dots
         if (forcedEnd) {
             const playerScores = gameState.players.map(p => ({
                 position: p.position,

@@ -164,9 +164,7 @@ export const getTransactions = async (user, query) => {
  * @param {string} userRole - User role
  * @param {string} transactionIdentifier - Transaction type identifier
  * @param {number} transactionAmount - Amount of transaction
- * @param {string} referenceIndex - Reference index (optional)
- * @param {string} referenceType - Reference type (optional)
- * @param {string} ticketId - Ticket ID (optional)
+ * @param {string} referenceIndex - Reference index
  * @param {string} cashType - 'REAL' or 'VIRTUAL'
  * @returns {Promise<number>} Amount transferred
  */
@@ -176,8 +174,6 @@ export const makeTransaction = async (
 	transactionIdentifier,
 	transactionAmount,
 	referenceIndex,
-	referenceType,
-	ticketId,
 	cashType = 'VIRTUAL'
 ) => {
 	try {
@@ -226,7 +222,6 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: referenceType || 'PAYMENT',
 						referenceIndex,
 						transactionType: 'CREDIT',
 						transactionIdentifier,
@@ -254,7 +249,6 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: referenceType || 'PAYMENT',
 						referenceIndex,
 						transactionType: 'CREDIT',
 						transactionIdentifier,
@@ -285,15 +279,14 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: 'PLAN',
-						referenceIndex: ticketId, // This will be the plan ID
+						referenceIndex: referenceIndex,
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
 						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
 						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
 						transactionData: {
-							planId: ticketId,
+							planId: referenceIndex,
 							transactionType: 'PLAN_PURCHASE',
 						},
 						status: 'COMPLETED',
@@ -306,15 +299,14 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: 'PLAN',
-						referenceIndex: ticketId, // This will be the plan ID
+						referenceIndex: referenceIndex, // This will be the plan ID
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
 						previousBalance: previousVirtualBalance,
 						newBalance: walletData.virtualBalance,
 						transactionData: {
-							planId: ticketId,
+							planId: referenceIndex,
 							transactionType: 'PLAN_PURCHASE',
 						},
 						status: 'COMPLETED',
@@ -347,7 +339,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: 'WITHDRAWAL',
+
 					referenceIndex,
 					transactionType: 'PENDING_DEBIT',
 					transactionIdentifier,
@@ -356,7 +348,7 @@ export const makeTransaction = async (
 					newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
 					transactionData: {
 						withdrawalId: referenceIndex,
-						bankAccount: ticketId,
+						bankAccount: referenceIndex,
 						deductedFromWithdrawable: transactionAmount,
 					},
 					status: 'PENDING',
@@ -378,7 +370,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: 'WITHDRAWAL',
+
 					referenceIndex,
 					transactionType: 'COMPLETED_DEBIT',
 					transactionIdentifier,
@@ -415,7 +407,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: 'WITHDRAWAL',
+
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -457,15 +449,15 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: ticketId ? 'TICKET' : 'GAME',
-						referenceIndex: ticketId,
+
+						referenceIndex: referenceIndex,
 						transactionType: 'DEBIT',
 						transactionIdentifier,
 						transactionAmount,
 						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
 						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
 						transactionData: {
-							ticketId,
+							referenceIndex,
 							deductedFromNonWithdrawable: deductionResult.deductedFromNonWithdrawable,
 							deductedFromWithdrawable: deductionResult.deductedFromWithdrawable,
 						},
@@ -482,15 +474,15 @@ export const makeTransaction = async (
 					await Transaction.create({
 						user: userId,
 						cashType,
-						referenceType: ticketId ? 'TICKET' : 'GAME',
-						referenceIndex: ticketId,
+
+						referenceIndex: referenceIndex,
 						transactionType: 'DEBIT',
 						transactionIdentifier,
 						transactionAmount,
 						previousBalance: previousVirtualBalance,
 						newBalance: walletData.virtualBalance,
 						transactionData: {
-							ticketId,
+							referenceIndex,
 							gameType: transactionIdentifier.replace('TICKET_', '').replace('_ENTRY', '').replace('_BET', ''),
 						},
 						status: 'COMPLETED',
@@ -512,7 +504,7 @@ export const makeTransaction = async (
 							userId,
 							gameType,
 							transactionAmount,
-							ticketId
+							referenceIndex
 						);
 						if (commissionResult.success) {
 							console.log(`${gameType} referral commission processed: ${commissionResult.message}`);
@@ -549,8 +541,8 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: ticketId ? 'TICKET' : 'GAME',
-					referenceIndex: ticketId,
+
+					referenceIndex: referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
@@ -561,7 +553,7 @@ export const makeTransaction = async (
 						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
 						walletData.virtualBalance,
 					transactionData: {
-						ticketId,
+						referenceIndex,
 						gameType: transactionIdentifier.replace('WON_', ''),
 						creditedToWithdrawable: cashType === 'REAL',
 					},
@@ -592,7 +584,6 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: referenceType || 'LOYALTY',
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -627,7 +618,6 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: referenceType || 'COMMISSION',
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -641,7 +631,7 @@ export const makeTransaction = async (
 					transactionData: {
 						commissionType: 'REFERRAL',
 						referenceId: referenceIndex,
-						ticketId,
+						referenceIndex,
 						creditedToWithdrawable: cashType === 'REAL',
 					},
 					status: 'COMPLETED',
@@ -665,7 +655,6 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: 'PAYMENT',
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -684,84 +673,6 @@ export const makeTransaction = async (
 					status: 'COMPLETED',
 				});
 
-				break;
-			}
-
-			// TRANSFER for agents/dealers transferring to users
-			case 'TRANSFER': {
-				if (!referenceIndex) {
-					throw new Error('Reference index required for transfer transaction');
-				}
-
-				const receiverWalletData = await Wallet.findOne({
-					user: referenceIndex,
-				});
-
-				if (!receiverWalletData) {
-					throw new Error('Recipient wallet not found.');
-				}
-
-				// Calculate commissions (only for REAL cash)
-				const adminCommission = cashType === 'REAL'
-					? parseFloat((config.transferCommissionAdmin * transactionAmount).toFixed(2))
-					: 0;
-
-				const agentCommission = cashType === 'REAL' && userRole === 'AGENT'
-					? parseFloat((config.transferCommissionAgent * transactionAmount).toFixed(2))
-					: 0;
-
-				const totalCommission = adminCommission + agentCommission;
-				const amountAfterCommission = transactionAmount - totalCommission;
-
-				if (cashType === 'REAL') {
-					// Check sufficient balance
-					const totalRealBalance = walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable;
-					if (transactionAmount > totalRealBalance) {
-						throw new Error('Insufficient real balance.');
-					}
-
-					// Deduct with priority (non-withdrawable first)
-					const deductionResult = deductRealCashWithPriority(walletData, transactionAmount);
-
-					// Credit to receiver (deposits go to non-withdrawable)
-					receiverWalletData.realBalanceNonWithdrawable += amountAfterCommission;
-				} else {
-					// For VIRTUAL cash
-					if (transactionAmount > walletData.virtualBalance) {
-						throw new Error('Insufficient virtual balance.');
-					}
-					walletData.virtualBalance -= transactionAmount;
-					receiverWalletData.virtualBalance += amountAfterCommission;
-				}
-
-				await walletData.save();
-				await receiverWalletData.save();
-
-				// Create transaction record for sender
-				await Transaction.create({
-					user: userId,
-					cashType,
-					referenceType: referenceType,
-					referenceIndex,
-					transactionType: 'DEBIT',
-					transactionIdentifier,
-					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
-					transactionData: {
-						recipientId: referenceIndex,
-						amountAfterCommission,
-						adminCommission,
-						agentCommission,
-					},
-					status: 'COMPLETED',
-				});
-
-				returnAmount = amountAfterCommission;
 				break;
 			}
 
@@ -819,7 +730,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: referenceType,
+
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -864,7 +775,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: referenceType || 'COMMISSION',
+
 					referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
@@ -878,7 +789,6 @@ export const makeTransaction = async (
 					transactionData: {
 						commissionType: transactionIdentifier,
 						referenceId: referenceIndex,
-						ticketId,
 					},
 					status: 'COMPLETED',
 				});
@@ -911,7 +821,7 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: referenceType || 'COMMISSION',
+
 					referenceIndex,
 					transactionType: 'DEBIT',
 					transactionIdentifier,
@@ -926,7 +836,6 @@ export const makeTransaction = async (
 						commissionType: 'REVERSAL',
 						originalCommissionType: transactionIdentifier.replace('_CANCELLED', '').replace('_REFUND', ''),
 						referenceId: referenceIndex,
-						ticketId,
 						reason: 'Commission reversed due to cancellation/refund',
 					},
 					status: 'COMPLETED',
@@ -952,8 +861,8 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-					referenceType: ticketId ? 'TICKET' : 'GAME',
-					referenceIndex: ticketId,
+
+					referenceIndex: referenceIndex,
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
@@ -964,102 +873,13 @@ export const makeTransaction = async (
 						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
 						walletData.virtualBalance,
 					transactionData: {
-						ticketId,
+						referenceIndex,
 						refundReason: transactionIdentifier,
 						refundedToNonWithdrawable: cashType === 'REAL',
 					},
 					status: 'COMPLETED',
 				});
 
-				break;
-			}
-
-			// DEPOSIT for direct agent/dealer to user transfers (legacy system)
-			case 'DEPOSIT': {
-				if (!referenceIndex) {
-					throw new Error('Reference index required for deposit transaction');
-				}
-
-				const receiverWalletData = await Wallet.findOne({
-					user: referenceIndex,
-				});
-
-				if (!receiverWalletData) {
-					throw new Error('Recipient wallet not found.');
-				}
-
-				if (cashType === 'REAL') {
-					// Check sufficient balance for deposit
-					const totalRealBalance = walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable;
-					if (transactionAmount > totalRealBalance) {
-						throw new Error('Insufficient real balance for deposit.');
-					}
-
-					// Deduct from sender with priority (non-withdrawable first)
-					const deductionResult = deductRealCashWithPriority(walletData, transactionAmount);
-
-					// Credit to receiver (deposits go to non-withdrawable)
-					receiverWalletData.realBalanceNonWithdrawable += transactionAmount;
-				} else {
-					// For VIRTUAL cash
-					if (transactionAmount > walletData.virtualBalance) {
-						throw new Error('Insufficient virtual balance for deposit.');
-					}
-					walletData.virtualBalance -= transactionAmount;
-					receiverWalletData.virtualBalance += transactionAmount;
-				}
-
-				await walletData.save();
-				await receiverWalletData.save();
-
-				// Create transaction record for sender (debit)
-				await Transaction.create({
-					user: userId,
-					cashType,
-					referenceType: 'USER',
-					referenceIndex,
-					transactionType: 'DEBIT',
-					transactionIdentifier,
-					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
-					transactionData: {
-						recipientId: referenceIndex,
-						depositType: 'AGENT_TO_USER',
-						transactionMethod: 'DIRECT_DEPOSIT',
-					},
-					status: 'COMPLETED',
-				});
-
-				// Create transaction record for receiver (credit)
-				await Transaction.create({
-					user: referenceIndex,
-					cashType,
-					referenceType: 'USER',
-					referenceIndex: userId,
-					transactionType: 'CREDIT',
-					transactionIdentifier,
-					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						(receiverWalletData.realBalanceWithdrawable + receiverWalletData.realBalanceNonWithdrawable - transactionAmount) :
-						(receiverWalletData.virtualBalance - transactionAmount),
-					newBalance: cashType === 'REAL' ?
-						receiverWalletData.realBalanceWithdrawable + receiverWalletData.realBalanceNonWithdrawable :
-						receiverWalletData.virtualBalance,
-					transactionData: {
-						senderId: userId,
-						depositType: 'AGENT_TO_USER',
-						transactionMethod: 'DIRECT_DEPOSIT',
-						creditedToNonWithdrawable: cashType === 'REAL',
-					},
-					status: 'COMPLETED',
-				});
-
-				returnAmount = transactionAmount;
 				break;
 			}
 
@@ -1270,283 +1090,6 @@ export const requestToken = async (user, { receiverPhone, countryCode }) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const transferMoney = async (
-	user,
-	{ verificationToken, amountToTransfer }
-) => {
-	try {
-		let { _id, role, name, countryCode } = user;
-		if (!tokenReference[verificationToken]) {
-			return {
-				status: 500,
-				entity: {
-					success: false,
-					error: 'Invalid or expired verification token.',
-				},
-			};
-		}
-		let { receiverPhone } = tokenReference[verificationToken];
-		amountToTransfer = parseFloat(amountToTransfer);
-		if (amountToTransfer < 20) {
-			throw 'Amount should be greater than Gourde 20 and less than Gourde 100000.';
-		}
-		let adminId = await getAdminUserId();
-		const receiver = await User.findOne({
-			countryCode: countryCode,
-			phone: receiverPhone,
-			isActive: true,
-		});
-		if (role === 'AGENT' && receiver._id && receiver.role === 'USER') {
-			if (transactionType === 'CREDIT') {
-				const { agentCommision, adminCommision } = getDepositCommissionAmount(amountToTransfer)
-				const amountToUser = parseFloat(amountToTransfer - (agentCommision + adminCommision))
-				await makeTransaction(
-					{ _id: _id },
-					{
-						transactionType: 'DEBIT',
-						transactionAmount: amountToTransfer,
-						transactionIdentifier: 'DEPOSIT',
-						transactionData: {
-							depositTo: receiver._id,
-						},
-					}
-				);
-				const userTransaction = await makeTransaction(
-					{ _id: receiver._id },
-					{
-						transactionType: 'CREDIT',
-						transactionAmount: amountToUser,
-						transactionIdentifier: 'DEPOSIT',
-						transactionData: {
-							depositBy: _id,
-						},
-					}
-				);
-
-				const userMessage = transactionText.amountCredited.user
-					.replace(
-						'$crediterName',
-						`${name.firstName} ${name.lastName}`
-					)
-					.replace('$amount', amountToTransfer)
-					.replace(
-						'$walletBalance',
-						userTransaction.entity.walletData.totalBalance
-					);
-				const userMessageResponse = await sendMessage({
-					phone: receiver.phone,
-					message: userMessage,
-				});
-				delete tokenReference[verificationToken];
-				return {
-					status: 200,
-					entity: {
-						success: true,
-						amountAfterCommission,
-						userMessageResponse,
-					},
-				};
-			}
-		}
-		if (role === 'DEALER' && receiver._id && receiver.role === 'AGENT') {
-			if (transactionType === 'CREDIT') {
-				await makeTransaction(
-					{ _id: receiver._id },
-					{
-						transactionType: 'CREDIT',
-						transactionAmount: amountToTransfer,
-						transactionIdentifier: 'DEPOSIT',
-						transactionData: {
-							depositBy: _id,
-						},
-					}
-				);
-				await makeTransaction(
-					{ _id: _id },
-					{
-						transactionType: 'DEBIT',
-						transactionAmount: amountToTransfer,
-						transactionIdentifier: 'DEPOSIT',
-						transactionData: {
-							depositTo: receiver._id,
-						},
-					}
-				);
-				delete tokenReference[verificationToken];
-				return {
-					status: 200,
-					entity: {
-						success: true,
-					},
-				};
-			}
-			if (transactionType === 'DEBIT') {
-				await makeTransaction(
-					{ _id: receiver._id },
-					{
-						transactionType: 'DEBIT',
-						transactionAmount: amountToTransfer,
-						transactionIdentifier: 'WITHDRAW',
-						transactionData: {
-							withdrawBy: _id,
-						},
-					}
-				);
-				await makeTransaction(
-					{ _id: _id },
-					{
-						transactionType: 'CREDIT',
-						transactionAmount: amountToTransfer,
-						transactionIdentifier: 'WITHDRAW',
-						transactionData: {
-							withdrawFrom: receiver._id,
-						},
-					}
-				);
-				delete tokenReference[verificationToken];
-				return {
-					status: 200,
-					entity: {
-						success: true,
-					},
-				};
-			}
-		}
-		delete tokenReference[verificationToken];
-		return {
-			status: 403,
-			entity: {
-				success: false,
-				error: 'You are unauthorized to process this transaction.',
-			},
-		};
-	} catch (error) {
-		delete tokenReference[verificationToken];
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const depositMoney = async (user, body) => {
-	try {
-		let { receiverPhone, amountToTransfer } = body;
-		let { role, countryCode } = user;
-		if (role === 'ADMIN' && body.countryCode) {
-			countryCode = body.countryCode;
-		}
-		amountToTransfer = parseFloat(amountToTransfer);
-		if (amountToTransfer < 20) {
-			throw 'Amount should be greater than Gourde 20 and less than Gourde 100000.';
-		}
-		const receiver = await User.findOne({
-			countryCode: countryCode,
-			phone: receiverPhone,
-			isActive: true,
-		});
-		if (!receiver) {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'AGENT' && receiver.role !== 'USER') {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'DEALER' && receiver.role !== 'AGENT') {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'ADMIN' && !['USER', 'AGENT'].includes(receiver.role)) {
-			throw 'The specified user does not exist.';
-		}
-		const amountAfterCommission = await makeTransaction(
-			user._id,
-			user.role,
-			'DEPOSIT',
-			amountToTransfer,
-			receiver.role,
-			receiver._id,
-			null,
-			'REAL' // Use REAL cash type for deposits
-		);
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				amountAfterCommission,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: typeof error === 'string' ? error : 'An error occurred',
-			},
-		};
-	}
-};
-
-export const withdrawMoney = async (user, body) => {
-	try {
-		let { receiverPhone, amountToTransfer } = body;
-		let { role, countryCode } = user;
-		if (role === 'ADMIN' && body.countryCode) {
-			countryCode = body.countryCode;
-		}
-		amountToTransfer = parseFloat(amountToTransfer);
-		if (amountToTransfer < 20) {
-			throw 'Amount should be greater than Gourde 20 and less than Gourde 100000.';
-		}
-		const receiver = await User.findOne({
-			countryCode: countryCode,
-			phone: receiverPhone,
-			isActive: true,
-		});
-		if (!receiver) {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'AGENT' && receiver.role !== 'USER') {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'DEALER' && receiver.role !== 'AGENT') {
-			throw 'The specified user does not exist.';
-		}
-		if (role === 'ADMIN' && !['USER', 'AGENT'].includes(receiver.role)) {
-			throw 'The specified user does not exist.';
-		}
-		const amountAfterCommission = await makeTransaction(
-			user._id,
-			user.role,
-			'WITHDRAW',
-			amountToTransfer,
-			receiver.role,
-			receiver._id,
-			null,
-			'REAL' // Use REAL cash type for withdrawals
-		);
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				amountAfterCommission,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: typeof error === 'string' ? error : 'An error occurred',
 			},
 		};
 	}

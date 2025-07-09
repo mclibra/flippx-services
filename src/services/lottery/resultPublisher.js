@@ -326,7 +326,9 @@ async function processTicketsAndPublishResults(lottery, results) {
 						ticket.user._id,
 						ticket.user.role,
 						`WON_${type.toUpperCase()}`,
-						amount
+						amount,
+						ticket._id,
+						ticket.cashType,
 					);
 				}
 				await ticket.save();

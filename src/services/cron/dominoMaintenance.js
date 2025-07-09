@@ -29,8 +29,6 @@ cron.schedule('0 * * * *', async () => {
                             'USER',
                             'DOMINO_REFUND',
                             room.entryFee,
-                            null,
-                            null,
                             room._id,
                             room.cashType
                         );
@@ -94,8 +92,6 @@ cron.schedule('*/10 * * * * *', async () => {
                         'USER',
                         'DOMINO_REFUND',
                         room.entryFee,
-                        null,
-                        null,
                         room._id,
                         room.cashType
                     );
@@ -151,12 +147,12 @@ cron.schedule('*/10 * * * * *', async () => {
 });
 
 // Handle turn timeouts every 30 seconds
-cron.schedule('*/30 * * * * *', async () => {
+cron.schedule('*/10 * * * * *', async () => {
     try {
         const config = await DominoGameConfig.findOne();
         const timeoutSeconds = config?.turnTimeLimit || 60;
 
-        const timeoutThreshold = new Date(Date.now() - (timeoutSeconds + 5) * 1000); // Add 5 second buffer
+        const timeoutThreshold = new Date(Date.now() - (timeoutSeconds * 1000));
 
         // Find active games with expired turns
         const expiredGames = await DominoGame.find({
@@ -167,7 +163,6 @@ cron.schedule('*/30 * * * * *', async () => {
         for (const game of expiredGames) {
             try {
                 const currentPlayer = game.players[game.currentPlayer];
-
                 if (currentPlayer && currentPlayer.playerType === 'HUMAN' && currentPlayer.user) {
                     console.log(`Handling turn timeout for user ${currentPlayer.user} in game ${game._id}`);
                     await handleTurnTimeout(game._id, currentPlayer.user);

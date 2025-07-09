@@ -128,8 +128,6 @@ export const placeBet = async ({ id }, body, user) => {
 						user.role,
 						'TICKET_MEGAMILLION',
 						megaMillionTicket.amountPlayed,
-						null,
-						null,
 						megaMillionTicket._id,
 						cashType // Pass cash type to transaction function
 					);
@@ -291,9 +289,8 @@ export const cancelTicket = async ({ id }, user) => {
 				megamillionTicket.user.role,
 				'TICKET_MEGAMILLION_CANCELLED',
 				megamillionTicket.amountPlayed,
-				null,
-				null,
-				megamillionTicket._id
+				megamillionTicket._id,
+				megamillionTicket.cashType
 			);
 			return {
 				status: 200,
@@ -335,7 +332,9 @@ export const cashoutTicket = async ({ id }, user) => {
 			user._id,
 			user.role,
 			'WON_MEGAMILLION',
-			totalAmountWon
+			totalAmountWon,
+			megamillionTicket._id,
+			megamillionTicket.cashType,
 		);
 
 		// **NEW: Award XP for winning**

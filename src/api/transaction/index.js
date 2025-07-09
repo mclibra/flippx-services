@@ -4,36 +4,14 @@ import { xApi, token } from '../../services/passport';
 import {
 	getTransactions,
 	transactionSummary,
-	makeTransfer,
 	initiateTransaction,
 	processTransaction,
-	depositMoney,
-	withdrawMoney,
-	selfTransaction,
 	commissionSummaryByAgent,
 	getTierBasedPayoutAnalytics,
 	getRevenueImpactComparison,
 } from './controller';
 
 const router = new Router();
-
-router.post('/transfer', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await makeTransfer(req.user, req.body))
-);
-
-router.post(
-	'/deposit',
-	xApi(),
-	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
-	async (req, res) => done(res, await depositMoney(req.user, req.body))
-);
-
-router.post(
-	'/withdraw',
-	xApi(),
-	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
-	async (req, res) => done(res, await withdrawMoney(req.user, req.body))
-);
 
 router.post(
 	'/initiate',
@@ -83,10 +61,6 @@ router.get(
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) => done(res, await getRevenueImpactComparison(req.query, req.user))
-);
-
-router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await selfTransaction(req.user, req.query))
 );
 
 export default router;

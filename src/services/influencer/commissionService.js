@@ -200,8 +200,6 @@ class InfluencerCommissionService {
                     'USER',
                     'REFERRAL_COMMISSION',
                     commissionAmount,
-                    'LOYALTY',
-                    refereeId,
                     playId,
                     'REAL'
                 );

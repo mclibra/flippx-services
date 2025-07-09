@@ -294,8 +294,6 @@ export const placeBet = async ({ id }, body, user) => {
 						user.role,
 						'TICKET_BORLETTE',
 						body.totalAmountPlayed,
-						null,
-						null,
 						borletteTicket._id,
 						cashType // Pass cash type to transaction function
 					);
@@ -590,8 +588,6 @@ export const create = async (body, user) => {
 						user.role,
 						'TICKET_BORLETTE',
 						body.totalAmountPlayed,
-						null,
-						null,
 						borletteTicket._id,
 						cashType // Pass cash type to transaction function
 					);
@@ -910,8 +906,6 @@ export const createMultiState = async (body, user) => {
 					user.role,
 					'TICKET_BORLETTE',
 					processedPurchase.totalAmountPlayed,
-					null,
-					null,
 					borletteTicket._id,
 					cashType
 				);
@@ -1061,8 +1055,6 @@ export const cancelTicket = async ({ id }, user) => {
 				borletteTicket.user.role,
 				'TICKET_BORLETTE_CANCELLED',
 				borletteTicket.totalAmountPlayed,
-				null,
-				null,
 				borletteTicket._id
 			);
 			return {
@@ -1124,7 +1116,9 @@ export const cashoutTicket = async ({ id }, user) => {
 			user._id,
 			user.role,
 			'WON_BORLETTE',
-			netAmountWon
+			netAmountWon,
+			borletteTicket._id,
+			borletteTicket.cashType
 		);
 
 		// **NEW: Award XP for winning**

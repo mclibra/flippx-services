@@ -1018,8 +1018,6 @@ const processPaymentCompletion = async (payment) => {
 			'VIRTUAL_CASH_PURCHASE',
 			payment.virtualCashAmount,
 			payment._id,
-			'PAYMENT',
-			null,
 			'VIRTUAL'
 		);
 	}
@@ -1032,8 +1030,6 @@ const processPaymentCompletion = async (payment) => {
 			'REAL_CASH_PURCHASE',
 			payment.realCashAmount,
 			payment._id,
-			'PAYMENT',
-			null,
 			'REAL'
 		);
 	}

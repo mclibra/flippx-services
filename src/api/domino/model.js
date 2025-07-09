@@ -126,7 +126,15 @@ const DominoGameSchema = new Schema(
         winner: { type: Number }, // position
         endReason: {
             type: String,
-            enum: ['LAST_TILE', 'LOWEST_DOTS', 'POINTS_REACHED', 'ALL_PASSED', 'TIMEOUT']
+            enum: [
+                'LAST_TILE',
+                'LOWEST_DOTS',
+                'POINTS_REACHED',
+                'ALL_PASSED',
+                'TIMEOUT',
+                'BLOCKED_NO_MOVES',
+                'BLOCKED_ALL_PASSED'
+            ]
         },
         finalScores: [{
             position: { type: Number },

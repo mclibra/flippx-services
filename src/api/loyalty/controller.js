@@ -2,6 +2,7 @@ import moment from 'moment';
 import { LoyaltyProfile, LoyaltyTransaction, ReferralCommission } from './model';
 import { User } from '../user/model';
 import { Transaction } from '../transaction/model';
+import { makeTransaction } from '../transaction/controller';
 import InfluencerCommissionService from '../../services/influencer/commissionService';
 import {
 	LOYALTY_TIERS,
@@ -1436,8 +1437,6 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 				'USER',
 				'REFERRAL_COMMISSION',
 				commissionAmount,
-				'LOYALTY',
-				refereeId,
 				playId,
 				'REAL'
 			);
@@ -1520,8 +1519,6 @@ export const processNoWinCashback = async () => {
 						'USER',
 						'CASHBACK',
 						cashbackAmount,
-						'LOYALTY',
-						null,
 						null,
 						'REAL'
 					);
