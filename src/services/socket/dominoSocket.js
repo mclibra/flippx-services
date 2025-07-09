@@ -109,46 +109,6 @@ export const initializeDominoSocket = (io) => {
             }
         });
 
-        // Join specific room by ID
-        socket.on('join-room', async (roomId) => {
-            try {
-                socket.join(roomId);
-                socket.roomId = roomId;
-
-                console.log(`User ${socket.userId} joined domino room ${roomId}`);
-
-                // Mark player as connected in database
-                await DominoRoom.updateOne(
-                    { roomId, 'players.user': socket.userId },
-                    {
-                        $set: {
-                            'players.$.isConnected': true,
-                            'players.$.lastConnectedAt': new Date(),
-                            'players.$.disconnectedAt': null
-                        }
-                    }
-                );
-
-                // Notify other players
-                socket.to(roomId).emit('player-joined', {
-                    userId: socket.userId,
-                    timestamp: new Date()
-                });
-
-                // Send current room state
-                const room = await DominoRoom.findOne({ roomId })
-                    .populate('players.user', 'name');
-
-                if (room) {
-                    socket.emit('room-state', { room });
-                }
-
-            } catch (error) {
-                console.error('Error joining domino room:', error);
-                socket.emit('error', { message: 'Failed to join room' });
-            }
-        });
-
         // Leave room
         socket.on('leave-room', async (roomId) => {
             try {

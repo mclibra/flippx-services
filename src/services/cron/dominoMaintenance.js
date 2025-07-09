@@ -7,12 +7,12 @@ import { broadcastToRoom } from '../socket/dominoSocket';
 // Start games when rooms are full - runs every 10 seconds
 cron.schedule('*/10 * * * * *', async () => {
     try {
-        const oneHourAgo = new Date(Date.now() - 10 * 1000);
+        const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
         // Find waiting rooms that are full
         const fullRooms = await DominoRoom.find({
             status: 'WAITING',
             $expr: { $eq: ['$playerCount', { $size: '$players' }] },
-            createdAt: { $lt: oneHourAgo }
+            createdAt: { $lt: tenSecondsAgo }
         });
 
         for (const room of fullRooms) {
