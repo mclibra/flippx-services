@@ -4,7 +4,10 @@ import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
-import { broadcastToRoom, broadcastGameUpdate, sendToUser } from '../../services/socket/dominoSocket';
+import {
+    broadcastDominoGameUpdateToRoom,
+    sendDominoGameUpdateToUser
+} from '../../services/socket/dominoGameSocket';
 
 export const startDominoGame = async (room) => {
     try {
@@ -76,7 +79,7 @@ export const startDominoGame = async (room) => {
         }
 
         // Broadcast game start
-        broadcastToRoom(room.roomId, 'game-started', {
+        broadcastDominoGameUpdateToRoom(room.roomId, 'game-started', {
             gameId: game._id,
             players: game.players.map(player => ({
                 position: player.position,
@@ -108,7 +111,7 @@ export const notifyTurnChange = async (game, previousPlayerIndex) => {
 
         if (currentPlayer && currentPlayer.user) {
             // Notify current player it's their turn
-            sendToUser(currentPlayer.user, 'your-turn', {
+            sendDominoGameUpdateToUser(currentPlayer.user, 'your-turn', {
                 gameId: game._id,
                 board: game.board,
                 drawPile: game.drawPile,
@@ -117,7 +120,7 @@ export const notifyTurnChange = async (game, previousPlayerIndex) => {
         }
 
         // Broadcast turn change to all players in room
-        broadcastGameUpdate(game.room.roomId, 'turn-changed', {
+        broadcastDominoGameUpdateToRoom(game.room.roomId, 'turn-changed', {
             gameId: game._id,
             board: game.board,
             drawPile: game.drawPile,
@@ -140,7 +143,7 @@ const sendTurnReminder = async (game, timeRemaining) => {
 
     console.log('Sending turn-reminder to user ', currentPlayer.user);
     if (currentPlayer && currentPlayer.user) {
-        sendToUser(currentPlayer.user, 'turn-reminder', {
+        sendDominoGameUpdateToUser(currentPlayer.user, 'turn-reminder', {
             gameId: game._id,
             timeRemaining,
             message: `Hurry up! You have ${timeRemaining} seconds left to make your move.`
@@ -148,7 +151,7 @@ const sendTurnReminder = async (game, timeRemaining) => {
     }
 
     // Notify other players about the time warning
-    broadcastToRoom(roomId, 'turn-time-warning', {
+    broadcastDominoGameUpdateToRoom(roomId, 'turn-time-warning', {
         gameId: game._id,
         currentPlayer: game.currentPlayer,
         timeRemaining,
@@ -223,7 +226,7 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
         await game.save();
 
         // Broadcast move to all players with enhanced data including draw pile count
-        broadcastGameUpdate(game.room.roomId, 'game-update', {
+        broadcastDominoGameUpdateToRoom(game.room.roomId, 'game-update', {
             gameId: game._id,
             players: game.players.map(player => ({
                 position: player.position,
@@ -338,7 +341,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             // Notify the timed-out player
             if (timedOutPlayer && timedOutPlayer.user) {
-                sendToUser(timedOutPlayer.user, 'turn-timeout-notification', {
+                sendDominoGameUpdateToUser(timedOutPlayer.user, 'turn-timeout-notification', {
                     gameId: game._id,
                     message: `Your turn timed out and you automatically ${autoAction.toLowerCase()}ed.`,
                     autoAction: autoAction
@@ -346,7 +349,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
             }
 
             // Broadcast timeout and move with draw pile count
-            broadcastGameUpdate(game.room.roomId, 'turn-timeout', {
+            broadcastDominoGameUpdateToRoom(game.room.roomId, 'turn-timeout', {
                 gameState: game,
                 timedOutPlayer: previousPlayer,
                 timedOutPlayerName: timedOutPlayer?.playerName,
@@ -442,7 +445,7 @@ export const sendMessage = async ({ roomId }, { message }, user) => {
         });
 
         // Broadcast to room
-        broadcastToRoom(roomId, 'new-message', {
+        broadcastDominoGameUpdateToRoom(roomId, 'new-message', {
             messageId: chatMessage._id,
             user: user._id,
             playerName: playerInRoom.playerName,
@@ -637,7 +640,7 @@ export const removeDisconnectedPlayersFromWaitingRooms = async () => {
                     await room.save();
 
                     // Broadcast the updated room state to remaining players
-                    broadcastToRoom(room.roomId, 'player-removed-timeout', {
+                    broadcastDominoGameUpdateToRoom(room.roomId, 'player-removed-timeout', {
                         removedPlayers: removedUserIds,
                         roomState: room,
                         reason: 'DISCONNECTION_TIMEOUT'
@@ -763,7 +766,7 @@ export const handleGameCompletion = async (game) => {
         room.completedAt = new Date();
         await room.save();
 
-        broadcastToRoom(room.roomId, 'game-completed', {
+        broadcastDominoGameUpdateToRoom(room.roomId, 'game-completed', {
             gameState: game,
             winner: game.winner,
             finalScores: game.finalScores,

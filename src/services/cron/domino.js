@@ -10,7 +10,7 @@ import {
     handleGameCompletion,
     removeDisconnectedPlayersFromWaitingRooms
 } from '../../api/domino/controller';
-import { broadcastToRoom, broadcastGameUpdate } from '../socket/dominoSocket';
+import { broadcastDominoGameUpdateToRoom } from '../socket/dominoGameSocket';
 
 // Fill VIRTUAL waiting rooms with bots after 30 seconds
 cron.schedule('*/15 * * * * *', async () => {
@@ -275,7 +275,7 @@ async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
         await room.save();
 
         // Broadcast to room that bots were added
-        broadcastToRoom(room.roomId, 'bots-added', {
+        broadcastDominoGameUpdateToRoom(room.roomId, 'bots-added', {
             roomState: room,
             botsAdded: slotsNeeded,
             message: `${slotsNeeded} bot player(s) joined the room`
@@ -350,7 +350,7 @@ async function processBotTurn(game) {
         await game.save();
 
         // Broadcast bot move to all players
-        broadcastGameUpdate(game.room.roomId, 'game-update', {
+        broadcastDominoGameUpdateToRoom(game.room.roomId, 'game-update', {
             gameId: game._id,
             players: game.players.map(player => ({
                 position: player.position,
