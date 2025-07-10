@@ -411,16 +411,23 @@ export class DominoGameEngine {
             };
         }
 
-        // Check condition 2: All players have passed for last 2 attempts
-        // This means consecutivePasses >= 3 for ALL players
-        const allPlayersPassedThreeTimes = gameState.players.every(player => player.consecutivePasses >= 2);
+        // Check condition 2: All players have passed for last 2 rounds
+        // This means the last (players.length * 2) moves are all PASS actions
+        const requiredPassMoves = gameState.players.length * 2;
+        const recentMoves = gameState.moves.slice(-requiredPassMoves);
 
-        console.log(`All players have passed for last 2 attempts: ${allPlayersPassedThreeTimes}`);
+        console.log(`Checking last ${requiredPassMoves} moves for all PASS actions`);
+        console.log(`Recent moves:`, recentMoves.map(move => move.action));
 
-        if (allPlayersPassedThreeTimes) {
+        const allRecentMovesArePass = recentMoves.length === requiredPassMoves &&
+            recentMoves.every(move => move.action === 'PASS');
+
+        console.log(`All players have passed for last 2 rounds: ${allRecentMovesArePass}`);
+
+        if (allRecentMovesArePass) {
             return {
                 isBlocked: true,
-                reason: 'ALL_PASSED_TWO_TIMES'
+                reason: 'ALL_PASSED_TWO_ROUNDS'
             };
         }
 

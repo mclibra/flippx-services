@@ -5,9 +5,9 @@ import express from './src/services/express';
 import { initializeSocket } from './src/services/socket';
 import { createAdmin, createSystemAccount, createDominoConfig } from './src/seedDb';
 import api from './src/api';
+import './src/services/cron/domino';
 import './src/services/cron/lottery';
 import './src/services/cron/loyaltyTasks';
-import './src/services/cron/dominoMaintenance';
 
 const app = express(apiRoot, api);
 

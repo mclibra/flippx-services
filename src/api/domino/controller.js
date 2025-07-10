@@ -78,13 +78,20 @@ export const startDominoGame = async (room) => {
         // Broadcast game start
         broadcastToRoom(room.roomId, 'game-started', {
             gameId: game._id,
-            gameState: game,
-            roomState: room,
+            players: game.players.map(player => ({
+                position: player.position,
+                user: player.user,
+                playerType: player.playerType,
+                playerName: player.playerName,
+                isConnected: player.isConnected,
+            })),
+            board: game.board,
+            drawPile: game.drawPile,
             message: 'Game has started!'
         });
 
         // Send turn notification to first player
-        await notifyTurnChange(game);
+        await notifyTurnChange(game.toJSON());
 
         return game;
     } catch (error) {
@@ -94,7 +101,7 @@ export const startDominoGame = async (room) => {
 };
 
 // Enhanced function to notify players about turn changes
-const notifyTurnChange = async (game, previousPlayerIndex) => {
+export const notifyTurnChange = async (game, previousPlayerIndex) => {
     try {
         const currentPlayer = game.players[game.currentPlayer];
         const previousPlayer = game.players[previousPlayerIndex];
@@ -103,24 +110,22 @@ const notifyTurnChange = async (game, previousPlayerIndex) => {
             // Notify current player it's their turn
             sendToUser(currentPlayer.user, 'your-turn', {
                 gameId: game._id,
-                position: currentPlayer.position,
-                timeLimit: game.turnTimeLimit,
-                turnStartTime: game.turnStartTime,
-                drawPileCount: game.drawPile.length,
-                availableTiles: game.drawPile.length
+                board: game.board,
+                drawPile: game.drawPile,
+                ...game.players[game.currentPlayer]
             });
         }
 
         // Broadcast turn change to all players in room
         broadcastGameUpdate(game.room.roomId, 'turn-changed', {
             gameId: game._id,
+            board: game.board,
+            drawPile: game.drawPile,
             currentPlayer: game.currentPlayer,
             currentPlayerName: currentPlayer?.playerName,
             previousPlayer: previousPlayerIndex,
             previousPlayerName: previousPlayer?.playerName,
             turnStartTime: game.turnStartTime,
-            drawPileCount: game.drawPile.length,
-            availableTiles: game.drawPile.length
         });
 
     } catch (error) {
@@ -219,20 +224,28 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
 
         // Broadcast move to all players with enhanced data including draw pile count
         broadcastGameUpdate(game.room.roomId, 'game-update', {
-            gameState: game,
+            gameId: game._id,
+            players: game.players.map(player => ({
+                position: player.position,
+                user: player.user,
+                playerType: player.playerType,
+                playerName: player.playerName,
+                isConnected: player.isConnected,
+            })),
             lastMove: moveResult.move,
             moveBy: {
                 position: playerIndex,
                 playerName: game.players[playerIndex].playerName,
+                playerType: game.players[playerIndex].playerType,
                 action: action
             },
-            drawPileCount: game.drawPile.length,
-            availableTiles: game.drawPile.length // For client tracking
+            board: game.board,
+            drawPile: game.drawPile,
         });
 
         // Send turn notifications if game is still active
         if (game.gameState === 'ACTIVE') {
-            await notifyTurnChange(game, playerIndex);
+            await notifyTurnChange(game.toJSON(), playerIndex);
         }
 
         // Check if game is completed or blocked
@@ -259,7 +272,7 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
     }
 };
 
-export const handleTurnTimeout = async (gameId, userId) => {
+export const handleTurnTimeout = async (gameId, currentPlayer) => {
     try {
         const game = await DominoGame.findById(gameId).populate('room');
 
@@ -275,8 +288,6 @@ export const handleTurnTimeout = async (gameId, userId) => {
             timedOutPlayer.hand,
             game.board
         );
-
-        console.log(`hasPlayableTiles => ${hasPlayableTiles}`);
 
         let moveResult;
         let autoAction;
@@ -298,9 +309,7 @@ export const handleTurnTimeout = async (gameId, userId) => {
             }
         }
 
-        console.log(`Move result => `, moveResult.move);
-        console.log(`Game State => `, moveResult.gameState.gameState);
-        console.log(`All moves => `, moveResult.gameState.moves);
+        console.log(`Auto move for ${currentPlayer.playerName} => `, moveResult.move);
 
         if (moveResult.success) {
             // Selectively update game state fields without overwriting the room reference
@@ -347,7 +356,7 @@ export const handleTurnTimeout = async (gameId, userId) => {
 
             // Send turn notifications if game is still active
             if (game.gameState === 'ACTIVE') {
-                await notifyTurnChange(game, previousPlayer);
+                await notifyTurnChange(game.toJSON(), previousPlayer);
             }
 
             // Check if game is completed or blocked
@@ -662,7 +671,7 @@ export const removeDisconnectedPlayersFromWaitingRooms = async () => {
 };
 
 
-const handleGameCompletion = async (game) => {
+export const handleGameCompletion = async (game) => {
     try {
         const room = game.room;
 

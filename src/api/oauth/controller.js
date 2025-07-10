@@ -7,7 +7,7 @@ import moment from 'moment';
 export const login = async user => {
 	try {
 		const refreshToken = generateToken(user._id.toString());
-		const accessToken = jwtSign({ id: user._id.toString() });
+		const accessToken = jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, });
 
 		// NEW: Update session tracking
 		const now = moment();
@@ -97,7 +97,7 @@ export const token = async query => {
 			entity: {
 				success: true,
 				refreshToken: generateToken(id),
-				accessToken: jwtSign({ id }),
+				accessToken: jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, }),
 			},
 		};
 	} catch (error) {

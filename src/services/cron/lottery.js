@@ -22,8 +22,6 @@ cron.schedule('*/5 * * * *', async () => {
 			for (const lottery of lotteries) {
 				await fetchAndPublishResults(lottery);
 			}
-		} else {
-			console.log(`No lotteries found to be published`);
 		}
 	} catch (error) {
 		console.error('Error in publishResults cron job:', error);

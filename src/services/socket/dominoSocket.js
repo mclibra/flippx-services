@@ -30,6 +30,8 @@ export const initializeDominoSocket = (io) => {
 
             // Attach user ID to socket
             socket.userId = decoded.id;
+            socket.role = decoded.role;
+            socket.userName = decoded.userName;
             next();
         } catch (error) {
             console.error('Domino socket authentication error:', error);
@@ -38,7 +40,7 @@ export const initializeDominoSocket = (io) => {
     });
 
     dominoNamespace.on('connection', (socket) => {
-        console.log(`User connected to domino: ${socket.userId}`);
+        console.log(`User connected to domino: ${socket.userName}`);
 
         // Join or create room - NEW SOCKET EVENT
         socket.on('join-or-create-room', async (data) => {
@@ -51,9 +53,11 @@ export const initializeDominoSocket = (io) => {
                     roomType = 'PUBLIC'
                 } = data;
 
-                console.log(`User ${socket.userId} requesting to join/create room:`, data);
+                const { userId, userName, role } = socket;
 
-                const result = await joinOrCreateRoomSocket(socket.userId, {
+                console.log(`User ${userName} requesting to join/create room:`, data);
+
+                const result = await joinOrCreateRoomSocket(socket, {
                     playerCount,
                     entryFee,
                     cashType,
@@ -62,37 +66,69 @@ export const initializeDominoSocket = (io) => {
                 });
 
                 if (result.success) {
+                    const { action, room } = result;
                     // Join socket room
-                    socket.join(result.room.roomId);
-                    socket.roomId = result.room.roomId;
-
-                    // Mark player as connected in database
-                    await DominoRoom.updateOne(
-                        { roomId: result.room.roomId, 'players.user': socket.userId },
-                        {
-                            $set: {
-                                'players.$.isConnected': true,
-                                'players.$.lastConnectedAt': new Date(),
-                                'players.$.disconnectedAt': null
-                            }
-                        }
-                    );
+                    socket.join(room.roomId);
+                    socket.roomId = room.roomId;
 
                     // Send success response to user
                     socket.emit('room-joined', {
                         success: true,
-                        room: result.room,
-                        action: result.action
+                        room: room,
+                        action: action
                     });
 
                     // Notify other players in room
-                    socket.to(result.room.roomId).emit('player-joined', {
-                        userId: socket.userId,
-                        roomState: result.room,
+                    socket.to(room.roomId).emit('player-joined', {
+                        userId,
+                        userName,
+                        roomState: room,
                         timestamp: new Date()
                     });
 
-                    console.log(`User ${socket.userId} ${result.action} room ${result.room.roomId}`);
+                    console.log(`User ${userName} ${action} room ${room.roomId}`);
+
+                    await makeTransaction(
+                        userId,
+                        role,
+                        'DOMINO_ENTRY',
+                        room.entryFee,
+                        room._id,
+                        room.cashType
+                    );
+
+                    // Award XP for room joining (consistent with other games)
+                    try {
+                        // Calculate XP based on entry fee
+                        const baseXP = Math.max(5, Math.floor(room.entryFee / 3)); // 1 XP per $3 entry fee, minimum 5 XP
+                        const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+                        const totalXP = baseXP * cashTypeMultiplier;
+
+                        const xpResult = await LoyaltyService.awardUserXP(
+                            userId,
+                            totalXP,
+                            'GAME_ACTIVITY',
+                            `Domino room joined - Entry fee: $${room.entryFee} (${room.cashType})`,
+                            {
+                                gameType: 'DOMINO',
+                                roomId: room._id,
+                                entryFee: room.entryFee,
+                                cashType: room.cashType,
+                                baseXP,
+                                multiplier: cashTypeMultiplier,
+                                action: 'JOIN_EXISTING_ROOM'
+                            }
+                        );
+
+                        if (!xpResult.success) {
+                            console.warn(`Failed to award XP for user ${userId}:`, xpResult.error);
+                        } else {
+                            console.log(`Awarded ${totalXP} XP to user ${userId} for joining domino room`);
+                        }
+                    } catch (xpError) {
+                        console.error(`Error awarding XP for user ${userId}:`, xpError);
+                        // Don't fail room joining if XP awarding fails
+                    }
                 } else {
                     socket.emit('room-join-error', {
                         success: false,
@@ -111,13 +147,15 @@ export const initializeDominoSocket = (io) => {
 
         socket.on('leave-room', async (data) => {
             try {
-                const { roomId } = data;
+                const { userId, userName, role, roomId } = socket;
 
-                console.log(`User ${socket.userId} requesting to leave room: ${roomId}`);
+                console.log(`User ${userName} requesting to leave room: ${roomId}`);
 
-                const result = await leaveRoomSocket(socket.userId, roomId);
+                const result = await leaveRoom(roomId, userId);
 
                 if (result.success) {
+                    const room = result.roomState;
+
                     // Leave socket room
                     socket.leave(roomId);
                     socket.roomId = null;
@@ -130,19 +168,29 @@ export const initializeDominoSocket = (io) => {
                     });
 
                     // Broadcast to other players if room still exists
-                    if (result.roomState) {
+                    if (room) {
                         socket.to(roomId).emit('player-left', {
                             userId: socket.userId,
-                            roomState: result.roomState,
+                            roomState: room,
                             timestamp: new Date()
                         });
                     }
 
-                    console.log(`User ${socket.userId} successfully left room ${roomId}`);
+                    console.log(`User ${userName} successfully left room ${roomId}`);
+
+                    // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
+                    await makeTransaction(
+                        userId,
+                        role,
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        room._id,
+                        room.cashType
+                    );
                 } else {
-                    socket.emit('leave-room-error', {
-                        success: false,
-                        error: result.error
+                    socket.to(socket.roomId).emit('player-disconnected', {
+                        userId: socket.userId,
+                        timestamp: new Date()
                     });
                 }
 
@@ -158,6 +206,7 @@ export const initializeDominoSocket = (io) => {
         // Game move - EXISTING SOCKET EVENT
         socket.on('make-move', async (data) => {
             try {
+                console.log(`Manual move by ${socket.userName} `, data);
                 const result = await makeMove(
                     { gameId: data.gameId },
                     { action: data.action, tile: data.tile, side: data.side },
@@ -165,6 +214,7 @@ export const initializeDominoSocket = (io) => {
                 );
 
                 if (!result.entity.success) {
+                    console.log(`Error in manual move by ${socket.userName} `, result.entity.error);
                     socket.emit('move-error', { error: result.entity.error });
                 }
             } catch (error) {
@@ -174,17 +224,56 @@ export const initializeDominoSocket = (io) => {
         });
 
         // Handle disconnection - EXISTING SOCKET EVENT
-        socket.on('disconnect', () => {
-            console.log(`User disconnected from domino: ${socket.userId}`);
+        socket.on('disconnect', async () => {
+            const { roomId, userId, userName, role } = socket;
 
-            if (socket.roomId) {
-                // Mark player as disconnected with timestamp in database
-                markPlayerDisconnected(socket.userId, socket.roomId);
+            console.log(`User disconnected from domino: ${userName}`);
 
-                socket.to(socket.roomId).emit('player-disconnected', {
-                    userId: socket.userId,
-                    timestamp: new Date()
-                });
+            if (roomId) {
+                console.log(`User ${userName} requesting to leave room: ${roomId}`);
+
+                const result = await leaveRoom(roomId, userId);
+
+                if (result.success) {
+                    const room = result.roomState;
+
+                    // Leave socket room
+                    socket.leave(roomId);
+                    socket.roomId = null;
+
+                    // Send success response to user
+                    socket.emit('room-left', {
+                        success: true,
+                        message: result.message,
+                        roomId: roomId
+                    });
+
+                    // Broadcast to other players if room still exists
+                    if (room) {
+                        socket.to(roomId).emit('player-left', {
+                            userId: userId,
+                            roomState: room,
+                            timestamp: new Date()
+                        });
+                    }
+
+                    console.log(`User ${userName} successfully left room ${roomId}`);
+
+                    // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
+                    await makeTransaction(
+                        userId,
+                        role,
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        room._id,
+                        room.cashType
+                    );
+                } else {
+                    socket.to(roomId).emit('player-disconnected', {
+                        userId: userId,
+                        timestamp: new Date()
+                    });
+                }
             }
         });
 
@@ -211,7 +300,7 @@ export const initializeDominoSocket = (io) => {
                     timestamp: new Date()
                 });
 
-                console.log(`User ${socket.userId} reconnected to domino room ${roomId}`);
+                console.log(`User ${socket.userName} reconnected to domino room ${roomId}`);
 
             } catch (error) {
                 console.error('Error reconnecting to domino room:', error);
@@ -227,8 +316,9 @@ export const initializeDominoSocket = (io) => {
 };
 
 // Helper function to handle room joining/creation logic with proper validation
-const joinOrCreateRoomSocket = async (userId, options) => {
+const joinOrCreateRoomSocket = async (socket, options) => {
     try {
+        const { userId, userName, role } = socket;
         const {
             playerCount,
             entryFee,
@@ -299,7 +389,7 @@ const joinOrCreateRoomSocket = async (userId, options) => {
         }
 
         // First, try to find an existing room with vacancy that matches criteria
-        const availableRoom = await DominoRoom.findOne({
+        let room = await DominoRoom.findOne({
             status: 'WAITING',
             cashType,
             playerCount,
@@ -308,13 +398,62 @@ const joinOrCreateRoomSocket = async (userId, options) => {
             $expr: { $lt: [{ $size: "$players" }, "$playerCount"] }
         });
 
-        if (availableRoom) {
+        if (room) {
             // Join existing room
-            return await joinExistingRoomSocket(availableRoom, userId);
+            room.players.push({
+                user: userId,
+                playerName: userName,
+                position: room.players.length,
+                isReady: true,
+                isConnected: true,
+                lastConnectedAt: new Date(),
+                disconnectedAt: null
+            });
+
+            room.totalPot += room.entryFee;
+
+            await room.save();
         } else {
             // Create new room
-            return await createNewRoomSocket(options, userId);
+            const {
+                playerCount,
+                entryFee,
+                cashType,
+                winRule = 'STANDARD',
+                roomType = 'PUBLIC'
+            } = options;
+
+            const roomId = DominoGameEngine.generateRoomId();
+
+            room = await DominoRoom.create({
+                roomId,
+                roomType,
+                playerCount,
+                entryFee,
+                cashType,
+                gameSettings: {
+                    tilesPerPlayer: playerCount <= 2 ? 9 : 7,
+                    winRule,
+                    targetPoints: 100
+                },
+                players: [{
+                    user: userId,
+                    playerName: userName,
+                    position: 0,
+                    isReady: true,
+                    isConnected: true,
+                    lastConnectedAt: new Date(),
+                    disconnectedAt: null
+                }],
+                createdBy: userId,
+                totalPot: entryFee
+            });
         }
+
+        await room.populate('createdBy', 'name', 'userName');
+        await room.populate('players.user', 'name', 'userName');
+
+        return { success: true, room, action: 'joined' };
 
     } catch (error) {
         console.error('Error in joinOrCreateRoomSocket:', error);
@@ -322,255 +461,52 @@ const joinOrCreateRoomSocket = async (userId, options) => {
     }
 };
 
-const joinExistingRoomSocket = async (room, userId) => {
+const leaveRoom = async (roomId, userId) => {
     try {
-        // Check user balance and deduct entry fee
-        const wallet = await Wallet.findOne({ user: userId });
-        const balance = room.cashType === 'REAL' ? wallet.realBalance : wallet.virtualBalance;
-
-        if (balance < room.entryFee) {
-            return {
-                success: false,
-                error: `Insufficient ${room.cashType.toLowerCase()} balance. Required: $${room.entryFee}, Available: $${balance}`
-            };
-        }
-
-        // Get user details
-        const userData = await User.findById(userId);
-
-        // Add player to room
-        room.players.push({
-            user: userId,
-            playerName: `${userData.name.firstName} ${userData.name.lastName}`,
-            position: room.players.length,
-            isReady: true,
-            isConnected: true,
-            lastConnectedAt: new Date(),
-            disconnectedAt: null
-        });
-
-        room.totalPot += room.entryFee;
-
-        // Deduct entry fee using DOMINO_ENTRY transaction identifier
-        await makeTransaction(
-            userId,
-            'USER',
-            'DOMINO_ENTRY',
-            room.entryFee,
-            room._id,
-            room.cashType
-        );
-
-        // Award XP for room joining (consistent with other games)
-        try {
-            // Calculate XP based on entry fee
-            const baseXP = Math.max(5, Math.floor(room.entryFee / 3)); // 1 XP per $3 entry fee, minimum 5 XP
-            const cashTypeMultiplier = room.cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
-            const totalXP = baseXP * cashTypeMultiplier;
-
-            const xpResult = await LoyaltyService.awardUserXP(
-                userId,
-                totalXP,
-                'GAME_ACTIVITY',
-                `Domino room joined - Entry fee: $${room.entryFee} (${room.cashType})`,
-                {
-                    gameType: 'DOMINO',
-                    roomId: room._id,
-                    entryFee: room.entryFee,
-                    cashType: room.cashType,
-                    baseXP,
-                    multiplier: cashTypeMultiplier,
-                    action: 'JOIN_EXISTING_ROOM'
-                }
-            );
-
-            if (!xpResult.success) {
-                console.warn(`Failed to award XP for user ${userId}:`, xpResult.error);
-            } else {
-                console.log(`Awarded ${totalXP} XP to user ${userId} for joining domino room`);
-            }
-        } catch (xpError) {
-            console.error(`Error awarding XP for user ${userId}:`, xpError);
-            // Don't fail room joining if XP awarding fails
-        }
-
-        await room.save();
-        await room.populate('createdBy', 'name');
-
-        return { success: true, room, action: 'joined' };
-
-    } catch (error) {
-        console.error('Error joining existing room:', error);
-        return { success: false, error: error.message };
-    }
-};
-
-const createNewRoomSocket = async (options, userId) => {
-    try {
-        const {
-            playerCount,
-            entryFee,
-            cashType,
-            winRule = 'STANDARD',
-            roomType = 'PUBLIC'
-        } = options;
-
-        // Get user details
-        const userData = await User.findById(userId);
-
-        // Generate room ID using game engine
-        const roomId = DominoGameEngine.generateRoomId();
-
-        // Create room
-        const room = await DominoRoom.create({
-            roomId,
-            roomType,
-            playerCount,
-            entryFee,
-            cashType,
-            gameSettings: {
-                tilesPerPlayer: playerCount <= 2 ? 9 : 7,
-                winRule,
-                targetPoints: 100
-            },
-            players: [{
-                user: userId,
-                playerName: `${userData.name.firstName} ${userData.name.lastName}`,
-                position: 0,
-                isReady: true,
-                isConnected: true,
-                lastConnectedAt: new Date(),
-                disconnectedAt: null
-            }],
-            createdBy: userId,
-            totalPot: entryFee
-        });
-
-        // Deduct entry fee using DOMINO_ENTRY transaction identifier
-        await makeTransaction(
-            userId,
-            'USER',
-            'DOMINO_ENTRY',
-            entryFee,
-            room._id,
-            cashType
-        );
-
-        // Award XP for room creation (consistent with other games)
-        try {
-            // Calculate XP based on entry fee
-            const baseXP = Math.max(5, Math.floor(entryFee / 3)); // 1 XP per $3 entry fee, minimum 5 XP
-            const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
-            const totalXP = baseXP * cashTypeMultiplier;
-
-            const xpResult = await LoyaltyService.awardUserXP(
-                userId,
-                totalXP,
-                'GAME_ACTIVITY',
-                `Domino room created - Entry fee: $${entryFee} (${cashType})`,
-                {
-                    gameType: 'DOMINO',
-                    roomId: room._id,
-                    entryFee: entryFee,
-                    cashType: cashType,
-                    baseXP,
-                    multiplier: cashTypeMultiplier,
-                    action: 'CREATE_NEW_ROOM'
-                }
-            );
-
-            if (!xpResult.success) {
-                console.warn(`Failed to award XP for user ${userId}:`, xpResult.error);
-            } else {
-                console.log(`Awarded ${totalXP} XP to user ${userId} for creating domino room`);
-            }
-        } catch (xpError) {
-            console.error(`Error awarding XP for user ${userId}:`, xpError);
-            // Don't fail room creation if XP awarding fails
-        }
-
-        await room.populate('players.user', 'name');
-        await room.populate('createdBy', 'name');
-
-        return { success: true, room, action: 'created' };
-
-    } catch (error) {
-        console.error('Error creating new room:', error);
-        return { success: false, error: error.message };
-    }
-};
-
-const leaveRoomSocket = async (userId, roomId) => {
-    try {
-        const room = await DominoRoom.findOne({ roomId });
+        const room = await DominoRoom.findOne({ roomId: roomId });
 
         if (!room) {
-            return {
-                success: false,
-                error: 'Room not found'
-            };
+            throw new Error('Room not found');
         }
 
-        if (room.status !== 'WAITING') {
-            return {
-                success: false,
-                error: 'Cannot leave room after game has started'
-            };
-        }
-
-        // Find and remove player
-        const playerIndex = room.players.findIndex(p => p.user && p.user.toString() === userId.toString());
-
-        if (playerIndex === -1) {
-            return {
-                success: false,
-                error: 'You are not in this room'
-            };
-        }
-
-        // Get user details for transaction (using same pattern as API)
-        const user = await User.findById(userId);
-        if (!user) {
-            return {
-                success: false,
-                error: 'User not found'
-            };
-        }
-
-        // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
-        await makeTransaction(
-            user._id,
-            user.role,
-            'DOMINO_REFUND',
-            room.entryFee,
-            room._id,
-            room.cashType
+        const removeResult = await DominoRoom.updateOne(
+            {
+                roomId: roomId,
+                status: 'WAITING'
+            },
+            {
+                $pull: {
+                    players: { user: userId }
+                },
+                $inc: {
+                    totalPot: -room.entryFee
+                }
+            }
         );
 
-        // Remove player and update positions (same logic as API)
-        room.players.splice(playerIndex, 1);
-        room.players.forEach((player, index) => {
-            player.position = index;
-        });
-
-        room.totalPot -= room.entryFee;
-
-        let roomState = null;
-
-        // If room is empty, delete it (same logic as API)
-        if (room.players.length === 0) {
-            await DominoRoom.findByIdAndDelete(room._id);
-            console.log(`Deleted empty room ${roomId} after last player left`);
+        if (removeResult.modifiedCount > 0) {
+            return {
+                success: true,
+                roomState: room,
+            };
         } else {
-            await room.save();
-            roomState = room;
+            await DominoRoom.updateOne(
+                {
+                    roomId: roomId,
+                    'players.user': userId
+                },
+                {
+                    $set: {
+                        'players.$.isConnected': false,
+                        'players.$.disconnectedAt': new Date()
+                    }
+                }
+            );
+            return {
+                success: false,
+                roomState: room,
+            };
         }
-
-        return {
-            success: true,
-            message: 'Left room successfully',
-            roomState: roomState
-        };
 
     } catch (error) {
         console.error('Error in leaveRoomSocket:', error);
@@ -583,15 +519,39 @@ const leaveRoomSocket = async (userId, roomId) => {
 
 const markPlayerDisconnected = async (userId, roomId) => {
     try {
-        await DominoRoom.updateOne(
-            { roomId, 'players.user': userId },
+        const room = await DominoRoom.findOne({ roomId: roomId });
+        if (!room) {
+            throw new Error('Room not found');
+        }
+        const removeResult = await DominoRoom.updateOne(
             {
-                $set: {
-                    'players.$.isConnected': false,
-                    'players.$.disconnectedAt': new Date()
+                roomId: roomId,
+                status: 'WAITING'
+            },
+            {
+                $pull: {
+                    players: { user: userId }
+                },
+                $inc: {
+                    totalPot: -room.entryFee
                 }
             }
         );
+
+        if (removeResult.modifiedCount === 0) {
+            await DominoRoom.updateOne(
+                {
+                    roomId: roomId,
+                    'players.user': userId
+                },
+                {
+                    $set: {
+                        'players.$.isConnected': false,
+                        'players.$.disconnectedAt': new Date()
+                    }
+                }
+            );
+        }
     } catch (error) {
         console.error('Error marking player as disconnected:', error);
     }

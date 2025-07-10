@@ -31,6 +31,8 @@ export const initializeSocket = (server) => {
 
             // Attach user ID to socket
             socket.userId = decoded.id;
+            socket.role = decoded.role;
+            socket.userName = decoded.userName;
             next();
         } catch (error) {
             console.error('Socket authentication error:', error);
