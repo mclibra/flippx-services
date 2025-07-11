@@ -12,6 +12,7 @@ const DominoGameConfigSchema = new Schema(
             type: String,
             default: ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta']
         }],
+        newGameDelay: { type: Number, default: 30 }, // 30 seconds default
     },
     {
         timestamps: true,
@@ -41,6 +42,7 @@ const DominoRoomSchema = new Schema(
             isConnected: { type: Boolean, default: true },
             lastConnectedAt: { type: Date, default: Date.now },
             disconnectedAt: { type: Date, default: null },
+            totalScore: { type: Number, default: 0 },
         }],
         gameSettings: {
             tilesPerPlayer: { type: Number, enum: [7, 9] },

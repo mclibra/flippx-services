@@ -177,7 +177,6 @@ cron.schedule('*/5 * * * * *', async () => {
 // Remove disconnected players from waiting rooms - runs every 30 seconds (EXISTING)
 cron.schedule('*/30 * * * * *', async () => {
     try {
-        console.log('[CRON] Checking for disconnected players in waiting rooms...');
         await removeDisconnectedPlayersFromWaitingRooms();
     } catch (error) {
         console.error('[CRON] Error removing disconnected players:', error);

@@ -68,6 +68,7 @@ const environments = {
 			maxPlayersPerRoom: 4,
 			isActive: true,
 			computerPlayerNames: ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta'],
+			newGameDelay: 30,
 		}
 	},
 

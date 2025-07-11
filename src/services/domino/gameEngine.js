@@ -186,6 +186,11 @@ export class DominoGameEngine {
         try {
             // Create a deep copy of the game state to avoid mutations
             const gameState = JSON.parse(JSON.stringify(game));
+
+            if (game.room && game.room.gameSettings) {
+                gameState.winRule = game.room.gameSettings.winRule;
+            }
+
             const player = gameState.players[playerIndex];
 
             if (!player) {
@@ -354,11 +359,10 @@ export class DominoGameEngine {
     static processPassMove(gameState, playerIndex, move) {
         const player = gameState.players[playerIndex];
 
-        // Increment consecutive passes
-        player.consecutivePasses++;
-
         // Add to move history
         gameState.moves.push(move);
+
+        player.consecutivePasses = (player.consecutivePasses || 0) + 1;
 
         // Update total moves
         gameState.totalMoves = (gameState.totalMoves || 0) + 1;
@@ -370,11 +374,11 @@ export class DominoGameEngine {
         const blockCheck = this.checkGameBlocked(gameState);
 
         if (blockCheck.isBlocked) {
-            // Game is blocked - end it
+            // Game is blocked, determine winner by lowest dots
             const winnerCheck = this.checkGameCompletion(gameState, true);
-            gameState.gameState = 'BLOCKED';  // Use BLOCKED instead of COMPLETED
+            gameState.gameState = 'BLOCKED';
             gameState.winner = winnerCheck.winner;
-            gameState.endReason = blockCheck.reason === 'NO_MOVES_NO_TILES' ? 'BLOCKED_NO_MOVES' : 'BLOCKED_ALL_PASSED';
+            gameState.endReason = winnerCheck.endReason;
             gameState.finalScores = winnerCheck.finalScores;
             gameState.completedAt = new Date();
 
@@ -442,7 +446,7 @@ export class DominoGameEngine {
                 isComplete: true,
                 winner: emptyHandPlayer.position,
                 endReason: 'LAST_TILE',
-                finalScores: this.calculateFinalScores(gameState.players)
+                finalScores: this.calculateFinalScores(gameState.players, emptyHandPlayer.position, gameState.winRule || 'STANDARD')
             };
         }
 
@@ -460,7 +464,7 @@ export class DominoGameEngine {
                 isComplete: true,
                 winner: winner.position,
                 endReason: 'LOWEST_DOTS',
-                finalScores: this.calculateFinalScores(gameState.players)
+                finalScores: this.calculateFinalScores(gameState.players, winner.position, gameState.winRule || 'STANDARD')
             };
         }
 
@@ -468,12 +472,18 @@ export class DominoGameEngine {
     }
 
     // Calculate final scores
-    static calculateFinalScores(players) {
-        return players.map(player => ({
-            position: player.position,
-            dotsRemaining: this.calculateDots(player.hand),
-            tilesRemaining: player.hand.length
-        }));
+    static calculateFinalScores(players, roundWinner, winRule = 'STANDARD') {
+        if (winRule === 'POINT_BASED') {
+            return this.calculateRoundScores(players, roundWinner);
+        } else {
+            return players.map(player => ({
+                position: player.position,
+                dotsRemaining: this.calculateDots(player.hand),
+                tilesRemaining: player.hand.length,
+                roundScore: 0,
+                totalScore: player.totalScore || 0
+            }));
+        }
     }
 
     // Get next player in turn order

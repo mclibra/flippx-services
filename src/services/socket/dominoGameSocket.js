@@ -51,7 +51,8 @@ export const initializeDominoGameSocket = (io) => {
                     entryFee,
                     cashType,
                     winRule = 'STANDARD',
-                    roomType = 'PUBLIC'
+                    roomType = 'PUBLIC',
+                    targetPoints = 0,
                 } = data;
 
                 const { userId, userName, role } = socket;
@@ -63,7 +64,8 @@ export const initializeDominoGameSocket = (io) => {
                     entryFee,
                     cashType,
                     winRule,
-                    roomType
+                    roomType,
+                    targetPoints,
                 });
 
                 if (result.success) {
@@ -328,13 +330,14 @@ export const initializeDominoGameSocket = (io) => {
 // Helper function to handle room joining/creation logic with proper validation
 const joinOrCreateRoomSocket = async (socket, options) => {
     try {
-        const { userId, userName, role } = socket;
+        const { userId, userName } = socket;
         const {
             playerCount,
             entryFee,
             cashType,
             winRule = 'STANDARD',
-            roomType = 'PUBLIC'
+            roomType = 'PUBLIC',
+            targetPoints = 0,
         } = options;
 
         // Get game configuration for validation
@@ -424,15 +427,6 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 
             await room.save();
         } else {
-            // Create new room
-            const {
-                playerCount,
-                entryFee,
-                cashType,
-                winRule = 'STANDARD',
-                roomType = 'PUBLIC'
-            } = options;
-
             const roomId = DominoGameEngine.generateRoomId();
 
             room = await DominoRoom.create({
@@ -444,7 +438,7 @@ const joinOrCreateRoomSocket = async (socket, options) => {
                 gameSettings: {
                     tilesPerPlayer: playerCount <= 2 ? 9 : 7,
                     winRule,
-                    targetPoints: 100
+                    targetPoints: targetPoints,
                 },
                 players: [{
                     user: userId,
