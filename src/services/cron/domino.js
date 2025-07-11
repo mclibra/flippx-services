@@ -371,10 +371,7 @@ async function processBotTurn(game) {
 
         // Send turn notifications if game is still active
         if (game.gameState === 'ACTIVE') {
-            const nextPlayer = game.players[game.currentPlayer];
-            if (nextPlayer && nextPlayer.user) {
-                await notifyTurnChange(game.toJSON(), game.currentPlayer - 1);
-            }
+            await notifyTurnChange(game.toJSON(), game.currentPlayer - 1);
         }
 
         // Check if game is completed
