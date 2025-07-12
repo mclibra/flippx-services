@@ -1,4 +1,3 @@
-// UPDATED src/api/index.js
 import { Router } from 'express';
 import user from './user';
 import oauth from './oauth';
@@ -16,7 +15,6 @@ import domino from './domino';
 import notification from './notification';
 import state from './state';
 import plan from './plan';
-import dashboard from './dashboard';
 import loyalty from './loyalty';
 import payoutConfig from './payout_config';
 
@@ -37,7 +35,6 @@ router.use('/withdrawals', withdrawal);
 router.use('/domino', domino);
 router.use('/state', state);
 router.use('/text', text);
-router.use('/dashboard', dashboard);
 router.use('/loyalty', loyalty);
 router.use('/plan', plan);
 router.use('/payout-config', payoutConfig);
