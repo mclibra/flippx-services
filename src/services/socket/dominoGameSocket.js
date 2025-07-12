@@ -85,7 +85,7 @@ export const initializeDominoGameSocket = (io) => {
                     socket.to(room.roomId).emit('player-joined', {
                         userId,
                         userName,
-                        roomState: room,
+                        room,
                         timestamp: new Date()
                     });
 
@@ -526,11 +526,12 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 };
 
 // Send message to specific user
-export const sendDominoGameUpdateToUser = (userId, event, data) => {
-    console.log(`Sending ${event} to user ${userId}`);
+export const sendDominoGameUpdateToUser = (userId, roomId, event, data) => {
+    console.log(`Sending ${event} to user ${userId} in room ${roomId}`);
     if (dominoNamespace) {
+        Array.from(dominoNamespace.sockets.values()).forEach(socket => console.log(`Socket user ${socket.userId} && Socket room => ${socket.roomId}`));
         const userSockets = Array.from(dominoNamespace.sockets.values())
-            .filter(socket => socket.userId === userId);
+            .filter(socket => socket.userId === userId && socket.roomId == roomId);
 
         userSockets.forEach(socket => {
             socket.emit(event, data);

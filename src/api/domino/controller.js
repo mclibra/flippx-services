@@ -50,6 +50,7 @@ export const startDominoGame = async (room) => {
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
+                tileCount: player.hand.length,
             })),
             board: game.board,
             drawPile: game.drawPile,
@@ -60,7 +61,7 @@ export const startDominoGame = async (room) => {
         });
 
         // Send turn notification to first player
-        await notifyTurnChange(game.toJSON());
+        await notifyTurnChange(game.toJSON(), room.roomId);
 
         return game;
     } catch (error) {
@@ -70,14 +71,14 @@ export const startDominoGame = async (room) => {
 };
 
 // Enhanced function to notify players about turn changes
-export const notifyTurnChange = async (game, previousPlayerIndex) => {
+export const notifyTurnChange = async (game, roomId, previousPlayerIndex) => {
     try {
         const currentPlayer = game.players[game.currentPlayer];
         const previousPlayer = game.players[previousPlayerIndex];
 
         if (currentPlayer && currentPlayer.user) {
             // Notify current player it's their turn
-            sendDominoGameUpdateToUser(currentPlayer.user, 'your-turn', {
+            sendDominoGameUpdateToUser(currentPlayer.user, roomId, 'your-turn', {
                 gameId: game._id,
                 board: game.board,
                 drawPile: game.drawPile,
@@ -86,7 +87,7 @@ export const notifyTurnChange = async (game, previousPlayerIndex) => {
         }
 
         // Broadcast turn change to all players in room
-        broadcastDominoGameUpdateToRoom(game.room.roomId, 'turn-changed', {
+        broadcastDominoGameUpdateToRoom(roomId, 'turn-changed', {
             gameId: game._id,
             board: game.board,
             drawPile: game.drawPile,
@@ -109,7 +110,7 @@ const sendTurnReminder = async (game, timeRemaining) => {
 
     console.log('Sending turn-reminder to user ', currentPlayer.user);
     if (currentPlayer && currentPlayer.user) {
-        sendDominoGameUpdateToUser(currentPlayer.user, 'turn-reminder', {
+        sendDominoGameUpdateToUser(currentPlayer.user, roomId, 'turn-reminder', {
             gameId: game._id,
             timeRemaining,
             message: `Hurry up! You have ${timeRemaining} seconds left to make your move.`
@@ -200,6 +201,7 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
+                tileCount: player.hand.length,
             })),
             lastMove: moveResult.move,
             moveBy: {
@@ -214,7 +216,7 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
 
         // Send turn notifications if game is still active
         if (game.gameState === 'ACTIVE') {
-            await notifyTurnChange(game.toJSON(), playerIndex);
+            await notifyTurnChange(game.toJSON(), game.room.roomId, playerIndex);
         }
 
         // Check if game is completed or blocked
@@ -307,7 +309,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             // Notify the timed-out player
             if (timedOutPlayer && timedOutPlayer.user) {
-                sendDominoGameUpdateToUser(timedOutPlayer.user, 'turn-timeout-notification', {
+                sendDominoGameUpdateToUser(timedOutPlayer.user, game.room.roomId, 'turn-timeout-notification', {
                     gameId: game._id,
                     message: `Your turn timed out and you automatically ${autoAction.toLowerCase()}ed.`,
                     autoAction: autoAction
@@ -325,7 +327,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             // Send turn notifications if game is still active
             if (game.gameState === 'ACTIVE') {
-                await notifyTurnChange(game.toJSON(), previousPlayer);
+                await notifyTurnChange(game.toJSON(), game.room.roomId, previousPlayer);
             }
 
             // Check if game is completed or blocked
@@ -977,6 +979,7 @@ const startNewGameInRoom = async (room) => {
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
+                tileCount: player.hand.length,
             })),
             board: newGame.board,
             drawPile: newGame.drawPile,
@@ -987,7 +990,7 @@ const startNewGameInRoom = async (room) => {
         });
 
         // Send turn notification to first player
-        await notifyTurnChange(newGame.toJSON());
+        await notifyTurnChange(newGame.toJSON(), room.roomId);
 
         console.log(`[GAME-COMPLETION] ✅ New game ${newGame._id} started for room ${room.roomId} (Round ${nextGameNumber})`);
 
@@ -1062,7 +1065,7 @@ const distributePrizes = async (game, room, challengeWinner = null) => {
             // Distribute winner payout using existing transaction system
             await makeTransaction(
                 winner.user,
-                'USER', // Assuming winner role
+                'USER',
                 'WON_DOMINO',
                 game.winnerPayout,
                 room._id,
@@ -1107,6 +1110,27 @@ const distributePrizes = async (game, room, challengeWinner = null) => {
             }
 
             console.log(`[GAME-COMPLETION] Prize of ${game.winnerPayout} distributed to ${winner.playerName}`);
+        } else if (winner && winner.playerType === 'COMPUTER' && room.cashType === 'VIRTUAL' && !winner.user) {
+            console.log(`Bot ${winner.playerName} won in VIRTUAL room ${room.roomId}, sending winnings to system account`);
+
+            // Get system account
+            const systemUser = await User.findOne({ role: 'SYSTEM' });
+
+            if (systemUser) {
+                // Credit system account with bot's winnings - READ FROM ROOM
+                await makeTransaction(
+                    systemUser._id,
+                    'SYSTEM',
+                    'WON_DOMINO',
+                    game.winnerPayout,
+                    room._id,
+                    room.cashType
+                );
+
+                console.log(`Credited $${game.winnerPayout} VIRTUAL winnings to system account for bot win in room ${room.roomId}`);
+            } else {
+                console.error('System account not found for bot winning transaction');
+            }
         }
 
     } catch (error) {

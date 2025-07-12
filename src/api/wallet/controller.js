@@ -486,23 +486,6 @@ export const createManualPayment = async (user, body) => {
 					},
 				};
 			}
-
-			// Check if user already has an active plan of this type
-			const existingUserPlan = await UserPlan.findOne({
-				user: userId,
-				plan: planId,
-				status: 'ACTIVE',
-			});
-
-			if (existingUserPlan) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'User already has an active subscription to this plan',
-					},
-				};
-			}
 		} else {
 			if (!providedAmount || providedAmount <= 0) {
 				return {
