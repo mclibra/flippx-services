@@ -80,7 +80,7 @@ router.get(
     '/:id',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getUserDetails(req.params.id))
+    async (req, res) => done(res, await getUserDetails(req.params.id, req.query))
 );
 
 // ===== DOCUMENT VERIFICATION =====

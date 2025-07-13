@@ -200,7 +200,6 @@ export const createUser = async (body, adminUser) => {
             phone,
             countryCode,
             dob,
-            userName,
             password,
             role = 'USER',
             // Address details
@@ -213,10 +212,7 @@ export const createUser = async (body, adminUser) => {
             sim_nif,
             // Account settings
             isActive = true,
-            loyaltyTier = 'BRONZE',
-            // Initial wallet balance
-            initialVirtualBalance = 0,
-            initialRealBalance = 0
+            loyaltyTier = 'NONE',
         } = body;
 
         // Validate required fields
@@ -252,7 +248,7 @@ export const createUser = async (body, adminUser) => {
             phone,
             countryCode,
             dob,
-            slugName: userName || `${firstName}${lastName}`,
+            slugName: `${firstName.toLowerCase()}_${lastName.toLowerCase()}`,
             password,
             role,
             isActive,
@@ -272,8 +268,8 @@ export const createUser = async (body, adminUser) => {
         // Create wallet
         await Wallet.create({
             user: user._id,
-            virtualBalance: initialVirtualBalance,
-            realBalanceWithdrawable: initialRealBalance,
+            virtualBalance: 0,
+            realBalanceWithdrawable: 0,
             realBalanceNonWithdrawable: 0,
             active: true
         });
@@ -282,7 +278,7 @@ export const createUser = async (body, adminUser) => {
         await LoyaltyService.initializeLoyaltyForUser(user._id);
 
         // If loyalty tier is specified and not BRONZE, update it
-        if (loyaltyTier !== 'BRONZE') {
+        if (loyaltyTier !== 'NONE') {
             await LoyaltyService.manualTierUpgrade(
                 user._id,
                 loyaltyTier,
@@ -396,8 +392,10 @@ export const updateUser = async (userId, body, adminUser) => {
 
 // ===== USER DETAILS VIEW =====
 
-export const getUserDetails = async (userId) => {
+export const getUserDetails = async (userId, query = {}) => {
     try {
+        const { startDate, endDate } = query;
+
         // Get user with full details
         const user = await User.findById(userId).select('-password');
         if (!user) {
@@ -416,47 +414,306 @@ export const getUserDetails = async (userId) => {
         // Get loyalty profile
         const loyalty = await LoyaltyProfile.findOne({ user: userId });
 
-        // Get recent transactions
-        const recentTransactions = await Transaction.find({ user: userId })
+        // Build date filter for gaming activities if dates are provided
+        let dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) {
+                dateFilter.createdAt.$gte = new Date(startDate);
+            }
+            if (endDate) {
+                dateFilter.createdAt.$lte = new Date(endDate);
+            }
+        }
+
+        // Get recent transactions (apply date filter if provided)
+        const recentTransactions = await Transaction.find({
+            user: userId,
+            ...dateFilter
+        })
             .sort({ createdAt: -1 })
             .limit(10);
 
-        // Get gaming statistics
+        // Get gaming statistics with date filtering
+        const gameFilters = { user: userId, ...dateFilter };
+
         const [borletteTickets, megaMillionTickets, rouletteTickets, dominoGames] = await Promise.all([
-            BorletteTicket.find({ user: userId }).sort({ createdAt: -1 }).limit(5),
-            MegaMillionTicket.find({ user: userId }).sort({ createdAt: -1 }).limit(5),
-            RouletteTicket.find({ user: userId }).sort({ createdAt: -1 }).limit(5),
-            DominoGame.find({ 'players.user': userId }).sort({ createdAt: -1 }).limit(5)
+            BorletteTicket.find(gameFilters).sort({ createdAt: -1 }).limit(5),
+            MegaMillionTicket.find(gameFilters).sort({ createdAt: -1 }).limit(5),
+            RouletteTicket.find(gameFilters).sort({ createdAt: -1 }).limit(5),
+            DominoGame.find({ 'players.user': userId, ...dateFilter }).sort({ createdAt: -1 }).limit(5)
         ]);
 
-        // Get payment history
-        const payments = await Payment.find({ user: userId })
+        // Get payment history (apply date filter if provided)
+        const payments = await Payment.find({ user: userId, ...dateFilter })
             .sort({ createdAt: -1 })
             .limit(10)
             .populate('plan', 'name price');
 
-        // Get withdrawal history
-        const withdrawals = await Withdrawal.find({ user: userId })
+        // Get withdrawal history (apply date filter if provided)
+        const withdrawals = await Withdrawal.find({ user: userId, ...dateFilter })
             .sort({ createdAt: -1 })
             .limit(10)
             .populate('bankAccount');
 
-        // Calculate gaming statistics
-        const totalBorletteTickets = await BorletteTicket.countDocuments({ user: userId });
-        const totalMegaMillionTickets = await MegaMillionTicket.countDocuments({ user: userId });
-        const totalRouletteTickets = await RouletteTicket.countDocuments({ user: userId });
-        const totalDominoGames = await DominoGame.countDocuments({ 'players.user': userId });
+        // Calculate gaming statistics (apply date filter if provided)
+        const totalBorletteTickets = await BorletteTicket.countDocuments(gameFilters);
+        const totalMegaMillionTickets = await MegaMillionTicket.countDocuments(gameFilters);
+        const totalRouletteTickets = await RouletteTicket.countDocuments(gameFilters);
+        const totalDominoGames = await DominoGame.countDocuments({ 'players.user': userId, ...dateFilter });
 
-        // Calculate financial summary
+        // Calculate financial summary (apply date filter if provided)
         const totalDeposits = await Payment.aggregate([
-            { $match: { user: userId, status: 'COMPLETED' } },
+            { $match: { user: userId, status: 'COMPLETED', ...dateFilter } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
 
         const totalWithdrawals = await Withdrawal.aggregate([
-            { $match: { user: userId, status: 'COMPLETED' } },
+            { $match: { user: userId, status: 'COMPLETED', ...dateFilter } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
+
+        // ===== NEW: CASH TYPE ANALYTICS =====
+
+        // 1. Borlette Tickets Analytics by Cash Type
+        const borletteAnalytics = await BorletteTicket.aggregate([
+            { $match: gameFilters },
+            {
+                $group: {
+                    _id: '$cashType',
+                    totalAmountSpent: { $sum: '$totalAmountPlayed' },
+                    totalWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+                    totalGames: { $sum: 1 },
+                    winningGames: {
+                        $sum: {
+                            $cond: [{ $gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0] }, 1, 0]
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    totalLoss: { $subtract: ['$totalAmountSpent', '$totalWon'] },
+                    netProfit: { $subtract: ['$totalWon', '$totalAmountSpent'] },
+                    wonRate: {
+                        $cond: [
+                            { $eq: ['$totalGames', 0] },
+                            0,
+                            { $multiply: [{ $divide: ['$winningGames', '$totalGames'] }, 100] }
+                        ]
+                    },
+                    profitMargin: {
+                        $cond: [
+                            { $eq: ['$totalAmountSpent', 0] },
+                            0,
+                            { $multiply: [{ $divide: [{ $subtract: ['$totalWon', '$totalAmountSpent'] }, '$totalAmountSpent'] }, 100] }
+                        ]
+                    }
+                }
+            }
+        ]);
+
+        // 2. MegaMillionTicket Analytics by Cash Type
+        const megaMillionAnalytics = await MegaMillionTicket.aggregate([
+            { $match: gameFilters },
+            {
+                $group: {
+                    _id: '$cashType',
+                    totalAmountSpent: { $sum: '$amountPlayed' },
+                    totalWon: { $sum: { $ifNull: ['$amountWon', 0] } },
+                    totalGames: { $sum: 1 },
+                    winningGames: {
+                        $sum: {
+                            $cond: [{ $gt: [{ $ifNull: ['$amountWon', 0] }, 0] }, 1, 0]
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    totalLoss: { $subtract: ['$totalAmountSpent', '$totalWon'] },
+                    netProfit: { $subtract: ['$totalWon', '$totalAmountSpent'] },
+                    wonRate: {
+                        $cond: [
+                            { $eq: ['$totalGames', 0] },
+                            0,
+                            { $multiply: [{ $divide: ['$winningGames', '$totalGames'] }, 100] }
+                        ]
+                    },
+                    profitMargin: {
+                        $cond: [
+                            { $eq: ['$totalAmountSpent', 0] },
+                            0,
+                            { $multiply: [{ $divide: [{ $subtract: ['$totalWon', '$totalAmountSpent'] }, '$totalAmountSpent'] }, 100] }
+                        ]
+                    }
+                }
+            }
+        ]);
+
+        // 3. RouletteTicket Analytics by Cash Type
+        const rouletteAnalytics = await RouletteTicket.aggregate([
+            { $match: gameFilters },
+            {
+                $group: {
+                    _id: '$cashType',
+                    totalAmountSpent: { $sum: '$totalAmountPlayed' },
+                    totalWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+                    totalGames: { $sum: 1 },
+                    winningGames: {
+                        $sum: {
+                            $cond: [{ $gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0] }, 1, 0]
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    totalLoss: { $subtract: ['$totalAmountSpent', '$totalWon'] },
+                    netProfit: { $subtract: ['$totalWon', '$totalAmountSpent'] },
+                    wonRate: {
+                        $cond: [
+                            { $eq: ['$totalGames', 0] },
+                            0,
+                            { $multiply: [{ $divide: ['$winningGames', '$totalGames'] }, 100] }
+                        ]
+                    },
+                    profitMargin: {
+                        $cond: [
+                            { $eq: ['$totalAmountSpent', 0] },
+                            0,
+                            { $multiply: [{ $divide: [{ $subtract: ['$totalWon', '$totalAmountSpent'] }, '$totalAmountSpent'] }, 100] }
+                        ]
+                    }
+                }
+            }
+        ]);
+
+        // 4. Domino Game Analytics by Cash Type
+        // For domino games, we need to get the room details to know entry fee and cash type
+        const dominoAnalytics = await DominoGame.aggregate([
+            { $match: { 'players.user': userId, ...dateFilter } },
+            {
+                $lookup: {
+                    from: 'dominorooms',
+                    localField: 'room',
+                    foreignField: '_id',
+                    as: 'roomDetails'
+                }
+            },
+            { $unwind: '$roomDetails' },
+            {
+                $group: {
+                    _id: '$roomDetails.cashType',
+                    totalAmountSpent: { $sum: '$roomDetails.entryFee' },
+                    totalWon: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $eq: [
+                                        { $arrayElemAt: ['$players.user', '$winner'] },
+                                        userId
+                                    ]
+                                },
+                                '$winnerPayout',
+                                0
+                            ]
+                        }
+                    },
+                    totalGames: { $sum: 1 },
+                    winningGames: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $eq: [
+                                        { $arrayElemAt: ['$players.user', '$winner'] },
+                                        userId
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    totalLoss: { $subtract: ['$totalAmountSpent', '$totalWon'] },
+                    netProfit: { $subtract: ['$totalWon', '$totalAmountSpent'] },
+                    wonRate: {
+                        $cond: [
+                            { $eq: ['$totalGames', 0] },
+                            0,
+                            { $multiply: [{ $divide: ['$winningGames', '$totalGames'] }, 100] }
+                        ]
+                    },
+                    profitMargin: {
+                        $cond: [
+                            { $eq: ['$totalAmountSpent', 0] },
+                            0,
+                            { $multiply: [{ $divide: [{ $subtract: ['$totalWon', '$totalAmountSpent'] }, '$totalAmountSpent'] }, 100] }
+                        ]
+                    }
+                }
+            }
+        ]);
+
+        // 5. Combine all analytics by cash type
+        const combineAnalyticsByCashType = (analytics) => {
+            const result = {
+                REAL: {
+                    totalAmountSpent: 0,
+                    totalWon: 0,
+                    totalLoss: 0,
+                    totalGames: 0,
+                    winningGames: 0,
+                    wonRate: 0,
+                    netProfit: 0,
+                    profitMargin: 0
+                },
+                VIRTUAL: {
+                    totalAmountSpent: 0,
+                    totalWon: 0,
+                    totalLoss: 0,
+                    totalGames: 0,
+                    winningGames: 0,
+                    wonRate: 0,
+                    netProfit: 0,
+                    profitMargin: 0
+                }
+            };
+
+            [...borletteAnalytics, ...megaMillionAnalytics, ...rouletteAnalytics, ...dominoAnalytics].forEach(item => {
+                if (item._id && result[item._id]) {
+                    result[item._id].totalAmountSpent += item.totalAmountSpent || 0;
+                    result[item._id].totalWon += item.totalWon || 0;
+                    result[item._id].totalLoss += item.totalLoss || 0;
+                    result[item._id].totalGames += item.totalGames || 0;
+                    result[item._id].winningGames += item.winningGames || 0;
+                }
+            });
+
+            // Calculate overall metrics for both cash types
+            ['REAL', 'VIRTUAL'].forEach(cashType => {
+                // Won Rate
+                result[cashType].wonRate = result[cashType].totalGames > 0
+                    ? (result[cashType].winningGames / result[cashType].totalGames) * 100
+                    : 0;
+
+                // Net Profit (positive = profit, negative = loss)
+                result[cashType].netProfit = result[cashType].totalWon - result[cashType].totalAmountSpent;
+
+                // Profit Margin (as percentage)
+                result[cashType].profitMargin = result[cashType].totalAmountSpent > 0
+                    ? (result[cashType].netProfit / result[cashType].totalAmountSpent) * 100
+                    : 0;
+            });
+
+            return result;
+        };
+
+        const cashTypeAnalytics = combineAnalyticsByCashType();
 
         return {
             status: 200,
@@ -483,7 +740,8 @@ export const getUserDetails = async (userId) => {
                     financialSummary: {
                         totalDeposits: totalDeposits[0]?.total || 0,
                         totalWithdrawals: totalWithdrawals[0]?.total || 0,
-                        currentBalance: wallet ? wallet.virtualBalance + wallet.realBalance : 0
+                        currentBalance: wallet ?
+                            wallet.virtualBalance + wallet.realBalance : 0
                     },
 
                     // Gaming activity
@@ -499,10 +757,28 @@ export const getUserDetails = async (userId) => {
                         recentDominoGames: dominoGames
                     },
 
+                    // ===== NEW: Cash Type Analytics =====
+                    cashTypeAnalytics: cashTypeAnalytics,
+
+                    // Individual game analytics by cash type (for detailed breakdown)
+                    detailedCashTypeAnalytics: {
+                        borlette: borletteAnalytics,
+                        megaMillion: megaMillionAnalytics,
+                        roulette: rouletteAnalytics,
+                        domino: dominoAnalytics
+                    },
+
                     // Recent activity
                     recentTransactions,
                     recentPayments: payments,
-                    recentWithdrawals: withdrawals
+                    recentWithdrawals: withdrawals,
+
+                    // Filter information
+                    appliedFilters: {
+                        startDate: startDate || null,
+                        endDate: endDate || null,
+                        dateFilterApplied: !!(startDate || endDate)
+                    }
                 }
             }
         };
