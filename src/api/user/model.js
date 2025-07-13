@@ -175,7 +175,7 @@ userSchema.pre('save', function (next) {
 userSchema.methods = {
 	view(full) {
 		let view = {};
-		let fields = ['id', 'name', 'picture'];
+		let fields = ['_id', 'name', 'picture'];
 
 		if (full) {
 			fields = [
@@ -190,7 +190,9 @@ userSchema.methods = {
 				'createdAt',
 				'idProof',
 				'addressProof',
-				'sessionTracking', // Include session tracking in full view
+				'isActive',
+				'isInfluencer',
+				'sessionTracking',
 			];
 		}
 

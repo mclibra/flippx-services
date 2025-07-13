@@ -17,6 +17,7 @@ import state from './state';
 import plan from './plan';
 import loyalty from './loyalty';
 import payoutConfig from './payout_config';
+import adminUserManagement from './admin/user-management';
 
 const router = new Router();
 
@@ -38,5 +39,6 @@ router.use('/text', text);
 router.use('/loyalty', loyalty);
 router.use('/plan', plan);
 router.use('/payout-config', payoutConfig);
+router.use('/admin/users', adminUserManagement);
 
 export default router;
