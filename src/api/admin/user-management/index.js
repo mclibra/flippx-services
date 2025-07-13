@@ -127,13 +127,14 @@ router.put(
 
 /**
  * POST /api/admin-user-management/:id/reset-password
- * Reset user password (generates new password)
+ * Reset user password (admin sets password)
+ * Body: { newPassword: string } - minimum 6 characters
  */
 router.post(
     '/:id/reset-password',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await resetUserPassword(req.params.id, req.user))
+    async (req, res) => done(res, await resetUserPassword(req.params.id, req.body, req.user))
 );
 
 /**

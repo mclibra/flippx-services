@@ -743,8 +743,28 @@ export const updateUserLoyalty = async (userId, { tier, xpAdjustment, reason }, 
 
 // ===== ACCOUNT MANAGEMENT =====
 
-export const resetUserPassword = async (userId, adminUser) => {
+export const resetUserPassword = async (userId, { newPassword }, adminUser) => {
     try {
+        if (!newPassword) {
+            return {
+                status: 400,
+                entity: {
+                    success: false,
+                    error: 'New password is required'
+                }
+            };
+        }
+
+        if (newPassword.length < 6) {
+            return {
+                status: 400,
+                entity: {
+                    success: false,
+                    error: 'Password must be at least 6 characters long'
+                }
+            };
+        }
+
         const user = await User.findById(userId);
         if (!user) {
             return {
@@ -756,10 +776,6 @@ export const resetUserPassword = async (userId, adminUser) => {
             };
         }
 
-        // Generate new password
-        const newPassword = randtoken.generate(12);
-
-        // Hash password
         const hashedPassword = await bcrypt.hash(newPassword, 9);
 
         // Update user password
@@ -771,8 +787,7 @@ export const resetUserPassword = async (userId, adminUser) => {
             status: 200,
             entity: {
                 success: true,
-                message: 'Password reset successfully',
-                newPassword // In production, this should be sent via secure channel
+                message: 'Password reset successfully'
             }
         };
     } catch (error) {
