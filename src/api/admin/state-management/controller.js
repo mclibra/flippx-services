@@ -1,6 +1,6 @@
 import { State } from './model';
-import { fetchGameListByState } from '../../services/lottery/externalLottery';
-import { createLotteriesForState } from '../../services/cron/lottery';
+import { fetchGameListByState } from '../../../services/lottery/externalLottery';
+import { createLotteriesForState } from '../../../services/cron/lottery';
 
 export const list = async ({
 	offset,
@@ -243,7 +243,6 @@ export const show = async ({ id }) => {
 const fetchAndStoreLotteryGames = async state => {
 	try {
 		const gameList = await fetchGameListByState(state.code);
-		console.log(`Fetched game list for ${state.name} [${state.code}] =============`);
 		console.log(gameList);
 
 		if (!gameList?.data || !Array.isArray(gameList.data)) {

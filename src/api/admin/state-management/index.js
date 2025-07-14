@@ -1,16 +1,24 @@
 import { Router } from 'express';
-import { done } from '../../services/response/';
-import { xApi, token } from '../../services/passport';
+import { done } from '../../../services/response/';
+import { xApi, token } from '../../../services/passport';
 import { list, create, update, remove, show } from './controller';
 
 const router = new Router();
 
-router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await list(req.query))
+router.get(
+	'/',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await list(req.query))
 );
 
-router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await show(req.params))
+router.get(
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await show(req.params))
 );
 
 router.post(

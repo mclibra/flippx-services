@@ -2,7 +2,7 @@ import moment from 'moment';
 import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { BorletteTicket } from '../borlette_ticket/model';
 import { Lottery, LotteryRestriction } from './model';
-import { State } from '../state/model';
+import { State } from '../admin/state-management/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
 import PayoutService from '../../services/payout/payoutService';
 

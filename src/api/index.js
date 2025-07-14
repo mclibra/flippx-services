@@ -13,11 +13,11 @@ import rouletteTicket from './roulette_ticket';
 import roulette from './roulette';
 import domino from './domino';
 import notification from './notification';
-import state from './state';
 import plan from './plan';
 import loyalty from './loyalty';
 import payoutConfig from './payout_config';
 import adminUserManagement from './admin/user-management';
+import adminStateManagement from './admin/state-management';
 
 const router = new Router();
 
@@ -34,11 +34,11 @@ router.use('/bank-accounts', bankAccount);
 router.use('/roulette-ticket', rouletteTicket);
 router.use('/withdrawals', withdrawal);
 router.use('/domino', domino);
-router.use('/state', state);
 router.use('/text', text);
 router.use('/loyalty', loyalty);
 router.use('/plan', plan);
 router.use('/payout-config', payoutConfig);
 router.use('/admin/users', adminUserManagement);
+router.use('/admin/states', adminStateManagement);
 
 export default router;
