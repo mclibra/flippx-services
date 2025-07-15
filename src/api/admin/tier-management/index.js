@@ -28,12 +28,12 @@ router.get(
 );
 
 /**
- * GET /api/admin/users/requirements/:tier
+ * GET /api/admin/users/requirements/:name
  * Get specific tier requirements configuration
- * Params: tier - NONE, SILVER, GOLD, VIP
+ * Params: name
  */
 router.get(
-    '/requirements/:tier',
+    '/requirements/:name',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
     async (req, res) => done(res, await getTierRequirement(req.params.name))
@@ -43,7 +43,6 @@ router.get(
  * POST /api/admin/users/requirements
  * Create new tier requirements configuration
  * Body: {
- *   tier: string (NONE, SILVER, GOLD, VIP),
  *   name: string,
  *   benefits: {
  *     weeklyWithdrawalLimit: number,
@@ -86,25 +85,25 @@ router.post(
 );
 
 /**
- * PUT /api/admin/users/requirements/:tier
+ * PUT /api/admin/users/requirements/:name
  * Update tier requirements configuration
- * Params: tier - NONE, SILVER, GOLD, VIP
+ * Params: name
  * Body: Partial tier requirements data (same structure as POST)
  */
 router.put(
-    '/requirements/:tier',
+    '/requirements/:name',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
     async (req, res) => done(res, await updateTierRequirement(req.params.name, req.body, req.user))
 );
 
 /**
- * DELETE /api/admin/users/requirements/:tier
+ * DELETE /api/admin/users/requirements/:name
  * Deactivate tier requirements configuration (soft delete)
- * Params: tier - SILVER, GOLD, VIP (cannot delete NONE)
+ * Params: name - SILVER, GOLD, VIP (cannot delete NONE)
  */
 router.delete(
-    '/requirements/:tier',
+    '/requirements/:name',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
     async (req, res) => done(res, await deactivateTierRequirement(req.params.name, req.user))
