@@ -323,7 +323,6 @@ export const updateTierRequirement = async (name, body, adminUser) => {
     try {
         const existingTier = await TierRequirements.findOne({
             name: name.toUpperCase(),
-            isActive: true
         });
 
         if (!existingTier) {
