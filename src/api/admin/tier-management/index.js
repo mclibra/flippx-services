@@ -29,15 +29,15 @@ router.get(
 );
 
 /**
- * GET /api/admin/users/requirements/:name
- * Get specific tier requirements configuration
- * Params: name
+ * POST /api/admin/users/requirements/initialize
+ * Initialize default tier requirements (one-time setup)
+ * This will create all default tier configurations if none exist
  */
-router.get(
-    '/requirements/:name',
+router.post(
+    '/requirements/initialize',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getTierRequirement(req.params.name))
+    async (req, res) => done(res, await initializeDefaultTierRequirements(req.user))
 );
 
 /**
@@ -86,6 +86,18 @@ router.post(
 );
 
 /**
+ * GET /api/admin/users/requirements/:name
+ * Get specific tier requirements configuration
+ * Params: name
+ */
+router.get(
+    '/requirements/:name',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await getTierRequirement(req.params.name))
+);
+
+/**
  * PUT /api/admin/users/requirements/:name
  * Update tier requirements configuration
  * Params: name
@@ -120,18 +132,6 @@ router.post(
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
     async (req, res) => done(res, await reactivateTierRequirement(req.params.name, req.user))
-);
-
-/**
- * POST /api/admin/users/requirements/initialize
- * Initialize default tier requirements (one-time setup)
- * This will create all default tier configurations if none exist
- */
-router.post(
-    '/requirements/initialize',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await initializeDefaultTierRequirements(req.user))
 );
 
 export default router;
