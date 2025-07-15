@@ -36,7 +36,7 @@ router.get(
     '/requirements/:tier',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getTierRequirement(req.params.tier))
+    async (req, res) => done(res, await getTierRequirement(req.params.name))
 );
 
 /**
@@ -95,7 +95,7 @@ router.put(
     '/requirements/:tier',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await updateTierRequirement(req.params.tier, req.body, req.user))
+    async (req, res) => done(res, await updateTierRequirement(req.params.name, req.body, req.user))
 );
 
 /**
@@ -107,7 +107,7 @@ router.delete(
     '/requirements/:tier',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await deactivateTierRequirement(req.params.tier, req.user))
+    async (req, res) => done(res, await deactivateTierRequirement(req.params.name, req.user))
 );
 
 /**

@@ -1,18 +1,11 @@
 import mongoose, { Schema } from 'mongoose';
 
-const tierNames = ['NONE', 'SILVER', 'GOLD', 'VIP'];
-
 const TierRequirementsSchema = new Schema(
     {
-        tier: {
-            type: String,
-            enum: tierNames,
-            required: true,
-            unique: true,
-        },
         name: {
             type: String,
             required: true,
+            unique: true,
         },
         isActive: {
             type: Boolean,
@@ -57,7 +50,6 @@ const TierRequirementsSchema = new Schema(
             // Previous tier requirements
             previousTier: {
                 type: String,
-                enum: [...tierNames, null],
                 default: null,
             },
             previousTierDays: {
@@ -176,7 +168,7 @@ const TierRequirementsSchema = new Schema(
 );
 
 // Indexes for efficient queries
-TierRequirementsSchema.index({ tier: 1, isActive: 1 });
+TierRequirementsSchema.index({ name: 1, isActive: 1 });
 TierRequirementsSchema.index({ isActive: 1 });
 TierRequirementsSchema.index({ createdAt: -1 });
 
@@ -189,22 +181,22 @@ TierRequirementsSchema.pre('save', function (next) {
 });
 
 // Static method to get active tier configuration
-TierRequirementsSchema.statics.getActiveTierConfig = async function (tier = null) {
+TierRequirementsSchema.statics.getActiveTierConfig = async function (name = null) {
     const query = { isActive: true };
-    if (tier) {
-        query.tier = tier.toUpperCase();
+    if (name) {
+        query.name = name.toUpperCase();
         return await this.findOne(query);
     }
-    return await this.find(query).sort({ tier: 1 });
+    return await this.find(query).sort({ name: 1 });
 };
 
 // Static method to get all tiers configuration as constants format
 TierRequirementsSchema.statics.getAsConstants = async function () {
-    const tiers = await this.find({ isActive: true }).sort({ tier: 1 });
+    const tiers = await this.find({ isActive: true }).sort({ name: 1 });
     const constants = {};
 
     tiers.forEach(tier => {
-        constants[tier.tier] = {
+        constants[tier.name] = {
             name: tier.name,
             weeklyWithdrawalLimit: tier.benefits.weeklyWithdrawalLimit,
             withdrawalTime: tier.benefits.withdrawalTime,

@@ -21,8 +21,7 @@ export const initializeDefaultTierRequirements = async (adminUser) => {
         // Default configurations based on current constants
         const defaultTiers = [
             {
-                tier: 'NONE',
-                name: 'None',
+                name: 'NONE',
                 benefits: {
                     weeklyWithdrawalLimit: 0,
                     withdrawalTime: 72,
@@ -42,8 +41,7 @@ export const initializeDefaultTierRequirements = async (adminUser) => {
                 createdBy: adminUser._id,
             },
             {
-                tier: 'SILVER',
-                name: 'Silver',
+                name: 'SILVER',
                 benefits: {
                     weeklyWithdrawalLimit: 2300,
                     withdrawalTime: 48,
@@ -68,8 +66,7 @@ export const initializeDefaultTierRequirements = async (adminUser) => {
                 createdBy: adminUser._id,
             },
             {
-                tier: 'GOLD',
-                name: 'Gold',
+                name: 'GOLD',
                 benefits: {
                     weeklyWithdrawalLimit: 3350,
                     withdrawalTime: 24,
@@ -97,7 +94,6 @@ export const initializeDefaultTierRequirements = async (adminUser) => {
                 createdBy: adminUser._id,
             },
             {
-                tier: 'VIP',
                 name: 'VIP',
                 benefits: {
                     weeklyWithdrawalLimit: 5500,
@@ -159,7 +155,7 @@ export const getTierRequirements = async (query) => {
         const tierRequirements = await TierRequirements.find(filter)
             .populate('createdBy', 'name userName')
             .populate('updatedBy', 'name userName')
-            .sort({ tier: 1 });
+            .sort({ createdAt: -1 });
 
         return {
             status: 200,
@@ -181,10 +177,10 @@ export const getTierRequirements = async (query) => {
 };
 
 // Get specific tier requirements
-export const getTierRequirement = async (tier) => {
+export const getTierRequirement = async (name) => {
     try {
         const tierRequirement = await TierRequirements.findOne({
-            tier: tier.toUpperCase(),
+            name: name.toUpperCase(),
             isActive: true
         })
             .populate('createdBy', 'name userName')
@@ -223,7 +219,6 @@ export const getTierRequirement = async (tier) => {
 export const createTierRequirement = async (body, adminUser) => {
     try {
         const {
-            tier,
             name,
             benefits = {},
             requirements = {},
@@ -231,7 +226,7 @@ export const createTierRequirement = async (body, adminUser) => {
             downgrades = {}
         } = body;
 
-        if (!tier || !name) {
+        if (!name) {
             return {
                 status: 400,
                 entity: {
@@ -243,7 +238,7 @@ export const createTierRequirement = async (body, adminUser) => {
 
         // Check if tier already exists
         const existingTier = await TierRequirements.findOne({
-            tier: tier.toUpperCase()
+            name: name.toUpperCase()
         });
 
         if (existingTier) {
@@ -258,8 +253,7 @@ export const createTierRequirement = async (body, adminUser) => {
 
         // Set default values for nested objects
         const tierData = {
-            tier: tier.toUpperCase(),
-            name,
+            name: name.toUpperCase(),
             benefits: {
                 weeklyWithdrawalLimit: benefits.weeklyWithdrawalLimit || 0,
                 withdrawalTime: benefits.withdrawalTime || 72,
@@ -326,10 +320,10 @@ export const createTierRequirement = async (body, adminUser) => {
 };
 
 // Update tier requirements
-export const updateTierRequirement = async (tier, body, adminUser) => {
+export const updateTierRequirement = async (name, body, adminUser) => {
     try {
         const existingTier = await TierRequirements.findOne({
-            tier: tier.toUpperCase(),
+            name: name.toUpperCase(),
             isActive: true
         });
 
@@ -344,15 +338,11 @@ export const updateTierRequirement = async (tier, body, adminUser) => {
         }
 
         const {
-            name,
             benefits,
             requirements,
             referralCommissions,
             downgrades
         } = body;
-
-        // Update fields if provided
-        if (name) existingTier.name = name;
 
         if (benefits) {
             existingTier.benefits = {
@@ -417,10 +407,10 @@ export const updateTierRequirement = async (tier, body, adminUser) => {
 };
 
 // Deactivate tier requirements (soft delete)
-export const deactivateTierRequirement = async (tier, adminUser) => {
+export const deactivateTierRequirement = async (name, adminUser) => {
     try {
         const tierRequirement = await TierRequirements.findOne({
-            tier: tier.toUpperCase(),
+            name: name.toUpperCase(),
             isActive: true
         });
 
