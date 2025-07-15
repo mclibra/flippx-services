@@ -181,7 +181,6 @@ export const getTierRequirement = async (name) => {
     try {
         const tierRequirement = await TierRequirements.findOne({
             name: name.toUpperCase(),
-            isActive: true
         })
             .populate('createdBy', 'name userName')
             .populate('updatedBy', 'name userName');
