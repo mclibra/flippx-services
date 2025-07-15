@@ -456,3 +456,45 @@ export const deactivateTierRequirement = async (name, adminUser) => {
         };
     }
 };
+
+// Reactivate tier requirements (soft delete)
+export const reactivateTierRequirement = async (name, adminUser) => {
+    try {
+        const tierRequirement = await TierRequirements.findOne({
+            name: name.toUpperCase(),
+            isActive: false
+        });
+
+        if (!tierRequirement) {
+            return {
+                status: 404,
+                entity: {
+                    success: false,
+                    error: 'Tier requirement configuration not found'
+                }
+            };
+        }
+
+        tierRequirement.isActive = true;
+        tierRequirement.updatedBy = adminUser._id;
+
+        await tierRequirement.save();
+
+        return {
+            status: 200,
+            entity: {
+                success: true,
+                message: 'Tier requirement deactivated successfully'
+            }
+        };
+    } catch (error) {
+        console.error('Deactivate tier requirement error:', error);
+        return {
+            status: 500,
+            entity: {
+                success: false,
+                error: error.message || 'Failed to deactivate tier requirement'
+            }
+        };
+    }
+};

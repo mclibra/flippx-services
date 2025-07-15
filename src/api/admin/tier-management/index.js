@@ -7,6 +7,7 @@ import {
     createTierRequirement,
     updateTierRequirement,
     deactivateTierRequirement,
+    reactivateTierRequirement,
     initializeDefaultTierRequirements,
 } from './controller';
 
@@ -100,13 +101,25 @@ router.put(
 /**
  * DELETE /api/admin/users/requirements/:name
  * Deactivate tier requirements configuration (soft delete)
- * Params: name - SILVER, GOLD, VIP (cannot delete NONE)
+ * Params: name
  */
 router.delete(
     '/requirements/:name',
     xApi(),
     token({ required: true, roles: ['ADMIN'] }),
     async (req, res) => done(res, await deactivateTierRequirement(req.params.name, req.user))
+);
+
+/**
+ * POST /api/admin/users/requirements/:name
+ * Reactivate tier requirements configuration (soft delete)
+ * Params: name
+ */
+router.post(
+    '/requirements/:name',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await reactivateTierRequirement(req.params.name, req.user))
 );
 
 /**
