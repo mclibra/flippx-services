@@ -1,0 +1,125 @@
+import { Router } from 'express';
+import { done } from '../../../services/response/';
+import { xApi, token } from '../../../services/passport';
+import {
+    getTierRequirements,
+    getTierRequirement,
+    createTierRequirement,
+    updateTierRequirement,
+    deactivateTierRequirement,
+    initializeDefaultTierRequirements,
+} from './controller';
+
+const router = new Router();
+
+// ===== TIER REQUIREMENTS MANAGEMENT =====
+
+/**
+ * GET /api/admin/users/requirements
+ * Get all tier requirements configuration
+ * Query Parameters:
+ * - includeInactive: Include deactivated tiers (default: false)
+ */
+router.get(
+    '/requirements',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await getTierRequirements(req.query))
+);
+
+/**
+ * GET /api/admin/users/requirements/:tier
+ * Get specific tier requirements configuration
+ * Params: tier - NONE, SILVER, GOLD, VIP
+ */
+router.get(
+    '/requirements/:tier',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await getTierRequirement(req.params.tier))
+);
+
+/**
+ * POST /api/admin/users/requirements
+ * Create new tier requirements configuration
+ * Body: {
+ *   tier: string (NONE, SILVER, GOLD, VIP),
+ *   name: string,
+ *   benefits: {
+ *     weeklyWithdrawalLimit: number,
+ *     withdrawalTime: number,
+ *     weeklyCashbackPercentage: number,
+ *     monthlyCashbackPercentage: number,
+ *     referralXP: number,
+ *     noWinCashbackPercentage: number,
+ *     noWinCashbackDays: number
+ *   },
+ *   requirements: {
+ *     previousTier: string,
+ *     previousTierDays: number,
+ *     depositAmount30Days: number,
+ *     depositAmount60Days: number,
+ *     depositAmount90Days: number,
+ *     daysPlayedPerWeek: number,
+ *     weeklySpendAmount: number,
+ *     dailySessionMinutes: number,
+ *     daysRequired: number,
+ *     requireIDVerification: boolean,
+ *     dailyLoginRequired: boolean
+ *   },
+ *   referralCommissions: {
+ *     borlette: { perPlay: number, monthlyCap: number },
+ *     roulette: { per100Spins: number, monthlyCap: number },
+ *     dominoes: { per100Wagered: number, monthlyCap: number }
+ *   },
+ *   downgrades: {
+ *     inactivityDaysMin: number,
+ *     inactivityDaysMax: number
+ *   }
+ * }
+ */
+router.post(
+    '/requirements',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await createTierRequirement(req.body, req.user))
+);
+
+/**
+ * PUT /api/admin/users/requirements/:tier
+ * Update tier requirements configuration
+ * Params: tier - NONE, SILVER, GOLD, VIP
+ * Body: Partial tier requirements data (same structure as POST)
+ */
+router.put(
+    '/requirements/:tier',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await updateTierRequirement(req.params.tier, req.body, req.user))
+);
+
+/**
+ * DELETE /api/admin/users/requirements/:tier
+ * Deactivate tier requirements configuration (soft delete)
+ * Params: tier - SILVER, GOLD, VIP (cannot delete NONE)
+ */
+router.delete(
+    '/requirements/:tier',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await deactivateTierRequirement(req.params.tier, req.user))
+);
+
+/**
+ * POST /api/admin/users/requirements/initialize
+ * Initialize default tier requirements (one-time setup)
+ * This will create all default tier configurations if none exist
+ */
+router.post(
+    '/requirements/initialize',
+    xApi(),
+    token({ required: true, roles: ['ADMIN'] }),
+    async (req, res) => done(res, await initializeDefaultTierRequirements(req.user))
+);
+
+export default router;

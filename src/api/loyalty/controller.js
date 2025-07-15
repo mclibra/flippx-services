@@ -4,11 +4,8 @@ import { User } from '../user/model';
 import { Transaction } from '../transaction/model';
 import { makeTransaction } from '../transaction/controller';
 import InfluencerCommissionService from '../../services/influencer/commissionService';
+import TierConfigService from '../../services/tier/tierConfigService';
 import {
-	LOYALTY_TIERS,
-	TIER_DOWNGRADES,
-	REFERRAL_QUALIFICATION_AMOUNT,
-	INACTIVITY_CHECK_DAYS,
 	REFERRAL_MIN_BET_REQUIREMENTS,
 } from './constants';
 
@@ -219,6 +216,11 @@ export const evaluateUserTier = async userId => {
 			throw new Error('User not found');
 		}
 
+		// Get tier configurations from database
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
+		const TIER_DOWNGRADES = await TierConfigService.getTierDowngrades();
+		const INACTIVITY_CHECK_DAYS = TierConfigService.getInactivityCheckDays();
+
 		const now = moment();
 		const daysPlayedPerWeek = loyalty.tierProgress.daysPlayedThisWeek;
 		const weeklySpending = loyalty.tierProgress.weeklySpending || 0;
@@ -272,123 +274,132 @@ export const evaluateUserTier = async userId => {
 		// Check for tier upgrades
 		// SILVER tier evaluation
 		if (loyalty.currentTier === 'NONE') {
-			const silverReqs = LOYALTY_TIERS.SILVER.requirements;
-
-			// Check proper ID verification
-			const isVerified = await checkIDVerification(userId);
-
-			if (
-				isVerified &&
-				loyalty.tierProgress.totalDeposit30Days >= silverReqs.depositAmount30Days &&
-				daysPlayedPerWeek >= silverReqs.daysPlayedPerWeek
-			) {
-				// Mark as eligible for silver
-				if (!loyalty.tierProgress.silverEligibleDate) {
-					loyalty.tierProgress.silverEligibleDate = now.toDate();
-				}
-
-				// Check if they've maintained eligibility for the required days
-				if (loyalty.tierProgress.silverEligibleDate) {
-					const eligibleDays = now.diff(
-						moment(loyalty.tierProgress.silverEligibleDate),
-						'days'
-					);
-					if (eligibleDays >= silverReqs.daysRequired) {
-						loyalty.currentTier = 'SILVER';
-						loyalty.tierProgress.silverStartDate = now.toDate();
-					}
-				}
+			const silverReqs = LOYALTY_TIERS.SILVER?.requirements;
+			if (!silverReqs) {
+				console.warn('SILVER tier requirements not found in database');
 			} else {
-				// Reset eligibility if requirements not met
-				loyalty.tierProgress.silverEligibleDate = null;
+				// Check proper ID verification
+				const isVerified = await checkIDVerification(userId);
+
+				if (
+					isVerified &&
+					loyalty.tierProgress.totalDeposit30Days >= silverReqs.depositAmount30Days &&
+					daysPlayedPerWeek >= silverReqs.daysPlayedPerWeek
+				) {
+					// Mark as eligible for silver
+					if (!loyalty.tierProgress.silverEligibleDate) {
+						loyalty.tierProgress.silverEligibleDate = now.toDate();
+					}
+
+					// Check if they've maintained eligibility for the required days
+					if (loyalty.tierProgress.silverEligibleDate) {
+						const eligibleDays = now.diff(
+							moment(loyalty.tierProgress.silverEligibleDate),
+							'days'
+						);
+						if (eligibleDays >= silverReqs.daysRequired) {
+							loyalty.currentTier = 'SILVER';
+							loyalty.tierProgress.silverStartDate = now.toDate();
+						}
+					}
+				} else {
+					// Reset eligibility if requirements not met
+					loyalty.tierProgress.silverEligibleDate = null;
+				}
 			}
 		}
 
 		// GOLD tier evaluation
 		if (loyalty.currentTier === 'SILVER') {
-			const goldReqs = LOYALTY_TIERS.GOLD.requirements;
+			const goldReqs = LOYALTY_TIERS.GOLD?.requirements;
+			if (!goldReqs) {
+				console.warn('GOLD tier requirements not found in database');
+			} else {
+				if (loyalty.tierProgress.silverStartDate) {
+					const daysAsSilver = now.diff(
+						moment(loyalty.tierProgress.silverStartDate),
+						'days'
+					);
 
-			if (loyalty.tierProgress.silverStartDate) {
-				const daysAsSilver = now.diff(
-					moment(loyalty.tierProgress.silverStartDate),
-					'days'
-				);
+					// Check all requirements including new ones
+					const meetsRequirements =
+						daysAsSilver >= goldReqs.previousTierDays &&
+						loyalty.tierProgress.totalDeposit60Days >= goldReqs.depositAmount60Days &&
+						daysPlayedPerWeek >= goldReqs.daysPlayedPerWeek &&
+						weeklySpending >= goldReqs.weeklySpendAmount &&
+						dailySessionMinutes >= goldReqs.dailySessionMinutes;
 
-				// Check all requirements including new ones
-				const meetsRequirements =
-					daysAsSilver >= goldReqs.previousTierDays &&
-					loyalty.tierProgress.totalDeposit60Days >= goldReqs.depositAmount60Days &&
-					daysPlayedPerWeek >= goldReqs.daysPlayedPerWeek &&
-					weeklySpending >= goldReqs.weeklySpendAmount &&
-					dailySessionMinutes >= goldReqs.dailySessionMinutes;
-
-				if (meetsRequirements) {
-					// Mark as eligible for gold
-					if (!loyalty.tierProgress.goldEligibleDate) {
-						loyalty.tierProgress.goldEligibleDate = now.toDate();
-					}
-
-					// Check if they've maintained eligibility for the required days
-					if (loyalty.tierProgress.goldEligibleDate) {
-						const eligibleDays = now.diff(
-							moment(loyalty.tierProgress.goldEligibleDate),
-							'days'
-						);
-						if (eligibleDays >= goldReqs.daysRequired) {
-							loyalty.currentTier = 'GOLD';
-							loyalty.tierProgress.goldStartDate = now.toDate();
+					if (meetsRequirements) {
+						// Mark as eligible for gold
+						if (!loyalty.tierProgress.goldEligibleDate) {
+							loyalty.tierProgress.goldEligibleDate = now.toDate();
 						}
+
+						// Check if they've maintained eligibility for the required days
+						if (loyalty.tierProgress.goldEligibleDate) {
+							const eligibleDays = now.diff(
+								moment(loyalty.tierProgress.goldEligibleDate),
+								'days'
+							);
+							if (eligibleDays >= goldReqs.daysRequired) {
+								loyalty.currentTier = 'GOLD';
+								loyalty.tierProgress.goldStartDate = now.toDate();
+							}
+						}
+					} else {
+						// Reset eligibility if requirements not met
+						loyalty.tierProgress.goldEligibleDate = null;
 					}
-				} else {
-					// Reset eligibility if requirements not met
-					loyalty.tierProgress.goldEligibleDate = null;
 				}
 			}
 		}
 
 		// VIP tier evaluation
 		if (loyalty.currentTier === 'GOLD') {
-			const vipReqs = LOYALTY_TIERS.VIP.requirements;
+			const vipReqs = LOYALTY_TIERS.VIP?.requirements;
+			if (!vipReqs) {
+				console.warn('VIP tier requirements not found in database');
+			} else {
+				if (loyalty.tierProgress.goldStartDate) {
+					const daysAsGold = now.diff(
+						moment(loyalty.tierProgress.goldStartDate),
+						'days'
+					);
 
-			if (loyalty.tierProgress.goldStartDate) {
-				const daysAsGold = now.diff(
-					moment(loyalty.tierProgress.goldStartDate),
-					'days'
-				);
+					// Check daily login requirement
+					const hasDailyLogin = user.sessionTracking &&
+						user.sessionTracking.dailyLoginStreak >= 7; // At least 7 days consecutive
 
-				// Check daily login requirement
-				const hasDailyLogin = user.sessionTracking &&
-					user.sessionTracking.dailyLoginStreak >= 7; // At least 7 days consecutive
+					// Check all requirements including new ones
+					const meetsRequirements =
+						daysAsGold >= vipReqs.previousTierDays &&
+						loyalty.tierProgress.totalDeposit90Days >= vipReqs.depositAmount90Days &&
+						daysPlayedPerWeek >= vipReqs.daysPlayedPerWeek &&
+						weeklySpending >= vipReqs.weeklySpendAmount &&
+						dailySessionMinutes >= vipReqs.dailySessionMinutes &&
+						hasDailyLogin;
 
-				// Check all requirements including new ones
-				const meetsRequirements =
-					daysAsGold >= vipReqs.previousTierDays &&
-					loyalty.tierProgress.totalDeposit90Days >= vipReqs.depositAmount90Days &&
-					daysPlayedPerWeek >= vipReqs.daysPlayedPerWeek &&
-					weeklySpending >= vipReqs.weeklySpendAmount &&
-					dailySessionMinutes >= vipReqs.dailySessionMinutes &&
-					hasDailyLogin;
-
-				if (meetsRequirements) {
-					// Mark as eligible for VIP
-					if (!loyalty.tierProgress.vipEligibleDate) {
-						loyalty.tierProgress.vipEligibleDate = now.toDate();
-					}
-
-					// Check if they've maintained eligibility for the required days
-					if (loyalty.tierProgress.vipEligibleDate) {
-						const eligibleDays = now.diff(
-							moment(loyalty.tierProgress.vipEligibleDate),
-							'days'
-						);
-						if (eligibleDays >= vipReqs.daysRequired) {
-							loyalty.currentTier = 'VIP';
-							loyalty.tierProgress.vipStartDate = now.toDate();
+					if (meetsRequirements) {
+						// Mark as eligible for VIP
+						if (!loyalty.tierProgress.vipEligibleDate) {
+							loyalty.tierProgress.vipEligibleDate = now.toDate();
 						}
+
+						// Check if they've maintained eligibility for the required days
+						if (loyalty.tierProgress.vipEligibleDate) {
+							const eligibleDays = now.diff(
+								moment(loyalty.tierProgress.vipEligibleDate),
+								'days'
+							);
+							if (eligibleDays >= vipReqs.daysRequired) {
+								loyalty.currentTier = 'VIP';
+								loyalty.tierProgress.vipStartDate = now.toDate();
+							}
+						}
+					} else {
+						// Reset eligibility if requirements not met
+						loyalty.tierProgress.vipEligibleDate = null;
 					}
-				} else {
-					// Reset eligibility if requirements not met
-					loyalty.tierProgress.vipEligibleDate = null;
 				}
 			}
 		}
@@ -407,18 +418,51 @@ export const evaluateUserTier = async userId => {
 	}
 };
 
+export const getLoyaltyProgress = async userId => {
+	try {
+		const loyalty = await LoyaltyProfile.findOne({ user: userId });
+		if (!loyalty) {
+			throw new Error('Loyalty profile not found');
+		}
+
+		const currentTier = loyalty.currentTier;
+
+		// Use TierConfigService to calculate progress
+		const progress = await TierConfigService.calculateTierProgress(currentTier, loyalty.tierProgress);
+
+		return {
+			currentTier,
+			totalXP: loyalty.totalXP,
+			tierProgress: loyalty.tierProgress,
+			progress
+		};
+	} catch (error) {
+		console.error('Error getting loyalty progress:', error);
+		throw error;
+	}
+};
+
 // Process weekly cashback for GOLD tier users only
 export const processWeeklyCashback = async () => {
 	try {
+		// Get tier configurations
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
+
 		// Find only GOLD tier users for weekly cashback
 		const eligibleLoyalties = await LoyaltyProfile.find({
-			currentTier: 'GOLD', // Only GOLD gets weekly cashback
+			currentTier: 'GOLD', // Only GOLD gets weekly cashback according to current config
 		}).populate('user');
 
 		const results = [];
 
 		for (const loyalty of eligibleLoyalties) {
 			try {
+				// Get tier configuration
+				const goldConfig = LOYALTY_TIERS.GOLD;
+				if (!goldConfig || !goldConfig.weeklyCashbackPercentage) {
+					continue; // Skip if no weekly cashback configured
+				}
+
 				// Get user's loss/win data for the week
 				const endDate = moment().endOf('week');
 				const startDate = moment().startOf('week');
@@ -455,94 +499,52 @@ export const processWeeklyCashback = async () => {
 				let totalWon = 0;
 
 				for (const result of transactionResults) {
-					if (
-						GAME_TRANSACTION_IDENTIFIERS.includes(result._id.type)
-					) {
+					if (GAME_TRANSACTION_IDENTIFIERS.includes(result._id.type)) {
 						totalSpent += result.total;
-					} else if (
-						WINNING_TRANSACTION_IDENTIFIERS.includes(result._id.type)
-					) {
+					} else if (WINNING_TRANSACTION_IDENTIFIERS.includes(result._id.type)) {
 						totalWon += result.total;
 					}
 				}
 
 				const netLoss = totalSpent - totalWon;
 
-				// Only process cashback for net losses
 				if (netLoss > 0) {
-					const cashbackPercentage = LOYALTY_TIERS[loyalty.currentTier].weeklyCashbackPercentage;
-					const cashbackAmount = netLoss * (cashbackPercentage / 100);
+					const cashbackAmount = netLoss * (goldConfig.weeklyCashbackPercentage / 100);
 
-					// Record cashback history
-					loyalty.cashbackHistory.push({
-						date: new Date(),
-						amount: cashbackAmount,
-						processed: false,
-						type: 'WEEKLY',
-					});
+					if (cashbackAmount >= 1) { // Minimum $1 cashback
+						// Process cashback transaction
+						const transaction = await makeTransaction(
+							loyalty.user._id,
+							cashbackAmount,
+							'WEEKLY_CASHBACK',
+							`Weekly cashback: ${goldConfig.weeklyCashbackPercentage}% of $${netLoss.toFixed(2)} net loss`
+						);
 
-					await loyalty.save();
-
-					// Award XP for the cashback
-					await awardXP(
-						loyalty.user._id.toString(),
-						cashbackAmount,
-						'CASHBACK',
-						`Weekly cashback (${cashbackPercentage}%) for ${startDate.format('MMM D')} - ${endDate.format('MMM D')}`,
-						{
-							weekStart: startDate.toISOString(),
-							weekEnd: endDate.toISOString(),
-							type: 'WEEKLY',
+						if (transaction.success) {
+							results.push({
+								userId: loyalty.user._id,
+								netLoss,
+								cashbackAmount,
+								transactionId: transaction.transaction.id
+							});
 						}
-					);
-
-					// Mark cashback as processed
-					const lastIndex = loyalty.cashbackHistory.length - 1;
-					loyalty.cashbackHistory[lastIndex].processed = true;
-					await loyalty.save();
-
-					results.push({
-						userId: loyalty.user._id.toString(),
-						tier: loyalty.currentTier,
-						netLoss,
-						cashbackAmount,
-						success: true,
-					});
-				} else {
-					results.push({
-						userId: loyalty.user._id.toString(),
-						tier: loyalty.currentTier,
-						netLoss: 0,
-						cashbackAmount: 0,
-						success: true,
-						message: 'No losses to process cashback for',
-					});
+					}
 				}
 			} catch (error) {
 				console.error(`Error processing weekly cashback for user ${loyalty.user._id}:`, error);
-				results.push({
-					userId: loyalty.user._id.toString(),
-					success: false,
-					error: error.message,
-				});
 			}
 		}
 
 		return {
-			status: 200,
-			entity: {
-				success: true,
-				results,
-			},
+			success: true,
+			processedCount: results.length,
+			results
 		};
 	} catch (error) {
 		console.error('Error processing weekly cashback:', error);
 		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to process weekly cashback',
-			},
+			success: false,
+			error: error.message
 		};
 	}
 };
@@ -550,6 +552,8 @@ export const processWeeklyCashback = async () => {
 // Process monthly cashback for VIP tier users only
 export const processMonthlyVIPCashback = async () => {
 	try {
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
+
 		// Find only VIP tier users for monthly cashback
 		const eligibleLoyalties = await LoyaltyProfile.find({
 			currentTier: 'VIP', // Only VIP gets monthly cashback
@@ -777,6 +781,7 @@ export const checkWeeklyWithdrawalLimit = async userId => {
 			loyalty = await initializeLoyalty(userId);
 		}
 
+
 		// Check if reset date is in the past
 		if (
 			!loyalty.weeklyWithdrawalReset ||
@@ -787,6 +792,7 @@ export const checkWeeklyWithdrawalLimit = async userId => {
 			loyalty.weeklyWithdrawalReset = moment().endOf('week').toDate();
 			await loyalty.save();
 		}
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
 		const tierLimit = LOYALTY_TIERS[loyalty.currentTier].weeklyWithdrawalLimit;
 		const remaining = Math.max(0, tierLimit - loyalty.weeklyWithdrawalUsed);
@@ -820,6 +826,8 @@ export const getWithdrawalTime = async userId => {
 		if (!loyalty) {
 			loyalty = await initializeLoyalty(userId);
 		}
+
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
 		const withdrawalTime = LOYALTY_TIERS[loyalty.currentTier].withdrawalTime;
 
@@ -923,47 +931,47 @@ export const recordWinActivity = async userId => {
 	}
 };
 
-// NEW: Check no-win cashback eligibility
+// Check no-win cashback eligibility
 export const checkNoWinCashbackEligibility = async userId => {
 	try {
-		let loyalty = await LoyaltyProfile.findOne({ user: userId });
+		const loyalty = await LoyaltyProfile.findOne({ user: userId });
 		if (!loyalty) {
-			return { eligible: false };
+			return;
 		}
 
-		// Only Gold and VIP tiers get no-win cashback
-		if (loyalty.currentTier !== 'GOLD' && loyalty.currentTier !== 'VIP') {
-			return { eligible: false };
+		// Get tier configuration
+		const tierConfig = await TierConfigService.getTierConfig(loyalty.currentTier);
+		if (!tierConfig || !tierConfig.noWinCashbackPercentage || !tierConfig.noWinCashbackDays) {
+			loyalty.tierProgress.eligibleForNoWinCashback = false;
+			await loyalty.save();
+			return;
 		}
 
-		const tierConfig = LOYALTY_TIERS[loyalty.currentTier];
-		const lastWin = loyalty.tierProgress.lastWinDate;
+		const now = moment();
+		let daysSinceLastWin = 0;
 
-		if (!lastWin) {
-			// Never won - check days since first play
+		if (!loyalty.tierProgress.lastWinDate) {
+			// Never won - count from first play
 			if (loyalty.tierProgress.lastPlayDate) {
-				const daysSinceFirstPlay = moment().diff(moment(loyalty.tierProgress.lastPlayDate), 'days');
-				if (daysSinceFirstPlay >= tierConfig.noWinCashbackDays) {
-					loyalty.tierProgress.eligibleForNoWinCashback = true;
-					loyalty.tierProgress.consecutiveDaysNoWin = daysSinceFirstPlay;
-					await loyalty.save();
-					return { eligible: true, daysNoWin: daysSinceFirstPlay };
-				}
+				daysSinceLastWin = now.diff(moment(loyalty.tierProgress.lastPlayDate), 'days');
 			}
 		} else {
-			const daysSinceWin = moment().diff(moment(lastWin), 'days');
-			if (daysSinceWin >= tierConfig.noWinCashbackDays) {
-				loyalty.tierProgress.eligibleForNoWinCashback = true;
-				loyalty.tierProgress.consecutiveDaysNoWin = daysSinceWin;
-				await loyalty.save();
-				return { eligible: true, daysNoWin: daysSinceWin };
-			}
+			// Has won before - count from last win
+			daysSinceLastWin = now.diff(moment(loyalty.tierProgress.lastWinDate), 'days');
 		}
 
-		return { eligible: false };
+		loyalty.tierProgress.consecutiveDaysNoWin = daysSinceLastWin;
+
+		// Check eligibility based on tier configuration
+		if (daysSinceLastWin >= tierConfig.noWinCashbackDays) {
+			loyalty.tierProgress.eligibleForNoWinCashback = true;
+		} else {
+			loyalty.tierProgress.eligibleForNoWinCashback = false;
+		}
+
+		await loyalty.save();
 	} catch (error) {
 		console.error('Error checking no-win cashback eligibility:', error);
-		throw error;
 	}
 };
 
@@ -1011,6 +1019,7 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 		if (referrerLoyalty.currentTier !== 'GOLD' && referrerLoyalty.currentTier !== 'VIP') {
 			return { success: false, message: 'Referrer tier does not earn commissions' };
 		}
+		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
 		const tierConfig = LOYALTY_TIERS[referrerLoyalty.currentTier];
 		const commissionConfig = tierConfig.referralCommissions[gameType.toLowerCase()];
@@ -1133,9 +1142,11 @@ export const processReferralCommission = async (refereeId, gameType, playAmount,
 };
 
 // Calculate user's progress to the next tier
-export const calculateTierProgress = loyalty => {
+export const calculateTierProgress = async (loyalty) => {
 	const currentTier = loyalty.currentTier;
 	let progress = {};
+
+	const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
 	if (currentTier === 'NONE') {
 		const silverReqs = LOYALTY_TIERS.SILVER.requirements;

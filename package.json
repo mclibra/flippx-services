@@ -5,6 +5,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "node app.js",
+		"tier:migrate": "node src/services/migrations migrate",
 		"start": "./node_modules/pm2/bin/pm2-runtime app.js",
 		"poststart": "node ./node_modules/pm2/bin/pm2 logs",
 		"eslint": "eslint ."

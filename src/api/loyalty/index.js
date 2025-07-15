@@ -4,6 +4,7 @@ import { token, xApi } from '../../services/passport';
 import {
 	getUserLoyalty,
 	getUserXPHistory,
+	getLoyaltyProgress,
 	checkWeeklyWithdrawalLimit,
 	getWithdrawalTime,
 	checkNoWinCashbackEligibility,
@@ -19,6 +20,14 @@ router.get(
 	xApi(),
 	token({ required: true }),
 	async (req, res) => done(res, await getUserLoyalty(req.user._id))
+);
+
+// Get user's loyalty progress
+router.get(
+	'/progress',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await getLoyaltyProgress(req.user._id))
 );
 
 // Get user's XP transaction history

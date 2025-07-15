@@ -14,7 +14,6 @@ import {
 	manualTierUpgrade,
 	cleanupDepositData,
 	getWithdrawalTime,
-	// NEW functions
 	recordDailyLogin,
 	updateSessionTime,
 	recordWinActivity,
@@ -22,6 +21,7 @@ import {
 	processReferralCommission,
 	processNoWinCashback,
 } from './controller';
+import TierConfigService from '../../services/tier/tierConfigService';
 
 // Export all functions wrapped with consistent error handling
 export const LoyaltyService = {
@@ -34,6 +34,187 @@ export const LoyaltyService = {
 			return { success: true, loyalty };
 		} catch (error) {
 			console.error('Error initializing loyalty:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	initializeTierRequirementsFromConstants: async (adminUserId) => {
+		try {
+			await TierConfigService.initializeDefaultTiers(adminUserId);
+			return { success: true, message: 'Tier requirements initialized from constants' };
+		} catch (error) {
+			console.error('Error initializing tier requirements:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get tier requirements from database
+	getTierRequirements: async () => {
+		try {
+			return await TierConfigService.getTierRequirements();
+		} catch (error) {
+			console.error('Error getting tier requirements:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get specific tier configuration
+	getTierConfig: async (tierName) => {
+		try {
+			const config = await TierConfigService.getTierConfig(tierName);
+			if (!config) {
+				return { success: false, error: 'Tier configuration not found' };
+			}
+			return { success: true, config };
+		} catch (error) {
+			console.error('Error getting tier config:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Validate user tier requirements
+	validateTierRequirements: async (tierName, userId) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const validation = await TierConfigService.validateTierRequirements(
+				tierName,
+				loyalty.tierProgress
+			);
+
+			return { success: true, validation };
+		} catch (error) {
+			console.error('Error validating tier requirements:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get tier benefits for a user
+	getUserTierBenefits: async (userId) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const benefits = await TierConfigService.getTierBenefits(loyalty.currentTier);
+			if (!benefits) {
+				return { success: false, error: 'Tier benefits not found' };
+			}
+
+			return { success: true, benefits };
+		} catch (error) {
+			console.error('Error getting user tier benefits:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Clear tier configuration cache
+	clearTierConfigCache: () => {
+		TierConfigService.clearCache();
+		return { success: true, message: 'Tier configuration cache cleared' };
+	},
+
+	calculateReferralCommission: async (referrerUserId, gameType, betAmount, spinsOrPlays = 1) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: referrerUserId });
+			if (!loyalty) {
+				return { success: false, error: 'Referrer loyalty profile not found' };
+			}
+
+			const tierConfig = await TierConfigService.getTierConfig(loyalty.currentTier);
+			if (!tierConfig || !tierConfig.referralCommissions) {
+				return { success: true, commission: 0, message: 'No referral commissions for this tier' };
+			}
+
+			const commissionConfig = tierConfig.referralCommissions[gameType];
+			if (!commissionConfig) {
+				return { success: true, commission: 0, message: 'No commission configured for this game type' };
+			}
+
+			let commission = 0;
+
+			switch (gameType) {
+				case 'borlette':
+					commission = commissionConfig.perPlay * spinsOrPlays;
+					break;
+				case 'roulette':
+					commission = commissionConfig.per100Spins * (spinsOrPlays / 100);
+					break;
+				case 'dominoes':
+					commission = commissionConfig.per100Wagered * (betAmount / 100);
+					break;
+				default:
+					return { success: false, error: 'Invalid game type' };
+			}
+
+			// Check monthly cap
+			const monthlyEarned = loyalty.referralCommissions?.monthly?.[gameType]?.earned || 0;
+			const monthlyCap = commissionConfig.monthlyCap;
+
+			if (monthlyEarned + commission > monthlyCap) {
+				commission = Math.max(0, monthlyCap - monthlyEarned);
+			}
+
+			return {
+				success: true,
+				commission,
+				monthlyEarned,
+				monthlyCap,
+				tierConfig: {
+					tier: loyalty.currentTier,
+					gameType,
+					rate: commissionConfig
+				}
+			};
+		} catch (error) {
+			console.error('Error calculating referral commission:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// NEW: Get tier upgrade requirements for a user
+	getTierUpgradeRequirements: async (userId) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const currentTier = loyalty.currentTier;
+			const nextTier = TierConfigService.getNextTier(currentTier);
+
+			if (!nextTier) {
+				return {
+					success: true,
+					message: "User is already at the highest tier",
+					currentTier,
+					nextTier: null
+				};
+			}
+
+			const nextTierConfig = await TierConfigService.getTierConfig(nextTier);
+			if (!nextTierConfig) {
+				return { success: false, error: 'Next tier configuration not found' };
+			}
+
+			const progress = await TierConfigService.calculateTierProgress(currentTier, loyalty.tierProgress);
+			const validation = await TierConfigService.validateTierRequirements(nextTier, loyalty.tierProgress);
+
+			return {
+				success: true,
+				currentTier,
+				nextTier,
+				requirements: nextTierConfig.requirements,
+				progress,
+				validation,
+				tierProgress: loyalty.tierProgress
+			};
+		} catch (error) {
+			console.error('Error getting tier upgrade requirements:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -304,16 +485,57 @@ export const LoyaltyService = {
 	},
 
 	// Get withdrawal processing time
-	getUserWithdrawalTime: async (userId) => {
+	getWithdrawalTime: async (userId) => {
 		try {
-			const result = await getWithdrawalTime(userId);
-			if (result.status === 200) {
-				return result.entity;
-			} else {
-				return { success: false, error: result.entity?.error || 'Failed to get withdrawal time' };
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
 			}
+
+			const tierConfig = await TierConfigService.getTierConfig(loyalty.currentTier);
+			if (!tierConfig) {
+				return { success: false, error: 'Tier configuration not found' };
+			}
+
+			return {
+				success: true,
+				withdrawalTime: tierConfig.withdrawalTime,
+				tier: loyalty.currentTier
+			};
 		} catch (error) {
 			console.error('Error getting withdrawal time:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	checkWithdrawalLimit: async (userId, amount) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const tierConfig = await TierConfigService.getTierConfig(loyalty.currentTier);
+			if (!tierConfig) {
+				return { success: false, error: 'Tier configuration not found' };
+			}
+
+			const weeklyLimit = tierConfig.weeklyWithdrawalLimit;
+			const weeklyUsed = loyalty.weeklyWithdrawalUsed || 0;
+			const availableLimit = weeklyLimit - weeklyUsed;
+
+			const canWithdraw = amount <= availableLimit;
+
+			return {
+				success: true,
+				canWithdraw,
+				weeklyLimit,
+				weeklyUsed,
+				availableLimit,
+				requestedAmount: amount
+			};
+		} catch (error) {
+			console.error('Error checking withdrawal limit:', error);
 			return { success: false, error: error.message };
 		}
 	},

@@ -1,12 +1,13 @@
 import cron from 'node-cron';
+import moment from 'moment';
 import {
 	processNoWinCashback,
 	cleanupDepositData,
 	evaluateUserTier,
 } from '../../api/loyalty/controller';
-import { LoyaltyProfile, ReferralCommission } from '../../api/loyalty/model';
+import { LoyaltyProfile } from '../../api/loyalty/model';
 import { User } from '../../api/user/model';
-import moment from 'moment';
+import TierConfigService from '../tier/tierConfigService';
 
 console.log('Initializing loyalty program scheduler...');
 
@@ -75,36 +76,49 @@ cron.schedule('0 0 * * 1', async () => {
 	}
 });
 
-// Check daily login streaks and session requirements - Run daily at 2 AM
+// Check daily login requirements for VIP users - Run daily at 2 AM
 cron.schedule('0 2 * * *', async () => {
-	console.log('Checking daily login requirements...');
+	console.log('Checking VIP daily login requirements...');
 	try {
-		const yesterday = moment().subtract(1, 'day').startOf('day');
-		const yesterdayEnd = moment().subtract(1, 'day').endOf('day');
+		// Get VIP tier configuration from database
+		const vipConfig = await TierConfigService.getTierConfig('VIP');
+		if (!vipConfig || !vipConfig.requirements.dailyLoginRequired) {
+			console.log('VIP daily login requirement not configured, skipping check');
+			return;
+		}
 
-		// Find VIP users who need daily login
-		const vipUsers = await LoyaltyProfile.find({ currentTier: 'VIP' }).populate('user');
+		const vipUsers = await User.find({}).populate({
+			path: 'loyaltyProfile',
+			match: { currentTier: 'VIP' }
+		});
 
-		for (const loyalty of vipUsers) {
-			const user = await User.findById(loyalty.user);
-			if (!user) continue;
+		const filteredVipUsers = vipUsers.filter(user => user.loyaltyProfile);
 
+		for (const user of filteredVipUsers) {
 			// Check if user logged in yesterday
-			const loggedInYesterday = user.sessionTracking &&
-				user.sessionTracking.lastLoginDate &&
-				moment(user.sessionTracking.lastLoginDate).isBetween(yesterday, yesterdayEnd);
+			const yesterday = moment().subtract(1, 'day').startOf('day');
+			const dayBeforeYesterday = moment().subtract(2, 'days').startOf('day');
 
-			// Check if user met session time requirement
-			const metSessionRequirement = user.sessionTracking &&
-				user.sessionTracking.lastLoginDate &&
-				moment(user.sessionTracking.lastLoginDate).isSame(yesterday, 'day') &&
-				(user.sessionTracking.totalSessionTimeToday >= 300); // 5 minutes = 300 seconds
+			const loggedInYesterday = user.sessionTracking?.lastLoginDate &&
+				moment(user.sessionTracking.lastLoginDate).isBetween(yesterday, moment().startOf('day'));
+
+			// Check session time requirement
+			const requiredSessionMinutes = vipConfig.requirements.dailySessionMinutes || 5;
+			const metSessionRequirement = user.sessionTracking?.totalSessionTimeToday &&
+				(user.sessionTracking.totalSessionTimeToday >= requiredSessionMinutes * 60); // Convert to seconds
 
 			if (!loggedInYesterday || !metSessionRequirement) {
 				console.log(`VIP user ${user._id} failed daily login/session requirement`);
-				// Could implement tier downgrade logic here if needed
+				// Log the failure for potential tier review
+				console.log(`  - Logged in yesterday: ${loggedInYesterday}`);
+				console.log(`  - Met session requirement: ${metSessionRequirement}`);
+
+				// Could implement automatic tier downgrade logic here if business rules require it
+				// For now, just logging for review
 			}
 		}
+
+		console.log(`Checked daily login requirements for ${filteredVipUsers.length} VIP users`);
 	} catch (error) {
 		console.error('Error checking daily login requirements:', error);
 	}
@@ -114,11 +128,28 @@ cron.schedule('0 2 * * *', async () => {
 cron.schedule('0 3 * * *', async () => {
 	console.log('Updating no-win tracking...');
 	try {
+		// Get tier configurations from database
+		const tierConfigs = await TierConfigService.getTierRequirements();
+
+		// Find users in tiers that have no-win cashback
+		const eligibleTiers = Object.keys(tierConfigs).filter(tier =>
+			tierConfigs[tier].noWinCashbackPercentage > 0 &&
+			tierConfigs[tier].noWinCashbackDays > 0
+		);
+
+		if (eligibleTiers.length === 0) {
+			console.log('No tiers have no-win cashback configured, skipping update');
+			return;
+		}
+
 		const loyalties = await LoyaltyProfile.find({
-			currentTier: { $in: ['GOLD', 'VIP'] },
+			currentTier: { $in: eligibleTiers },
 		});
 
 		for (const loyalty of loyalties) {
+			const tierConfig = tierConfigs[loyalty.currentTier];
+			if (!tierConfig) continue;
+
 			if (!loyalty.tierProgress.lastWinDate) {
 				// Never won - count from first play
 				if (loyalty.tierProgress.lastPlayDate) {
@@ -128,8 +159,7 @@ cron.schedule('0 3 * * *', async () => {
 					);
 					loyalty.tierProgress.consecutiveDaysNoWin = daysSinceFirstPlay;
 
-					// Check eligibility
-					const tierConfig = require('../../api/loyalty/constants').LOYALTY_TIERS[loyalty.currentTier];
+					// Check eligibility using database config
 					if (daysSinceFirstPlay >= tierConfig.noWinCashbackDays) {
 						loyalty.tierProgress.eligibleForNoWinCashback = true;
 					}
@@ -142,8 +172,7 @@ cron.schedule('0 3 * * *', async () => {
 				);
 				loyalty.tierProgress.consecutiveDaysNoWin = daysSinceLastWin;
 
-				// Check eligibility
-				const tierConfig = require('../../api/loyalty/constants').LOYALTY_TIERS[loyalty.currentTier];
+				// Check eligibility using database config
 				if (daysSinceLastWin >= tierConfig.noWinCashbackDays) {
 					loyalty.tierProgress.eligibleForNoWinCashback = true;
 				}
@@ -152,7 +181,7 @@ cron.schedule('0 3 * * *', async () => {
 			await loyalty.save();
 		}
 
-		console.log(`Updated no-win tracking for ${loyalties.length} users`);
+		console.log(`Updated no-win tracking for ${loyalties.length} users across tiers: ${eligibleTiers.join(', ')}`);
 	} catch (error) {
 		console.error('Error updating no-win tracking:', error);
 	}
@@ -173,12 +202,17 @@ cron.schedule('0 4 * * *', async () => {
 cron.schedule('0 5 * * *', async () => {
 	console.log('Running tier evaluation job...');
 	try {
+		// Clear tier configuration cache before daily evaluation
+		TierConfigService.clearCache();
+		console.log('Tier configuration cache cleared for fresh evaluation');
+
 		const users = await LoyaltyProfile.find({});
 		console.log(`Evaluating tiers for ${users.length} users`);
 
 		let upgrades = 0;
 		let downgrades = 0;
 		let errors = 0;
+		let unchanged = 0;
 
 		for (const loyalty of users) {
 			try {
@@ -199,6 +233,8 @@ cron.schedule('0 5 * * *', async () => {
 						downgrades++;
 						console.log(`User ${loyalty.user} downgraded from ${oldTier} to ${updatedLoyalty.currentTier}`);
 					}
+				} else {
+					unchanged++;
 				}
 			} catch (userError) {
 				errors++;
@@ -207,11 +243,87 @@ cron.schedule('0 5 * * *', async () => {
 		}
 
 		console.log(
-			`Tier evaluation completed. Upgrades: ${upgrades}, Downgrades: ${downgrades}, Errors: ${errors}`
+			`Tier evaluation completed. Upgrades: ${upgrades}, Downgrades: ${downgrades}, Unchanged: ${unchanged}, Errors: ${errors}`
 		);
+
+		// Log summary statistics
+		if (upgrades > 0 || downgrades > 0) {
+			console.log(`📊 Tier changes summary:`);
+			console.log(`   ⬆️  Upgrades: ${upgrades}`);
+			console.log(`   ⬇️  Downgrades: ${downgrades}`);
+			console.log(`   ➡️  Unchanged: ${unchanged}`);
+			if (errors > 0) {
+				console.log(`   ❌ Errors: ${errors}`);
+			}
+		}
 	} catch (error) {
 		console.error('Error in tier evaluation job:', error);
 	}
 });
 
-console.log('Loyalty program scheduler initialized with all tasks');
+// NEW: Refresh tier configuration cache - Run every 6 hours
+cron.schedule('0 */6 * * *', async () => {
+	console.log('Refreshing tier configuration cache...');
+	try {
+		TierConfigService.clearCache();
+		// Pre-load the cache
+		await TierConfigService.getTierRequirements();
+		console.log('Tier configuration cache refreshed successfully');
+	} catch (error) {
+		console.error('Error refreshing tier configuration cache:', error);
+	}
+});
+
+// NEW: Validate tier configuration integrity - Run daily at 1 AM
+cron.schedule('0 1 * * *', async () => {
+	console.log('Validating tier configuration integrity...');
+	try {
+		const tierConfigs = await TierConfigService.getTierRequirements();
+		const issues = [];
+
+		// Check if all required tiers exist
+		const requiredTiers = ['NONE', 'SILVER', 'GOLD', 'VIP'];
+		for (const tier of requiredTiers) {
+			if (!tierConfigs[tier]) {
+				issues.push(`Missing tier configuration: ${tier}`);
+			}
+		}
+
+		// Check for logical consistency in tier progression
+		const tierOrder = ['NONE', 'SILVER', 'GOLD', 'VIP'];
+		for (let i = 1; i < tierOrder.length; i++) {
+			const currentTier = tierConfigs[tierOrder[i]];
+			const previousTier = tierConfigs[tierOrder[i - 1]];
+
+			if (currentTier && previousTier) {
+				// Check if withdrawal limits are progressive
+				if (currentTier.weeklyWithdrawalLimit < previousTier.weeklyWithdrawalLimit) {
+					issues.push(`${tierOrder[i]} withdrawal limit (${currentTier.weeklyWithdrawalLimit}) is less than ${tierOrder[i - 1]} (${previousTier.weeklyWithdrawalLimit})`);
+				}
+
+				// Check if withdrawal times are decreasing (faster for higher tiers)
+				if (currentTier.withdrawalTime > previousTier.withdrawalTime) {
+					issues.push(`${tierOrder[i]} withdrawal time (${currentTier.withdrawalTime}h) is slower than ${tierOrder[i - 1]} (${previousTier.withdrawalTime}h)`);
+				}
+			}
+		}
+
+		if (issues.length > 0) {
+			console.warn('⚠️  Tier configuration issues detected:');
+			issues.forEach(issue => console.warn(`   - ${issue}`));
+		} else {
+			console.log('✅ Tier configuration integrity check passed');
+		}
+	} catch (error) {
+		console.error('Error validating tier configuration integrity:', error);
+	}
+});
+
+console.log('Loyalty program scheduler initialized with database-driven tier configurations');
+console.log('Scheduled tasks:');
+console.log('  - 01:00: Tier configuration integrity check');
+console.log('  - 02:00: VIP daily login requirements check');
+console.log('  - 03:00: No-win tracking update');
+console.log('  - 04:00: Deposit data cleanup');
+console.log('  - 05:00: Daily tier evaluation');
+console.log('  - Every 6 hours: Tier configuration cache refresh');
