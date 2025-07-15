@@ -425,7 +425,7 @@ export const deactivateTierRequirement = async (name, adminUser) => {
         }
 
         // Prevent deactivating NONE tier
-        if (tier.toUpperCase() === 'NONE') {
+        if (name.toUpperCase() === 'NONE') {
             return {
                 status: 400,
                 entity: {
