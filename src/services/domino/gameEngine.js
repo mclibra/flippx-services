@@ -473,7 +473,7 @@ export class DominoGameEngine {
 
     // Calculate final scores
     static calculateFinalScores(players, roundWinner, winRule = 'STANDARD') {
-        if (winRule === 'POINT_BASED') {
+        if (winRule === 'POINTS') {
             return this.calculateRoundScores(players, roundWinner);
         } else {
             return players.map(player => ({
@@ -505,7 +505,7 @@ export class DominoGameEngine {
         // Check if any player has no tiles left
         const emptyHandPlayer = players.find(p => p.hand.length === 0);
         if (emptyHandPlayer) {
-            if (winRule === 'POINT_BASED') {
+            if (winRule === 'POINTS') {
                 // For point-based, calculate points for the round winner
                 const roundScores = this.calculateRoundScores(players, emptyHandPlayer.position);
                 const roundWinner = emptyHandPlayer.position;

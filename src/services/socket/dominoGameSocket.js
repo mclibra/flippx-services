@@ -367,8 +367,8 @@ const joinOrCreateRoomSocket = async (socket, options) => {
         }
 
         // Validate win rule
-        if (!['STANDARD', 'POINT_BASED'].includes(winRule)) {
-            return { success: false, error: 'Win rule must be STANDARD or POINT_BASED' };
+        if (!['STANDARD', 'POINTS'].includes(winRule)) {
+            return { success: false, error: 'Win rule must be STANDARD or POINTS' };
         }
 
         // Validate room type

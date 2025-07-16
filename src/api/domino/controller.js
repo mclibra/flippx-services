@@ -761,7 +761,7 @@ export const handleGameCompletion = async (game) => {
 
         if (winRule === 'STANDARD') {
             await handleStandardGameCompletion(game, room);
-        } else if (winRule === 'POINT_BASED') {
+        } else if (winRule === 'POINTS') {
             await handlePointBasedGameCompletion(game, room, targetPoints, newGameDelay);
         }
 
@@ -826,7 +826,7 @@ const handleStandardGameCompletion = async (game, room) => {
     }
 };
 
-// Handle POINT_BASED game completion
+// Handle POINTS game completion
 const handlePointBasedGameCompletion = async (game, room, targetPoints, newGameDelay) => {
     try {
         // Get updated room with current player scores
@@ -846,11 +846,11 @@ const handlePointBasedGameCompletion = async (game, room, targetPoints, newGameD
         }
 
     } catch (error) {
-        console.error(`[GAME-COMPLETION] Error in POINT_BASED game completion:`, error);
+        console.error(`[GAME-COMPLETION] Error in POINTS game completion:`, error);
     }
 };
 
-// Complete the entire POINT_BASED challenge
+// Complete the entire POINTS challenge
 const completePointBasedChallenge = async (game, room, winnerPlayer) => {
     try {
         // Mark room as completed
@@ -876,17 +876,17 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
                 playerName: p.playerName,
                 totalScore: p.totalScore || 0
             })),
-            gameType: 'POINT_BASED'
+            gameType: 'POINTS'
         });
 
-        console.log(`[GAME-COMPLETION] POINT_BASED challenge completed! Winner: ${winnerPlayer.playerName} with ${winnerPlayer.totalScore} points`);
+        console.log(`[GAME-COMPLETION] POINTS challenge completed! Winner: ${winnerPlayer.playerName} with ${winnerPlayer.totalScore} points`);
 
     } catch (error) {
-        console.error(`[GAME-COMPLETION] Error completing POINT_BASED challenge:`, error);
+        console.error(`[GAME-COMPLETION] Error completing POINTS challenge:`, error);
     }
 };
 
-// Start countdown for new game in POINT_BASED mode
+// Start countdown for new game in POINTS mode
 const startNewGameCountdown = async (game, room, delaySeconds) => {
     try {
         console.log(`[GAME-COMPLETION] Starting ${delaySeconds}s countdown for new game in room ${room.roomId}`);
@@ -905,7 +905,7 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
             })),
             nextGameCountdown: delaySeconds,
             targetPoints: room.gameSettings.targetPoints,
-            gameType: 'POINT_BASED'
+            gameType: 'POINTS'
         });
 
         // Start countdown with periodic updates
@@ -959,7 +959,7 @@ const startCountdownWithUpdates = async (room, totalSeconds) => {
     }, totalSeconds * 1000);
 };
 
-// Start a new game in the same room (for POINT_BASED challenges)
+// Start a new game in the same room (for POINTS challenges)
 const startNewGameInRoom = async (room) => {
     try {
         // Increment game number for the new round
@@ -1058,7 +1058,7 @@ const createNewDominoGame = async (room, gameNumber) => {
 const distributePrizes = async (game, room, challengeWinner = null) => {
     try {
         // For STANDARD games, use the game winner
-        // For POINT_BASED games, use the challenge winner if provided
+        // For POINTS games, use the challenge winner if provided
         const winner = challengeWinner || room.players.find(p => p.position === game.winner);
 
         if (winner && winner.user && winner.playerType === 'HUMAN') {

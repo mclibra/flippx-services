@@ -46,7 +46,7 @@ const DominoRoomSchema = new Schema(
         }],
         gameSettings: {
             tilesPerPlayer: { type: Number, enum: [7, 9] },
-            winRule: { type: String, enum: ['STANDARD', 'POINT_BASED'], default: 'STANDARD' },
+            winRule: { type: String, enum: ['STANDARD', 'POINTS'], default: 'STANDARD' },
             targetPoints: { type: Number, default: 100 },
         },
         createdBy: { type: String, ref: 'User', required: true },
