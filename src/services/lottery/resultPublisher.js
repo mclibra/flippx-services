@@ -9,15 +9,8 @@ const MEGAMILLION_TICKET_AMOUNT = 2;
 
 export const publishResult = async (lotteryId, results) => {
 	try {
-		const lottery = await Lottery.findById(lotteryId);
-		if (!lottery || lottery.status !== 'SCHEDULED') {
-			throw new Error(
-				'Invalid lottery or lottery not in scheduled state'
-			);
-		}
-
 		const published = await processTicketsAndPublishResults(
-			lottery,
+			lotteryId,
 			results
 		);
 		return {
@@ -67,7 +60,14 @@ const applyTierBasedPayout = async (baseAmount, ticket) => {
 	}
 };
 
-async function processTicketsAndPublishResults(lottery, results) {
+async function processTicketsAndPublishResults(lotteryId, results) {
+	const lottery = await Lottery.findById(lotteryId);
+	if (!lottery || lottery.status !== 'WAITING') {
+		throw new Error(
+			'Invalid lottery or lottery not in scheduled state'
+		);
+	}
+
 	const { _id, type, jackpotAmount } = lottery;
 	let ticketList = [];
 	if (type === 'MEGAMILLION') {
@@ -337,6 +337,7 @@ async function processTicketsAndPublishResults(lottery, results) {
 	);
 
 	// Update lottery status
+	console.log(`Setting lottery status of ${lottery._id} to COMPLETED at ${moment.now()}`);
 	lottery.status = 'COMPLETED';
 	lottery.results = results;
 	lottery.drawTime = moment.now();

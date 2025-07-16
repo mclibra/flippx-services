@@ -11,7 +11,9 @@ cron.schedule('*/5 * * * *', async () => {
 	try {
 		const now = moment();
 		const lotteries = await Lottery.find({
-			status: 'SCHEDULED',
+			status: {
+				$in: ['SCHEDULED', 'ERROR']
+			},
 			scheduledTime: {
 				$lt: now.subtract(5, 'minutes').valueOf(),
 			},
@@ -20,8 +22,12 @@ cron.schedule('*/5 * * * *', async () => {
 		if (lotteries.length > 0) {
 			console.log(`Found ${lotteries.length} lotteries ready to be published`);
 			for (const lottery of lotteries) {
+				console.log(`Setting lottery status of ${lottery._id} to WAITING at ${moment.now()}`);
+				lottery.status = 'WAITING';
+				await lottery.save();
 				await fetchAndPublishResults(lottery);
 			}
+			console.log('[LOTTERY: CRON] Check and publish results completed successfully');
 		}
 	} catch (error) {
 		console.error('Error in publishResults cron job:', error);
@@ -167,7 +173,7 @@ async function fetchAndPublishResults(lottery) {
 			if (!pick4Result?.data?.winningNumbers) {
 				console.error(
 					'Invalid pick4 result data for BORLETTE lottery:',
-					lottery.id
+					lottery._id
 				);
 				return;
 			}
@@ -232,6 +238,8 @@ async function fetchAndPublishResults(lottery) {
 			await processTicketsForLottery(lottery._id, results);
 		}
 	} catch (error) {
+		lottery.status = 'ERROR';
+		await lottery.save();
 		console.error(
 			`Error publishing results for lottery ${lottery.id}:`,
 			error

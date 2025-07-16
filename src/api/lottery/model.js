@@ -1,6 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 
-const status = ['SCHEDULED', 'WAITING', 'COMPLETED', 'CANCELLED'];
+const status = ['SCHEDULED', 'WAITING', 'COMPLETED', 'CANCELLED', 'ERROR'];
 
 const LotterySchema = new Schema(
 	{
@@ -61,6 +61,24 @@ const LotteryRestrictionSchema = new Schema(
 				delete ret._id;
 			},
 		},
+	}
+);
+
+LotterySchema.index(
+	{ 'externalGameIds.pick3': 1 },
+	{
+		unique: true,
+		sparse: true,
+		name: 'unique_pick3_sparse'
+	}
+);
+
+LotterySchema.index(
+	{ 'externalGameIds.pick4': 1 },
+	{
+		unique: true,
+		sparse: true,
+		name: 'unique_pick4_sparse'
 	}
 );
 

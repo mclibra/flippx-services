@@ -30,7 +30,7 @@ export const fetchGameResult = async gameId => {
 		);
 		return response.data;
 	} catch (error) {
-		console.error(`Error fetching game result for ID ${gameId}:`, error);
+		console.error(`Error fetching game result for ID ${gameId}:`);
 		throw new Error(`Failed to fetch game result: ${error.message}`);
 	}
 };
