@@ -21,11 +21,11 @@ export const startDominoGame = async (room) => {
         await room.save();
 
         // Record play activity for all human players using LoyaltyService
-        for (const player of room.players) {
+        for (const player of game.players) {
             if (player.user && player.playerType === 'HUMAN') {
+                const userId = typeof player.user === 'object' ? player.user._id : player.user;
                 try {
                     // Extract user ID string from user object if it's populated
-                    const userId = typeof player.user === 'object' ? player.user._id : player.user;
                     const loyaltyResult = await LoyaltyService.recordUserPlayActivity(userId);
                     if (!loyaltyResult.success) {
                         console.warn(`Failed to record play activity for user ${userId}:`, loyaltyResult.error);
@@ -36,32 +36,26 @@ export const startDominoGame = async (room) => {
                     console.error(`Error recording play activity for user ${player.user}:`, error);
                     // Don't fail the game start if loyalty tracking fails
                 }
+
+                sendDominoGameUpdateToUser(userId, room.roomId, 'game-started', {
+                    gameId: game._id,
+                    board: game.board,
+                    drawPile: game.drawPile,
+                    players: game.players.map(player => ({
+                        position: player.position,
+                        playerType: player.playerType,
+                        playerName: player.playerName,
+                        isConnected: player.isConnected,
+                    })),
+                    ...player,
+                });
             }
         }
 
-        // Broadcast game start
-        broadcastDominoGameUpdateToRoom(room.roomId, 'game-started', {
-            gameId: game._id,
-            roomId: room.roomId,
-            gameNumber: gameNumber,
-            players: game.players.map(player => ({
-                position: player.position,
-                user: player.user,
-                playerType: player.playerType,
-                playerName: player.playerName,
-                isConnected: player.isConnected,
-                tileCount: player.hand.length,
-            })),
-            board: game.board,
-            drawPile: game.drawPile,
-            currentPlayer: game.currentPlayer,
-            targetPoints: room.gameSettings.targetPoints,
-            gameType: room.gameSettings.winRule,
-            message: 'Game has started!',
-        });
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Send turn notification to first player
-        await notifyTurnChange(game.toJSON(), room.roomId);
+        await notifyTurnChange(game, room.roomId);
 
         return game;
     } catch (error) {
@@ -71,33 +65,34 @@ export const startDominoGame = async (room) => {
 };
 
 // Enhanced function to notify players about turn changes
-export const notifyTurnChange = async (game, roomId, previousPlayerIndex) => {
+export const notifyTurnChange = async (game, roomId, previousPlayerPosition) => {
     try {
-        const currentPlayer = game.players[game.currentPlayer];
-        const previousPlayer = game.players[previousPlayerIndex];
+        const previousPlayer = game.players.find(player => player.position == previousPlayerPosition);
+        const currentPlayer = game.players.find(player => player.position == game.currentPlayer);
 
-        if (currentPlayer && currentPlayer.user) {
-            // Notify current player it's their turn
-            sendDominoGameUpdateToUser(currentPlayer.user, roomId, 'your-turn', {
-                gameId: game._id,
-                board: game.board,
-                drawPile: game.drawPile,
-                ...game.players[game.currentPlayer]
-            });
+        for (const player of game.players) {
+            if (player.user && player.playerType === 'HUMAN') {
+                if (player.position == game.currentPlayer) {
+                    sendDominoGameUpdateToUser(player.user, roomId, 'your-turn', {
+                        gameId: game._id,
+                        board: game.board,
+                        drawPile: game.drawPile,
+                        ...player
+                    });
+                } else {
+                    sendDominoGameUpdateToUser(player.user, roomId, 'turn-changed', {
+                        gameId: game._id,
+                        board: game.board,
+                        drawPile: game.drawPile,
+                        currentPlayerPosition: game.currentPlayer,
+                        currentPlayerName: currentPlayer?.playerName,
+                        previousPlayerPosition: previousPlayerPosition,
+                        previousPlayerName: previousPlayer?.playerName,
+                        turnStartTime: game.turnStartTime,
+                    });
+                }
+            }
         }
-
-        // Broadcast turn change to all players in room
-        broadcastDominoGameUpdateToRoom(roomId, 'turn-changed', {
-            gameId: game._id,
-            board: game.board,
-            drawPile: game.drawPile,
-            currentPlayer: game.currentPlayer,
-            currentPlayerName: currentPlayer?.playerName,
-            previousPlayer: previousPlayerIndex,
-            previousPlayerName: previousPlayer?.playerName,
-            turnStartTime: game.turnStartTime,
-        });
-
     } catch (error) {
         console.error('Error notifying turn change:', error);
     }
@@ -197,7 +192,6 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             gameId: game._id,
             players: game.players.map(player => ({
                 position: player.position,
-                user: player.user,
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
@@ -280,7 +274,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
             }
         }
 
-        console.log(`Auto move for ${currentPlayer.playerName} => `, moveResult.move);
+        console.log(`Auto move for ${currentPlayer.playerName} is ${moveResult.move.action} with tile ${moveResult.move.tile} on side ${moveResult.move.side}`);
 
         if (moveResult.success) {
             // Selectively update game state fields without overwriting the room reference
@@ -966,31 +960,36 @@ const startNewGameInRoom = async (room) => {
         const nextGameNumber = await DominoGame.countDocuments({ room: room._id }) + 1;
 
         // Create and start the new game
-        const newGame = await createNewDominoGame(room, nextGameNumber);
+        const game = await createNewDominoGame(room, nextGameNumber);
 
-        // Broadcast new game started
-        broadcastDominoGameUpdateToRoom(room.roomId, 'game-started', {
-            gameId: newGame._id,
-            roomId: room.roomId,
-            gameNumber: nextGameNumber,
-            players: newGame.players.map(player => ({
-                position: player.position,
-                user: player.user,
-                playerType: player.playerType,
-                playerName: player.playerName,
-                isConnected: player.isConnected,
-                tileCount: player.hand.length,
-            })),
-            board: newGame.board,
-            drawPile: newGame.drawPile,
-            currentPlayer: newGame.currentPlayer,
-            targetPoints: room.gameSettings.targetPoints,
-            gameType: room.gameSettings.winRule,
-            message: 'Game has started!',
-        });
+        // Record play activity for all human players using LoyaltyService
+        for (const player of game.players) {
+            if (player.user && player.playerType === 'HUMAN') {
+                const userId = typeof player.user === 'object' ? player.user._id : player.user;
+                try {
+                    // Extract user ID string from user object if it's populated
+                    const loyaltyResult = await LoyaltyService.recordUserPlayActivity(userId);
+                    if (!loyaltyResult.success) {
+                        console.warn(`Failed to record play activity for user ${userId}:`, loyaltyResult.error);
+                    } else {
+                        console.log(`Play activity recorded for user ${userId} - Domino game start`);
+                    }
+                } catch (error) {
+                    console.error(`Error recording play activity for user ${player.user}:`, error);
+                    // Don't fail the game start if loyalty tracking fails
+                }
+
+                sendDominoGameUpdateToUser(userId, room.roomId, 'game-started', {
+                    gameId: game._id,
+                    board: game.board,
+                    drawPile: game.drawPile,
+                    ...player,
+                });
+            }
+        }
 
         // Send turn notification to first player
-        await notifyTurnChange(newGame.toJSON(), room.roomId);
+        await notifyTurnChange(game, room.roomId);
 
         console.log(`[GAME-COMPLETION] ✅ New game ${newGame._id} started for room ${room.roomId} (Round ${nextGameNumber})`);
 
@@ -1046,7 +1045,7 @@ const createNewDominoGame = async (room, gameNumber) => {
             startedAt: new Date()
         });
 
-        return newGame;
+        return newGame.toJSON();
 
     } catch (error) {
         console.error(`[GAME-COMPLETION] Error creating new domino game:`, error);

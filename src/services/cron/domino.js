@@ -240,7 +240,7 @@ cron.schedule('0 * * * *', async () => {
  */
 async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
     try {
-        const botNames = gameConfig.computerPlayerNames || ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta'];
+        const botNames = gameConfig.computerPlayerNames;
         const usedNames = room.players.map(p => p.playerName);
         const availableNames = botNames.filter(name => !usedNames.includes(name));
 
@@ -248,15 +248,16 @@ async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
         const allBotNames = [...availableNames];
         if (slotsNeeded > availableNames.length) {
             for (let i = 1; i <= slotsNeeded - availableNames.length; i++) {
-                allBotNames.push(`Bot_${i + botNames.length}`);
+                allBotNames.push(`${i + botNames.length}`);
             }
         }
 
-        for (let i = 0; i < slotsNeeded; i++) {
-            const botName = allBotNames[i] || `Bot_${room.players.length + i + 1}`;
+        const bots = [];
 
-            room.players.push({
-                user: null, // Bots don't have user accounts
+        for (let i = 0; i < slotsNeeded; i++) {
+            const botName = allBotNames[i] || `${room.players.length + i + 1}`;
+            bots.push({
+                user: null,
                 playerType: 'COMPUTER',
                 playerName: botName,
                 position: room.players.length,
@@ -265,21 +266,25 @@ async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
                 lastConnectedAt: new Date(),
                 disconnectedAt: null,
                 joinedAt: new Date()
-            });
-
+            })
             // Update total pot (bots contribute to pot in VIRTUAL games)
             room.totalPot += room.entryFee;
         }
 
+        room.players.push(...bots);
         await room.save();
 
-        // Broadcast to room that bots were added
-        broadcastDominoGameUpdateToRoom(room.roomId, 'bots-added', {
-            roomState: room,
-            botsAdded: slotsNeeded,
-            message: `${slotsNeeded} bot player(s) joined the room`
-        });
-
+        for (const bot in bots) {
+            for (const player of room.players) {
+                if (player.user && player.playerType === 'HUMAN') {
+                    sendDominoGameUpdateToUser(player.user, room.roomId, 'player-joined', {
+                        userId: bot.user,
+                        playerName: bot.playerName,
+                        timestamp: new Date()
+                    });
+                }
+            }
+        }
         console.log(`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`);
 
     } catch (error) {

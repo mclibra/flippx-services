@@ -81,13 +81,15 @@ export const initializeDominoGameSocket = (io) => {
                         action: action
                     });
 
-                    // Notify other players in room
-                    socket.to(room.roomId).emit('player-joined', {
-                        userId,
-                        userName,
-                        room,
-                        timestamp: new Date()
-                    });
+                    for (const player of room.players) {
+                        if (player.user && player.user != userId && player.playerType === 'HUMAN') {
+                            sendDominoGameUpdateToUser(player.user, room.roomId, 'player-joined', {
+                                userId: userId,
+                                playerName: userName,
+                                timestamp: new Date()
+                            });
+                        }
+                    }
 
                     console.log(`User ${userName} ${action} room ${room.roomId}`);
 
@@ -172,49 +174,51 @@ export const initializeDominoGameSocket = (io) => {
             const { userId, userName, role, roomId } = socket;
 
             console.log(`User ${userName} requesting to leave room: ${roomId}`);
+            if (roomId != null) {
+                // Leave socket room
+                socket.leave(roomId);
+                socket.roomId = null;
 
-            // Leave socket room
-            socket.leave(roomId);
-            socket.roomId = null;
+                const result = await leaveRoom(roomId, userId);
 
-            const result = await leaveRoom(roomId, userId);
+                if (result.isRemoved) {
+                    const room = result.roomState;
 
-            if (result.isRemoved) {
-                const room = result.roomState;
+                    // Send success response to user
+                    socket.emit('room-left', {
+                        success: true,
+                        message: result.message,
+                        roomId: roomId
+                    });
 
-                // Send success response to user
-                socket.emit('room-left', {
-                    success: true,
-                    message: result.message,
-                    roomId: roomId
-                });
+                    // Broadcast to other players if room still exists
+                    if (room) {
+                        socket.to(roomId).emit('player-left', {
+                            userId: socket.userId,
+                            roomState: room,
+                            timestamp: new Date()
+                        });
+                    }
 
-                // Broadcast to other players if room still exists
-                if (room) {
-                    socket.to(roomId).emit('player-left', {
+                    // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
+                    await makeTransaction(
+                        userId,
+                        role,
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        room._id,
+                        room.cashType
+                    );
+                } else {
+                    socket.to(socket.roomId).emit('player-disconnected', {
                         userId: socket.userId,
-                        roomState: room,
                         timestamp: new Date()
                     });
                 }
 
-                // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
-                await makeTransaction(
-                    userId,
-                    role,
-                    'DOMINO_REFUND',
-                    room.entryFee,
-                    room._id,
-                    room.cashType
-                );
-            } else {
-                socket.to(socket.roomId).emit('player-disconnected', {
-                    userId: socket.userId,
-                    timestamp: new Date()
-                });
+                console.log(`User ${userName} successfully ${result.isRemoved ? 'left' : 'disconnected'} room ${roomId}`);
             }
 
-            console.log(`User ${userName} successfully ${result.isRemoved ? 'left' : 'disconnected'} room ${roomId}`);
 
             forceDisconnectFromChat(userId);
         });
@@ -223,50 +227,53 @@ export const initializeDominoGameSocket = (io) => {
         socket.on('disconnect', async () => {
             const { userId, userName, role, roomId } = socket;
 
-            console.log(`User ${userName} disconnected from room: ${roomId}`);
+            if (roomId != null) {
+                console.log(`User ${userName} disconnected from room: ${roomId}`);
 
-            // Leave socket room
-            socket.leave(roomId);
-            socket.roomId = null;
+                // Leave socket room
+                socket.leave(roomId);
+                socket.roomId = null;
 
-            const result = await leaveRoom(roomId, userId);
+                const result = await leaveRoom(roomId, userId);
 
-            if (result.isRemoved) {
-                const room = result.roomState;
+                if (result.isRemoved) {
+                    const room = result.roomState;
 
-                // Send success response to user
-                socket.emit('room-left', {
-                    success: true,
-                    message: result.message,
-                    roomId: roomId
-                });
+                    // Send success response to user
+                    socket.emit('room-left', {
+                        success: true,
+                        message: result.message,
+                        roomId: roomId
+                    });
 
-                // Broadcast to other players if room still exists
-                if (room) {
-                    socket.to(roomId).emit('player-left', {
+                    // Broadcast to other players if room still exists
+                    if (room) {
+                        socket.to(roomId).emit('player-left', {
+                            userId: socket.userId,
+                            roomState: room,
+                            timestamp: new Date()
+                        });
+                    }
+
+                    // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
+                    await makeTransaction(
+                        userId,
+                        role,
+                        'DOMINO_REFUND',
+                        room.entryFee,
+                        room._id,
+                        room.cashType
+                    );
+                } else {
+                    socket.to(socket.roomId).emit('player-disconnected', {
                         userId: socket.userId,
-                        roomState: room,
                         timestamp: new Date()
                     });
                 }
 
-                // Refund entry fee using DOMINO_REFUND transaction identifier (same as API)
-                await makeTransaction(
-                    userId,
-                    role,
-                    'DOMINO_REFUND',
-                    room.entryFee,
-                    room._id,
-                    room.cashType
-                );
-            } else {
-                socket.to(socket.roomId).emit('player-disconnected', {
-                    userId: socket.userId,
-                    timestamp: new Date()
-                });
+                console.log(`User ${userName} successfully ${result.isRemoved ? 'left' : 'disconnected'} room ${roomId}`);
             }
 
-            console.log(`User ${userName} successfully ${result.isRemoved ? 'left' : 'disconnected'} room ${roomId}`);
 
             forceDisconnectFromChat(userId);
         });
