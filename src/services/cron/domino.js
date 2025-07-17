@@ -275,15 +275,11 @@ async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
         await room.save();
 
         for (const bot in bots) {
-            for (const player of room.players) {
-                if (player.user && player.playerType === 'HUMAN') {
-                    sendDominoGameUpdateToUser(player.user, room.roomId, 'player-joined', {
-                        userId: bot.user,
-                        playerName: bot.playerName,
-                        timestamp: new Date()
-                    });
-                }
-            }
+            broadcastDominoGameUpdateToRoom(room.roomId, 'player-joined', {
+                user: bot.user,
+                playerName: bot.playerName,
+                room: room.toJSON(),
+            });
         }
         console.log(`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`);
 

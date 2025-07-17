@@ -74,22 +74,13 @@ export const initializeDominoGameSocket = (io) => {
                     socket.join(room.roomId);
                     socket.roomId = room.roomId;
 
-                    // Send success response to user
-                    socket.emit('room-joined', {
-                        success: true,
-                        room: room,
-                        action: action
-                    });
+                    const joinedPlayer = room.players.find(player => player.user == userId);
 
-                    for (const player of room.players) {
-                        if (player.user && player.user != userId && player.playerType === 'HUMAN') {
-                            sendDominoGameUpdateToUser(player.user, room.roomId, 'player-joined', {
-                                userId: userId,
-                                playerName: userName,
-                                timestamp: new Date()
-                            });
-                        }
-                    }
+                    broadcastDominoGameUpdateToRoom(room.roomId, 'player-joined', {
+                        user: joinedPlayer.user,
+                        playerName: joinedPlayer.playerName,
+                        room: room,
+                    });
 
                     console.log(`User ${userName} ${action} room ${room.roomId}`);
 
@@ -464,7 +455,11 @@ const joinOrCreateRoomSocket = async (socket, options) => {
         await room.populate('createdBy', 'name', 'userName');
         await room.populate('players.user', 'name', 'userName');
 
-        return { success: true, room, action: 'joined' };
+        return {
+            success: true,
+            room: room.toJSON(),
+            action: 'joined'
+        };
 
     } catch (error) {
         console.error('Error in joinOrCreateRoomSocket:', error);
