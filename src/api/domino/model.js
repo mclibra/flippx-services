@@ -59,9 +59,6 @@ const DominoRoomSchema = new Schema(
         timestamps: true,
         toJSON: {
             virtuals: true,
-            transform: (obj, ret) => {
-                delete ret._id;
-            },
         },
     }
 );
@@ -159,9 +156,6 @@ const DominoGameSchema = new Schema(
         timestamps: true,
         toJSON: {
             virtuals: true,
-            transform: (obj, ret) => {
-                delete ret._id;
-            },
         },
     }
 );
@@ -183,9 +177,6 @@ const DominoChatSchema = new Schema(
         timestamps: true,
         toJSON: {
             virtuals: true,
-            transform: (obj, ret) => {
-                delete ret._id;
-            },
         },
     }
 );
@@ -220,9 +211,6 @@ const DominoTournamentSchema = new Schema(
         timestamps: true,
         toJSON: {
             virtuals: true,
-            transform: (obj, ret) => {
-                delete ret._id;
-            },
         },
     }
 );

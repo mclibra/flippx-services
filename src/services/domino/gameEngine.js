@@ -182,7 +182,7 @@ export class DominoGameEngine {
     }
 
     // Main move processing function - THIS WAS MISSING
-    static processMove(game, playerIndex, action, tile = null, side = null) {
+    static processMove(game, playerPosition, action, tile = null, side = null) {
         try {
             // Create a deep copy of the game state to avoid mutations
             const gameState = JSON.parse(JSON.stringify(game));
@@ -191,7 +191,7 @@ export class DominoGameEngine {
                 gameState.winRule = game.room.gameSettings.winRule;
             }
 
-            const player = gameState.players[playerIndex];
+            const player = gameState.players[playerPosition];
 
             if (!player) {
                 return {
@@ -201,7 +201,7 @@ export class DominoGameEngine {
             }
 
             const move = {
-                player: playerIndex,
+                player: playerPosition,
                 action,
                 tile,
                 side,
@@ -211,11 +211,11 @@ export class DominoGameEngine {
 
             switch (action) {
                 case 'PLACE':
-                    return this.processPlaceMove(gameState, playerIndex, tile, side, move);
+                    return this.processPlaceMove(gameState, playerPosition, tile, side, move);
                 case 'DRAW':
-                    return this.processDrawMove(gameState, playerIndex, move);
+                    return this.processDrawMove(gameState, playerPosition, move);
                 case 'PASS':
-                    return this.processPassMove(gameState, playerIndex, move);
+                    return this.processPassMove(gameState, playerPosition, move);
                 default:
                     return {
                         success: false,
@@ -231,8 +231,8 @@ export class DominoGameEngine {
         }
     }
 
-    static processPlaceMove(gameState, playerIndex, tile, side, move) {
-        const player = gameState.players[playerIndex];
+    static processPlaceMove(gameState, playerPosition, tile, side, move) {
+        const player = gameState.players[playerPosition];
 
         // Validate tile is in player's hand
         const tileIndex = player.hand.indexOf(tile);
@@ -305,8 +305,8 @@ export class DominoGameEngine {
         };
     }
 
-    static processDrawMove(gameState, playerIndex, move) {
-        const player = gameState.players[playerIndex];
+    static processDrawMove(gameState, playerPosition, move) {
+        const player = gameState.players[playerPosition];
 
         // Check if draw pile is empty
         if (gameState.drawPile.length === 0) {
@@ -341,8 +341,8 @@ export class DominoGameEngine {
             gameState.turnStartTime = new Date();
         } else {
             // Auto-pass since no valid moves even with new tile
-            return this.processPassMove(gameState, playerIndex, {
-                player: playerIndex,
+            return this.processPassMove(gameState, playerPosition, {
+                player: playerPosition,
                 action: 'PASS',
                 timestamp: new Date(),
                 reason: 'NO_VALID_MOVES_AFTER_DRAW'
@@ -356,8 +356,8 @@ export class DominoGameEngine {
         };
     }
 
-    static processPassMove(gameState, playerIndex, move) {
-        const player = gameState.players[playerIndex];
+    static processPassMove(gameState, playerPosition, move) {
+        const player = gameState.players[playerPosition];
 
         // Add to move history
         gameState.moves.push(move);

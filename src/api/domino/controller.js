@@ -139,22 +139,24 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             };
         }
 
-        const playerIndex = game.players.findIndex(p => p.user.toString() === user._id.toString());
-        if (playerIndex === -1) {
+        const currentPlayer = game.players.find(p => p.user.toString() === user._id.toString());
+        const playerPosition = currentPlayer.position;
+
+        if (playerPosition === -1) {
             return {
                 status: 400,
                 entity: { success: false, error: 'Player not in this game' }
             };
         }
 
-        if (game.currentPlayer !== playerIndex) {
+        if (game.currentPlayer !== playerPosition) {
             return {
                 status: 400,
                 entity: { success: false, error: 'Not your turn' }
             };
         }
 
-        const moveResult = DominoGameEngine.processMove(game, playerIndex, action, tile, side);
+        const moveResult = DominoGameEngine.processMove(game, playerPosition, action, tile, side);
 
         if (!moveResult.success) {
             return {
@@ -187,30 +189,35 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
 
         await game.save();
 
-        // Broadcast move to all players with enhanced data including draw pile count
-        broadcastDominoGameUpdateToRoom(game.room.roomId, 'game-update', {
-            gameId: game._id,
-            players: game.players.map(player => ({
-                position: player.position,
-                playerType: player.playerType,
-                playerName: player.playerName,
-                isConnected: player.isConnected,
-                tileCount: player.hand.length,
-            })),
-            lastMove: moveResult.move,
-            moveBy: {
-                position: playerIndex,
-                playerName: game.players[playerIndex].playerName,
-                playerType: game.players[playerIndex].playerType,
-                action: action
-            },
-            board: game.board,
-            drawPile: game.drawPile,
-        });
+        for (const player of game.players) {
+            if (player.user && player.playerType === 'HUMAN') {
+                if (player.position != playerPosition) {
+                    sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
+                        gameId: game._id,
+                        players: game.players.map(player => ({
+                            position: player.position,
+                            playerType: player.playerType,
+                            playerName: player.playerName,
+                            isConnected: player.isConnected,
+                            tileCount: player.hand.length,
+                        })),
+                        lastMove: moveResult.move,
+                        moveBy: {
+                            position: currentPlayer.position,
+                            playerName: currentPlayer.playerName,
+                            playerType: currentPlayer.playerType,
+                            action: action
+                        },
+                        board: game.board,
+                        drawPile: game.drawPile,
+                    });
+                }
+            }
+        }
 
         // Send turn notifications if game is still active
         if (game.gameState === 'ACTIVE') {
-            await notifyTurnChange(game.toJSON(), game.room.roomId, playerIndex);
+            await notifyTurnChange(game.toJSON(), game.room.roomId, playerPosition);
         }
 
         // Check if game is completed or blocked
