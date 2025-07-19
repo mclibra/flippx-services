@@ -52,7 +52,7 @@ export const startDominoGame = async (room) => {
             }
         }
 
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         // Send turn notification to first player
         await notifyTurnChange(game, room.roomId);
@@ -71,7 +71,7 @@ export const notifyTurnChange = async (game, roomId, previousPlayerPosition) => 
         const currentPlayer = game.players.find(player => player.position == game.currentPlayer);
 
         for (const player of game.players) {
-            if (player.user && player.playerType === 'HUMAN') {
+            if (player.user && player.playerType === 'HUMAN' && player.position != previousPlayerPosition) {
                 if (player.position == game.currentPlayer) {
                     sendDominoGameUpdateToUser(player.user, roomId, 'your-turn', {
                         gameId: game._id,
@@ -84,7 +84,7 @@ export const notifyTurnChange = async (game, roomId, previousPlayerPosition) => 
                         gameId: game._id,
                         board: game.board,
                         drawPile: game.drawPile,
-                        currentPlayerPosition: game.currentPlayer,
+                        currentPlayerPosition: currentPlayer.position,
                         currentPlayerName: currentPlayer?.playerName,
                         previousPlayerPosition: previousPlayerPosition,
                         previousPlayerName: previousPlayer?.playerName,
