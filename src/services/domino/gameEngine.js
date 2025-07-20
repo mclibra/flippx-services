@@ -360,10 +360,9 @@ export class DominoGameEngine {
         const recentMoves = gameState.moves.slice(-requiredPassMoves);
 
         console.log(`Checking last ${requiredPassMoves} moves for all PASS actions`);
-        console.log(`Recent moves:`, recentMoves.map(move => move.action));
 
         const allRecentMovesArePass = recentMoves.length === requiredPassMoves &&
-            recentMoves.every(move => move.action === 'PASS');
+            recentMoves.every(move => !move.tile && (move.drawnTile && move.drawnTile.length === 0));
 
         console.log(`All players have passed for last 2 rounds: ${allRecentMovesArePass}`);
 

@@ -140,7 +140,7 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
         }
 
         const currentPlayer = game.players.find(p => p.user.toString() === user._id.toString());
-        const playerPosition = currentPlayer.position;
+        const currentPlayerPosition = currentPlayer.position;
 
         if (playerPosition === -1) {
             return {
@@ -197,15 +197,15 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
 
         for (const player of game.players) {
             if (player.user && player.playerType === 'HUMAN') {
-                if (player.position != playerPosition) {
+                if (player.position != currentPlayerPosition) {
                     sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
                         gameId: game._id,
-                        players: game.players.map(player => ({
-                            position: player.position,
-                            playerType: player.playerType,
-                            playerName: player.playerName,
-                            isConnected: player.isConnected,
-                            tileCount: player.hand.length,
+                        players: game.players.map(gamePlayer => ({
+                            position: gamePlayer.position,
+                            playerType: gamePlayer.playerType,
+                            playerName: gamePlayer.playerName,
+                            isConnected: gamePlayer.isConnected,
+                            tileCount: gamePlayer.hand.length,
                         })),
                         lastMove: moveResult.move,
                         moveBy: {
@@ -258,19 +258,19 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
             return;
         }
 
-        const previousPlayer = game.currentPlayer;
         const timedOutPlayer = game.players[game.currentPlayer];
+        const timedOutPlayerPosition = currentPlayer.position;
 
         // Use the existing autoPlay logic to determine bot's move
         const move = DominoGameEngine.autoPlay(game);
 
-        console.log(`[AUTO-MOVE] ${currentPlayer.playerName} decided to play:`, move);
+        console.log(`[AUTO-MOVE] ${timedOutPlayer.playerName} decided to play:`, move);
 
         // Process the bot's move using existing game engine
         const moveResult = DominoGameEngine.processMove(game, move);
 
         if (!moveResult.success) {
-            console.error(`[AUTO-MOVE] Auto move failed for ${currentPlayer.playerName}:`, moveResult.error);
+            console.error(`[AUTO-MOVE] Auto move failed for ${timedOutPlayer.playerName}:`, moveResult.error);
             return;
         }
 
@@ -289,7 +289,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
             game.turnStartTime = updatedGameState.turnStartTime;
 
             // Only update completion fields if game is completed
-            if (updatedGameState.gameState === 'COMPLETED' || updatedGameState.gameState === 'BLOCKED') {
+            if (game.gameState === 'COMPLETED' || game.gameState === 'BLOCKED') {
                 game.winner = updatedGameState.winner;
                 game.endReason = updatedGameState.endReason;
                 game.finalScores = updatedGameState.finalScores;
@@ -299,31 +299,39 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             await game.save();
 
-            // Notify the timed-out player
-            if (timedOutPlayer && timedOutPlayer.user) {
-                sendDominoGameUpdateToUser(timedOutPlayer.user, game.room.roomId, 'turn-timeout-notification', {
-                    gameId: game._id,
-                    message: `Your turn timed out and you automatically ${autoAction.toLowerCase()}ed.`,
-                    autoAction: autoAction
-                });
+            for (const player of game.players) {
+                if (player.user && player.playerType === 'HUMAN') {
+                    if (player.position != timedOutPlayerPosition) {
+                        sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
+                            gameId: game._id,
+                            players: game.players.map(gamePlayer => ({
+                                position: gamePlayer.position,
+                                playerType: gamePlayer.playerType,
+                                playerName: gamePlayer.playerName,
+                                isConnected: gamePlayer.isConnected,
+                                tileCount: gamePlayer.hand.length,
+                            })),
+                            lastMove: moveResult.move,
+                            moveBy: {
+                                position: timedOutPlayer.position,
+                                playerName: timedOutPlayer.playerName,
+                                playerType: timedOutPlayer.playerType,
+                                action: action
+                            },
+                            board: game.board,
+                            drawPile: game.drawPile,
+                        });
+                    }
+                }
             }
-
-            // Broadcast timeout and move with draw pile count
-            broadcastDominoGameUpdateToRoom(game.room.roomId, 'turn-timeout', {
-                gameState: game,
-                timedOutPlayer: previousPlayer,
-                timedOutPlayerName: timedOutPlayer?.playerName,
-                autoAction: autoAction,
-                drawPileCount: game.drawPile.length
-            });
 
             // Send turn notifications if game is still active
             if (game.gameState === 'ACTIVE') {
-                await notifyTurnChange(game.toJSON(), game.room.roomId, previousPlayer);
+                await notifyTurnChange(game.toJSON(), game.room.roomId, timedOutPlayerPosition);
             }
 
             // Check if game is completed or blocked
-            if (game.gameState === 'COMPLETED' || updatedGameState.gameState === 'BLOCKED') {
+            if (game.gameState === 'COMPLETED' || game.gameState === 'BLOCKED') {
                 await handleGameCompletion(game);
             }
         }

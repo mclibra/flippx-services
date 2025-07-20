@@ -12,6 +12,8 @@ import {
 } from '../../api/domino/controller';
 import { broadcastDominoGameUpdateToRoom } from '../socket/dominoGameSocket';
 
+let processingGames = new Set();
+
 // Fill VIRTUAL waiting rooms with bots after 30 seconds
 cron.schedule('*/15 * * * * *', async () => {
     try {
@@ -99,7 +101,8 @@ cron.schedule('*/5 * * * * *', async () => {
         const botTurnGames = await DominoGame.find({
             gameState: 'ACTIVE',
             turnStartTime: { $lt: timeoutThreshold },
-            'players.playerType': 'COMPUTER'
+            'players.playerType': 'COMPUTER',
+            _id: { $nin: Array.from(processingGames) }
         }).populate('room');
 
         if (botTurnGames.length > 0) {
@@ -111,12 +114,26 @@ cron.schedule('*/5 * * * * *', async () => {
                 const currentPlayer = game.players[game.currentPlayer];
 
                 if (currentPlayer && currentPlayer.playerType === 'COMPUTER') {
+                    // Check if game is already being processed
+                    if (processingGames.has(game._id.toString())) {
+                        console.log(`[CRON] Game ${game._id} already being processed - skipping`);
+                        continue;
+                    }
+
+                    // Mark game as being processed
+                    processingGames.add(game._id.toString());
+
                     console.log(`[CRON] Processing immediate bot turn for ${currentPlayer.playerName} in game ${game._id}`);
 
-                    // Add small 1-3 second delay to make bot moves feel natural
+                    // Process bot turn with enhanced concurrency control
                     await processBotTurn(game);
+
+                    // Remove from processing set after completion
+                    processingGames.delete(game._id.toString());
                 }
             } catch (error) {
+                // Ensure we remove from processing set even on error
+                processingGames.delete(game._id.toString());
                 console.error(`[CRON] Error processing immediate bot turn for game ${game._id}:`, error);
             }
         }
@@ -315,33 +332,54 @@ async function processBotTurn(game) {
             return;
         }
 
-        // Update game state (same logic as human moves)
         const updatedGameState = moveResult.gameState;
 
-        game.currentPlayer = updatedGameState.currentPlayer;
-        game.gameState = updatedGameState.gameState;
-        game.players = updatedGameState.players;
-        game.board = updatedGameState.board;
-        game.drawPile = updatedGameState.drawPile;
-        game.moves = updatedGameState.moves;
-        game.totalMoves = updatedGameState.totalMoves;
-        game.turnStartTime = updatedGameState.turnStartTime;
+        // Build update object for atomic operation
+        const updateFields = {
+            currentPlayer: updatedGameState.currentPlayer,
+            gameState: updatedGameState.gameState,
+            players: updatedGameState.players,
+            board: updatedGameState.board,
+            drawPile: updatedGameState.drawPile,
+            moves: updatedGameState.moves,
+            totalMoves: updatedGameState.totalMoves,
+            turnStartTime: updatedGameState.turnStartTime
+        };
 
-        // Handle game completion
+        // Add completion fields if game is completed
         if (updatedGameState.gameState === 'COMPLETED' || updatedGameState.gameState === 'BLOCKED') {
-            game.winner = updatedGameState.winner;
-            game.endReason = updatedGameState.endReason;
-            game.finalScores = updatedGameState.finalScores;
-            game.completedAt = updatedGameState.completedAt;
-            game.duration = updatedGameState.duration;
+            updateFields.winner = updatedGameState.winner;
+            updateFields.endReason = updatedGameState.endReason;
+            updateFields.finalScores = updatedGameState.finalScores;
+            updateFields.completedAt = updatedGameState.completedAt;
+            updateFields.duration = updatedGameState.duration;
         }
 
-        await game.save();
+        // Use findOneAndUpdate with version check to prevent concurrent modifications
+        const updatedGame = await DominoGame.findOneAndUpdate(
+            {
+                _id: game._id,
+                gameState: 'ACTIVE',
+                currentPlayer: game.currentPlayer,
+            },
+            { $set: updateFields },
+            {
+                new: true,
+                runValidators: true,
+                populate: 'room'
+            }
+        );
 
-        // Broadcast bot move to all players
-        broadcastDominoGameUpdateToRoom(game.room.roomId, 'game-update', {
-            gameId: game._id,
-            players: game.players.map(player => ({
+        if (!updatedGame) {
+            console.log(`[BOT-TURN] Game ${game._id} was already updated by another process - skipping bot turn for ${currentPlayer.playerName}`);
+            return;
+        }
+
+        console.log(`[BOT-TURN] Successfully updated game ${game._id} for bot ${currentPlayer.playerName}`);
+
+        broadcastDominoGameUpdateToRoom(updatedGame.room.roomId, 'game-update', {
+            gameId: updatedGame._id,
+            players: updatedGame.players.map(player => ({
                 position: player.position,
                 user: player.user,
                 playerType: player.playerType,
@@ -355,24 +393,29 @@ async function processBotTurn(game) {
                 playerName: currentPlayer.playerName,
                 playerType: currentPlayer.playerType,
             },
-            board: game.board,
-            drawPile: game.drawPile,
+            board: updatedGame.board,
+            drawPile: updatedGame.drawPile,
         });
 
         // Send turn notifications if game is still active
-        if (game.gameState === 'ACTIVE') {
-            await notifyTurnChange(game.toJSON(), game.room.roomId, game.currentPlayer - 1);
+        if (updatedGame.gameState === 'ACTIVE') {
+            await notifyTurnChange(updatedGame.toJSON(), updatedGame.room.roomId, updatedGame.currentPlayer - 1);
         }
 
         // Check if game is completed
-        if (game.gameState === 'COMPLETED' || game.gameState === 'BLOCKED') {
-            await handleGameCompletion(game);
+        if (updatedGame.gameState === 'COMPLETED' || updatedGame.gameState === 'BLOCKED') {
+            await handleGameCompletion(updatedGame);
         }
 
-        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${move.action} in game ${game._id}`);
+        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${moveResult.move.action} in game ${updatedGame._id}`);
 
     } catch (error) {
-        console.error(`[BOT-TURN] Error processing bot turn for game ${game._id}:`, error);
+        // Enhanced error logging for debugging
+        if (error.name === 'VersionError') {
+            console.log(`[BOT-TURN] Version conflict for game ${game._id} - another process updated the game concurrently`);
+        } else {
+            console.error(`[BOT-TURN] Error processing bot turn for game ${game._id}:`, error);
+        }
     }
 }
 
