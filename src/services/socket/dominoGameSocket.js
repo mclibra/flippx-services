@@ -147,7 +147,7 @@ export const initializeDominoGameSocket = (io) => {
                 console.log(`Manual move by ${socket.userName} `, data);
                 const result = await makeMove(
                     { gameId: data.gameId },
-                    { action: data.action, tile: data.tile, side: data.side },
+                    { tile: data.tile, side: data.side, drawnTile: data.drawnTile },
                     { _id: socket.userId }
                 );
 

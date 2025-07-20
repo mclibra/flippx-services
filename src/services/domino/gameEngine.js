@@ -144,9 +144,14 @@ export class DominoGameEngine {
     }
 
     // Auto-play for computer or disconnected player
-    static autoPlay(hand, board, drawPile, playerType = 'COMPUTER') {
+    static autoPlay(game) {
+        let tile = null, side = null, drawnTile = [];
+
+        const gameState = JSON.parse(JSON.stringify(game));
+        const player = gameState.players[game.currentPlayer];
+
         // Strategy for computer players
-        const validMoves = this.getValidMoves(hand, board);
+        let validMoves = this.getValidMoves(player.hand, gameState.board);
 
         if (validMoves.length > 0) {
             // Computer strategy: prefer tiles with higher dots or doubles
@@ -164,25 +169,40 @@ export class DominoGameEngine {
 
                 return currentDots > bestDots ? current : best;
             });
+            tile = bestMove.tile;
+            side = bestMove.validSides[0];
+        } else {
+            // No valid moves, try drawing tiles until we find a playable one
+            while (gameState.drawPile.length > 0) {
+                // Draw a tile from the draw pile
+                const drawnTileFromPile = gameState.drawPile.pop();
+                drawnTile.push(drawnTileFromPile);
 
-            return {
-                action: 'PLACE',
-                tile: bestMove.tile,
-                side: bestMove.validSides[0] // Choose first available side
-            };
+                // Check if the drawn tile can be played
+                const canPlace = this.canPlaceTile(drawnTileFromPile, gameState.board);
+
+                if (canPlace.canPlace) {
+                    // Found a playable tile
+                    tile = drawnTileFromPile;
+                    side = canPlace.sides[0]; // Choose the first valid side
+                    break;
+                }
+
+                // If not playable and draw pile is empty, stop drawing
+                if (gameState.drawPile.length === 0) {
+                    break;
+                }
+            }
         }
 
-        // Draw if possible
-        if (drawPile.length > 0) {
-            return { action: 'DRAW' };
-        }
-
-        // Pass if no moves available
-        return { action: 'PASS' };
+        return {
+            tile,
+            side,
+            drawnTile,
+        };
     }
 
-    // Main move processing function - THIS WAS MISSING
-    static processMove(game, playerPosition, action, tile = null, side = null) {
+    static processMove(game, move) {
         try {
             // Create a deep copy of the game state to avoid mutations
             const gameState = JSON.parse(JSON.stringify(game));
@@ -191,7 +211,7 @@ export class DominoGameEngine {
                 gameState.winRule = game.room.gameSettings.winRule;
             }
 
-            const player = gameState.players[playerPosition];
+            const player = gameState.players[game.currentPlayer];
 
             if (!player) {
                 return {
@@ -200,28 +220,8 @@ export class DominoGameEngine {
                 };
             }
 
-            const move = {
-                player: playerPosition,
-                action,
-                tile,
-                side,
-                timestamp: new Date(),
-                boardStateBefore: JSON.stringify(gameState.board)
-            };
+            return this.processPlaceMove(gameState, move);
 
-            switch (action) {
-                case 'PLACE':
-                    return this.processPlaceMove(gameState, playerPosition, tile, side, move);
-                case 'DRAW':
-                    return this.processDrawMove(gameState, playerPosition, move);
-                case 'PASS':
-                    return this.processPassMove(gameState, playerPosition, move);
-                default:
-                    return {
-                        success: false,
-                        error: 'Invalid action'
-                    };
-            }
         } catch (error) {
             console.error('Error processing move:', error);
             return {
@@ -231,47 +231,75 @@ export class DominoGameEngine {
         }
     }
 
-    static processPlaceMove(gameState, playerPosition, tile, side, move) {
-        const player = gameState.players[playerPosition];
+    static processPlaceMove(gameState, move) {
+        const player = gameState.players[gameState.currentPlayer];
 
-        // Validate tile is in player's hand
-        const tileIndex = player.hand.indexOf(tile);
-        if (tileIndex === -1) {
-            return {
-                success: false,
-                error: 'Tile not in hand'
-            };
+        if (move.drawnTile.length > 0) {
+            if (gameState.drawPile.length === 0) {
+                return {
+                    success: false,
+                    error: 'Draw pile is empty'
+                };
+            }
+
+            for (const tile of move.drawnTile) {
+                const tileIndex = gameState.drawPile.indexOf(tile);
+                if (tileIndex === -1) {
+                    return {
+                        success: false,
+                        error: `Tile ${tile} is not available in draw pile`
+                    };
+                }
+            }
+
+            for (const tile of move.drawnTile) {
+                const tileIndex = gameState.drawPile.indexOf(tile);
+                gameState.drawPile.splice(tileIndex, 1);
+            }
+
+            player.hand.push(...move.drawnTile);
         }
 
-        // Validate tile can be placed
-        const canPlace = this.canPlaceTile(tile, gameState.board);
-        if (!canPlace.canPlace) {
-            return {
-                success: false,
-                error: 'Tile cannot be placed on board'
-            };
+        if (move.tile !== null && move.side !== null) {
+            // Validate tile is in player's hand
+            const tileIndex = player.hand.indexOf(move.tile);
+            if (tileIndex === -1) {
+                return {
+                    success: false,
+                    error: 'Tile not in hand'
+                };
+            }
+
+            // Validate tile can be placed
+            const canPlace = this.canPlaceTile(move.tile, gameState.board);
+            if (!canPlace.canPlace) {
+                return {
+                    success: false,
+                    error: 'Tile cannot be placed on board'
+                };
+            }
+
+            // Validate side
+            if (!canPlace.sides.includes(move.side)) {
+                return {
+                    success: false,
+                    error: 'Invalid side for tile placement'
+                };
+            }
+
+            // Remove tile from hand
+            player.hand.splice(tileIndex, 1);
+
+            // Place tile on board
+            this.placeTileOnBoard(move.tile, gameState.board, move.side);
+
+            // Reset consecutive passes
+            player.consecutivePasses = 0;
+        } else {
+            player.consecutivePasses = (player.consecutivePasses || 0) + 1;
+
         }
-
-        // Validate side
-        if (!canPlace.sides.includes(side)) {
-            return {
-                success: false,
-                error: 'Invalid side for tile placement'
-            };
-        }
-
-        // Remove tile from hand
-        player.hand.splice(tileIndex, 1);
-
-        // Place tile on board
-        this.placeTileOnBoard(tile, gameState.board, side);
-
-        // Add to move history
-        move.boardStateAfter = JSON.stringify(gameState.board);
         gameState.moves.push(move);
-
-        // Reset consecutive passes
-        player.consecutivePasses = 0;
 
         // Update total moves
         gameState.totalMoves = (gameState.totalMoves || 0) + 1;
@@ -279,10 +307,14 @@ export class DominoGameEngine {
         // Update last action
         player.lastAction = new Date();
 
+        // Check if game should be blocked using enhanced logic
+        const blockCheck = this.checkGameBlocked(gameState);
+
         // Check for game completion
-        const winnerCheck = this.checkGameCompletion(gameState);
+        const winnerCheck = this.checkGameCompletion(gameState, blockCheck.isBlocked);
+
         if (winnerCheck.isComplete) {
-            gameState.gameState = 'COMPLETED';
+            gameState.gameState = blockCheck.isBlocked ? 'BLOCKED' : 'COMPLETED';
             gameState.winner = winnerCheck.winner;
             gameState.endReason = winnerCheck.endReason;
             gameState.finalScores = winnerCheck.finalScores;
@@ -294,99 +326,6 @@ export class DominoGameEngine {
             }
         } else {
             // Move to next player
-            gameState.currentPlayer = this.getNextPlayer(gameState);
-            gameState.turnStartTime = new Date();
-        }
-
-        return {
-            success: true,
-            gameState,
-            move
-        };
-    }
-
-    static processDrawMove(gameState, playerPosition, move) {
-        const player = gameState.players[playerPosition];
-
-        // Check if draw pile is empty
-        if (gameState.drawPile.length === 0) {
-            return {
-                success: false,
-                error: 'Draw pile is empty'
-            };
-        }
-
-        // Draw tile from pile
-        const drawnTile = gameState.drawPile.shift();
-        player.hand.push(drawnTile);
-
-        // Add to move history
-        move.tile = drawnTile;
-        gameState.moves.push(move);
-
-        // Reset consecutive passes
-        player.consecutivePasses = 0;
-
-        // Update total moves
-        gameState.totalMoves = (gameState.totalMoves || 0) + 1;
-
-        // Update last action
-        player.lastAction = new Date();
-
-        // Check if drawn tile can be played immediately
-        const hasValidMoves = this.hasValidMoves(player.hand, gameState.board);
-
-        if (hasValidMoves) {
-            // Player can continue their turn with new tile
-            gameState.turnStartTime = new Date();
-        } else {
-            // Auto-pass since no valid moves even with new tile
-            return this.processPassMove(gameState, playerPosition, {
-                player: playerPosition,
-                action: 'PASS',
-                timestamp: new Date(),
-                reason: 'NO_VALID_MOVES_AFTER_DRAW'
-            });
-        }
-
-        return {
-            success: true,
-            gameState,
-            move
-        };
-    }
-
-    static processPassMove(gameState, playerPosition, move) {
-        const player = gameState.players[playerPosition];
-
-        // Add to move history
-        gameState.moves.push(move);
-
-        player.consecutivePasses = (player.consecutivePasses || 0) + 1;
-
-        // Update total moves
-        gameState.totalMoves = (gameState.totalMoves || 0) + 1;
-
-        // Update last action
-        player.lastAction = new Date();
-
-        // Check if game should be blocked using enhanced logic
-        const blockCheck = this.checkGameBlocked(gameState);
-
-        if (blockCheck.isBlocked) {
-            // Game is blocked, determine winner by lowest dots
-            const winnerCheck = this.checkGameCompletion(gameState, true);
-            gameState.gameState = 'BLOCKED';
-            gameState.winner = winnerCheck.winner;
-            gameState.endReason = winnerCheck.endReason;
-            gameState.finalScores = winnerCheck.finalScores;
-            gameState.completedAt = new Date();
-
-            // Calculate duration
-            if (gameState.startedAt) {
-                gameState.duration = Math.floor((new Date() - new Date(gameState.startedAt)) / 1000);
-            }
-        } else {
             gameState.currentPlayer = this.getNextPlayer(gameState);
             gameState.turnStartTime = new Date();
         }

@@ -121,7 +121,7 @@ const sendTurnReminder = async (game, timeRemaining) => {
     });
 };
 
-export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
+export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
     try {
         const game = await DominoGame.findById(gameId).populate('room');
 
@@ -156,7 +156,13 @@ export const makeMove = async ({ gameId }, { action, tile, side }, user) => {
             };
         }
 
-        const moveResult = DominoGameEngine.processMove(game, playerPosition, action, tile, side);
+        const move = {
+            tile,
+            side,
+            drawnTile,
+        };
+
+        const moveResult = DominoGameEngine.processMove(game, move);
 
         if (!moveResult.success) {
             return {
@@ -255,33 +261,18 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
         const previousPlayer = game.currentPlayer;
         const timedOutPlayer = game.players[game.currentPlayer];
 
-        // Check if the player has any playable tiles
-        const hasPlayableTiles = DominoGameEngine.hasValidMoves(
-            timedOutPlayer.hand,
-            game.board
-        );
+        // Use the existing autoPlay logic to determine bot's move
+        const move = DominoGameEngine.autoPlay(game);
 
-        let moveResult;
-        let autoAction;
+        console.log(`[AUTO-MOVE] ${currentPlayer.playerName} decided to play:`, move);
 
-        if (hasPlayableTiles) {
-            // Player has playable tiles, so PASS
-            moveResult = DominoGameEngine.processMove(game, game.currentPlayer, 'PASS');
-            autoAction = 'PASS';
-        } else {
-            // Check if there are tiles to draw
-            if (game.drawPile.length > 0) {
-                // Player has no playable tiles but can draw
-                moveResult = DominoGameEngine.processMove(game, game.currentPlayer, 'DRAW');
-                autoAction = 'DRAW';
-            } else {
-                // No tiles to draw and no playable tiles, so PASS
-                moveResult = DominoGameEngine.processMove(game, game.currentPlayer, 'PASS');
-                autoAction = 'PASS';
-            }
+        // Process the bot's move using existing game engine
+        const moveResult = DominoGameEngine.processMove(game, move);
+
+        if (!moveResult.success) {
+            console.error(`[AUTO-MOVE] Auto move failed for ${currentPlayer.playerName}:`, moveResult.error);
+            return;
         }
-
-        console.log(`Auto move for ${currentPlayer.playerName} is ${moveResult.move.action} with tile ${moveResult.move.tile} on side ${moveResult.move.side}`);
 
         if (moveResult.success) {
             // Selectively update game state fields without overwriting the room reference

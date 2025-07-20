@@ -59,7 +59,7 @@ cron.schedule('*/15 * * * * *', async () => {
     }
 });
 
-// Handle both human timeouts AND bot turn processing
+// Handle human timeouts
 cron.schedule('*/10 * * * * *', async () => {
     try {
         const config = await DominoGameConfig.findOne();
@@ -71,10 +71,6 @@ cron.schedule('*/10 * * * * *', async () => {
             gameState: 'ACTIVE',
             turnStartTime: { $lt: timeoutThreshold }
         }).populate('room');
-
-        if (expiredGames.length > 0) {
-            console.log(`[CRON] Found ${expiredGames.length} games with expired turns (${timeoutSeconds}s timeout)`);
-        }
 
         for (const game of expiredGames) {
             try {
@@ -98,13 +94,17 @@ cron.schedule('*/10 * * * * *', async () => {
 cron.schedule('*/5 * * * * *', async () => {
     try {
         // Find active games where current player is a bot and turn just started (< 5 seconds ago)
-        const recentTurnStart = new Date(Date.now() - 5 * 1000); // 5 seconds ago
+        const timeoutThreshold = new Date(Date.now() - 5 * 1000); // 5 seconds ago
 
         const botTurnGames = await DominoGame.find({
             gameState: 'ACTIVE',
-            turnStartTime: { $gte: recentTurnStart },
+            turnStartTime: { $lt: timeoutThreshold },
             'players.playerType': 'COMPUTER'
         }).populate('room');
+
+        if (botTurnGames.length > 0) {
+            console.log(`[CRON] Found ${botTurnGames.length} games with expired bot turns`);
+        }
 
         for (const game of botTurnGames) {
             try {
@@ -303,23 +303,12 @@ async function processBotTurn(game) {
         console.log(`[BOT-TURN] Processing turn for bot ${currentPlayer.playerName} in game ${game._id}`);
 
         // Use the existing autoPlay logic to determine bot's move
-        const botMove = DominoGameEngine.autoPlay(
-            currentPlayer.hand,
-            game.board,
-            game.drawPile,
-            'COMPUTER'
-        );
+        const move = DominoGameEngine.autoPlay(game);
 
-        console.log(`[BOT-TURN] Bot ${currentPlayer.playerName} decided to:`, botMove);
+        console.log(`[BOT-TURN] Bot ${currentPlayer.playerName} decided to:`, move);
 
         // Process the bot's move using existing game engine
-        const moveResult = DominoGameEngine.processMove(
-            game,
-            game.currentPlayer,
-            botMove.action,
-            botMove.tile,
-            botMove.side
-        );
+        const moveResult = DominoGameEngine.processMove(game, move);
 
         if (!moveResult.success) {
             console.error(`[BOT-TURN] Bot move failed for ${currentPlayer.playerName}:`, moveResult.error);
@@ -358,13 +347,13 @@ async function processBotTurn(game) {
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
+                handCount: player.hand.length,
             })),
             lastMove: moveResult.move,
             moveBy: {
-                position: game.currentPlayer,
+                position: currentPlayer.position,
                 playerName: currentPlayer.playerName,
                 playerType: currentPlayer.playerType,
-                action: botMove.action
             },
             board: game.board,
             drawPile: game.drawPile,
@@ -380,7 +369,7 @@ async function processBotTurn(game) {
             await handleGameCompletion(game);
         }
 
-        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${botMove.action} in game ${game._id}`);
+        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${move.action} in game ${game._id}`);
 
     } catch (error) {
         console.error(`[BOT-TURN] Error processing bot turn for game ${game._id}:`, error);
