@@ -15,14 +15,14 @@ import { broadcastDominoGameUpdateToRoom } from '../socket/dominoGameSocket';
 let processingGames = new Set();
 
 // Fill VIRTUAL waiting rooms with bots after 30 seconds
-cron.schedule('*/15 * * * * *', async () => {
+cron.schedule('*/3 * * * * *', async () => {
     try {
         const gameConfig = await DominoGameConfig.findOne();
         if (!gameConfig) {
             return;
         }
 
-        const maxWaitTime = new Date(Date.now() - 30 * 1000); // 30 seconds ago
+        const maxWaitTime = new Date(Date.now() - 3 * 1000); // 30 seconds ago
 
         const virtualRoomsNeedingBots = await DominoRoom.find({
             status: 'WAITING',
@@ -93,10 +93,10 @@ cron.schedule('*/10 * * * * *', async () => {
 });
 
 // Check for bot turns that need immediate processing (faster response)
-cron.schedule('*/5 * * * * *', async () => {
+cron.schedule('*/3 * * * * *', async () => {
     try {
         // Find active games where current player is a bot and turn just started (< 5 seconds ago)
-        const timeoutThreshold = new Date(Date.now() - 5 * 1000); // 5 seconds ago
+        const timeoutThreshold = new Date(Date.now() - 3 * 1000); // 5 seconds ago
 
         const botTurnGames = await DominoGame.find({
             gameState: 'ACTIVE',
@@ -144,9 +144,9 @@ cron.schedule('*/5 * * * * *', async () => {
 });
 
 // Start games when rooms are full - runs every 10 seconds (EXISTING)
-cron.schedule('*/10 * * * * *', async () => {
+cron.schedule('*/3 * * * * *', async () => {
     try {
-        const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
+        const tenSecondsAgo = new Date(Date.now() - 3 * 1000);
 
         // Find waiting rooms that are full
         const fullRooms = await DominoRoom.find({
@@ -277,7 +277,7 @@ async function fillRoomWithBots(room, slotsNeeded, gameConfig) {
                 user: null,
                 playerType: 'COMPUTER',
                 playerName: botName,
-                position: room.players.length,
+                position: room.players.length + i,
                 isReady: true,
                 isConnected: true,
                 lastConnectedAt: new Date(),
@@ -317,7 +317,7 @@ async function processBotTurn(game) {
             return;
         }
 
-        console.log(`[BOT-TURN] Processing turn for bot ${currentPlayer.playerName} in game ${game._id}`);
+        console.log(`[BOT-TURN] Processing turn for bot ${currentPlayer.playerName} in game ${game._id} and board ${game.board}`);
 
         // Use the existing autoPlay logic to determine bot's move
         const move = DominoGameEngine.autoPlay(game);
@@ -385,7 +385,7 @@ async function processBotTurn(game) {
                 playerType: player.playerType,
                 playerName: player.playerName,
                 isConnected: player.isConnected,
-                handCount: player.hand.length,
+                tileCount: player.hand.length,
             })),
             lastMove: moveResult.move,
             moveBy: {
@@ -407,7 +407,7 @@ async function processBotTurn(game) {
             await handleGameCompletion(updatedGame);
         }
 
-        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${moveResult.move.action} in game ${updatedGame._id}`);
+        console.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${JSON.stringify(moveResult.move)} in game ${updatedGame._id}`);
 
     } catch (error) {
         // Enhanced error logging for debugging

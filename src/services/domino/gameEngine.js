@@ -49,8 +49,14 @@ export class DominoGameEngine {
     static canPlaceTile(tile, board) {
         if (board.length === 0) return { canPlace: true, sides: ['LEFT', 'RIGHT'] };
 
+        console.log('Checking placement of ', tile, board);
+
         const [tileLeft, tileRight] = tile.split('-').map(Number);
+
+        console.log(`tileLeft => ${tileLeft} tileRight => ${tileRight}`);
         const boardEnds = this.getBoardEnds(board);
+
+        console.log(`boardEnds => ${JSON.stringify(boardEnds)}`);
         const validSides = [];
 
         // Check left end
@@ -62,6 +68,8 @@ export class DominoGameEngine {
         if (tileLeft === boardEnds.right || tileRight === boardEnds.right) {
             validSides.push('RIGHT');
         }
+
+        console.log(`validSides => ${validSides}`);
 
         return {
             canPlace: validSides.length > 0,
@@ -85,24 +93,35 @@ export class DominoGameEngine {
     // Place tile on specific side of board
     static placeTileOnBoard(tile, board, side) {
         const [tileLeft, tileRight] = tile.split('-').map(Number);
-        const boardEnds = this.getBoardEnds(board);
 
-        if (side === 'LEFT') {
-            // Determine correct orientation for left side
-            const newTile = {
-                tile: tileRight === boardEnds.left ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
-                side: 'LEFT',
-                position: 0
-            };
-            board.unshift(newTile);
+        if (board.length === 0) {
+            board = [
+                {
+                    tile: tile,
+                    side: side,
+                    position: board.length
+                }
+            ]
         } else {
-            // Determine correct orientation for right side
-            const newTile = {
-                tile: tileLeft === boardEnds.right ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
-                side: 'RIGHT',
-                position: board.length
-            };
-            board.push(newTile);
+            const boardEnds = this.getBoardEnds(board);
+
+            if (side === 'LEFT') {
+                // Determine correct orientation for left side
+                const newTile = {
+                    tile: tileRight === boardEnds.left ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
+                    side: 'LEFT',
+                    position: 0
+                };
+                board.unshift(newTile);
+            } else {
+                // Determine correct orientation for right side
+                const newTile = {
+                    tile: tileLeft === boardEnds.right ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
+                    side: 'RIGHT',
+                    position: board.length
+                };
+                board.push(newTile);
+            }
         }
 
         // Update positions
@@ -152,6 +171,8 @@ export class DominoGameEngine {
 
         // Strategy for computer players
         let validMoves = this.getValidMoves(player.hand, gameState.board);
+
+        console.log('validMoves => ', validMoves);
 
         if (validMoves.length > 0) {
             // Computer strategy: prefer tiles with higher dots or doubles
@@ -204,6 +225,7 @@ export class DominoGameEngine {
 
     static processMove(game, move) {
         try {
+            console.log(`processMove => ${JSON.stringify(move)}`);
             // Create a deep copy of the game state to avoid mutations
             const gameState = JSON.parse(JSON.stringify(game));
 
@@ -232,6 +254,7 @@ export class DominoGameEngine {
     }
 
     static processPlaceMove(gameState, move) {
+        console.log(`processPlaceMove => ${JSON.stringify(move)} and ${JSON.stringify(gameState.board)}`);
         const player = gameState.players[gameState.currentPlayer];
 
         if (move.drawnTile.length > 0) {
@@ -260,7 +283,7 @@ export class DominoGameEngine {
             player.hand.push(...move.drawnTile);
         }
 
-        if (move.tile !== null && move.side !== null) {
+        if (move.tile && move.side) {
             // Validate tile is in player's hand
             const tileIndex = player.hand.indexOf(move.tile);
             if (tileIndex === -1) {
@@ -271,6 +294,7 @@ export class DominoGameEngine {
             }
 
             // Validate tile can be placed
+            console.log(`Calling canPlaceTile with => ${JSON.stringify(move)} and ${JSON.stringify(gameState.board)}`);
             const canPlace = this.canPlaceTile(move.tile, gameState.board);
             if (!canPlace.canPlace) {
                 return {
@@ -291,7 +315,7 @@ export class DominoGameEngine {
             player.hand.splice(tileIndex, 1);
 
             // Place tile on board
-            this.placeTileOnBoard(move.tile, gameState.board, move.side);
+            gameState.board = this.placeTileOnBoard(move.tile, gameState.board, move.side);
 
             // Reset consecutive passes
             player.consecutivePasses = 0;
@@ -515,6 +539,7 @@ export class DominoGameEngine {
                 position: player.position,
                 dotsRemaining,
                 roundScore,
+                tilesRemaining: player.hand.length,
                 totalScore: (player.totalScore || 0) + roundScore
             };
         });

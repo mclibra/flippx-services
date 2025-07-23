@@ -46,6 +46,7 @@ export const startDominoGame = async (room) => {
                         playerType: player.playerType,
                         playerName: player.playerName,
                         isConnected: player.isConnected,
+                        tileCount: player.hand.length,
                     })),
                     ...player,
                 });
@@ -71,7 +72,7 @@ export const notifyTurnChange = async (game, roomId, previousPlayerPosition) => 
         const currentPlayer = game.players.find(player => player.position == game.currentPlayer);
 
         for (const player of game.players) {
-            if (player.user && player.playerType === 'HUMAN' && player.position != previousPlayerPosition) {
+            if (player.user && player.playerType === 'HUMAN') {
                 if (player.position == game.currentPlayer) {
                     sendDominoGameUpdateToUser(player.user, roomId, 'your-turn', {
                         gameId: game._id,
@@ -142,14 +143,14 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
         const currentPlayer = game.players.find(p => p.user.toString() === user._id.toString());
         const currentPlayerPosition = currentPlayer.position;
 
-        if (playerPosition === -1) {
+        if (currentPlayerPosition === -1) {
             return {
                 status: 400,
                 entity: { success: false, error: 'Player not in this game' }
             };
         }
 
-        if (game.currentPlayer !== playerPosition) {
+        if (game.currentPlayer !== currentPlayerPosition) {
             return {
                 status: 400,
                 entity: { success: false, error: 'Not your turn' }
@@ -174,6 +175,8 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
         // Selectively update game state fields without overwriting populated references
         const updatedGameState = moveResult.gameState;
 
+        console.log(`Updated gameState => ${JSON.stringify(moveResult.gameState)}`);
+
         // Update specific fields from the game state result
         game.currentPlayer = updatedGameState.currentPlayer;
         game.gameState = updatedGameState.gameState;
@@ -194,6 +197,8 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
         }
 
         await game.save();
+
+        console.log(`Make move game has been updated. The updated board is ${game.board}`);
 
         for (const player of game.players) {
             if (player.user && player.playerType === 'HUMAN') {
@@ -223,7 +228,7 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
 
         // Send turn notifications if game is still active
         if (game.gameState === 'ACTIVE') {
-            await notifyTurnChange(game.toJSON(), game.room.roomId, playerPosition);
+            await notifyTurnChange(game.toJSON(), game.room.roomId, currentPlayerPosition);
         }
 
         // Check if game is completed or blocked
@@ -865,13 +870,13 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
         broadcastDominoGameUpdateToRoom(room.roomId, 'challenge-completed', {
             gameId: game._id,
             roomId: room.roomId,
-            challengeWinner: {
+            winner: {
                 position: winnerPlayer.position,
                 playerName: winnerPlayer.playerName,
                 totalScore: winnerPlayer.totalScore
             },
             endReason: 'TARGET_POINTS_REACHED',
-            finalScores: room.players.map(p => ({
+            allPlayersScore: room.players.map(p => ({
                 position: p.position,
                 playerName: p.playerName,
                 totalScore: p.totalScore || 0
@@ -896,13 +901,8 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
             gameId: game._id,
             roomId: room.roomId,
             roundNumber: game.gameNumber,
-            roundWinner: game.winner,
-            roundScores: game.finalScores,
-            playerTotalScores: room.players.map(p => ({
-                position: p.position,
-                playerName: p.playerName,
-                totalScore: p.totalScore || 0
-            })),
+            finalScores: game.finalScores,
+            roundWinnerIndex: game.winner,
             nextGameCountdown: delaySeconds,
             targetPoints: room.gameSettings.targetPoints,
             gameType: 'POINTS'
@@ -989,6 +989,13 @@ const startNewGameInRoom = async (room) => {
                     gameId: game._id,
                     board: game.board,
                     drawPile: game.drawPile,
+                    players: game.players.map(player => ({
+                        position: player.position,
+                        playerType: player.playerType,
+                        playerName: player.playerName,
+                        isConnected: player.isConnected,
+                        tileCount: player.hand.length,
+                    })),
                     ...player,
                 });
             }
@@ -997,7 +1004,7 @@ const startNewGameInRoom = async (room) => {
         // Send turn notification to first player
         await notifyTurnChange(game, room.roomId);
 
-        console.log(`[GAME-COMPLETION] ✅ New game ${newGame._id} started for room ${room.roomId} (Round ${nextGameNumber})`);
+        console.log(`[GAME-COMPLETION] ✅ New game ${game._id} started for room ${room.roomId} (Round ${nextGameNumber})`);
 
     } catch (error) {
         console.error(`[GAME-COMPLETION] Error creating new game in room:`, error);

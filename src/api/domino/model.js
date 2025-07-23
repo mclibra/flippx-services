@@ -138,6 +138,7 @@ const DominoGameSchema = new Schema(
         finalScores: [{
             position: { type: Number },
             dotsRemaining: { type: Number },
+            tilesRemaining: { type: Number },
             roundScore: { type: Number },
             totalScore: { type: Number }
         }],
