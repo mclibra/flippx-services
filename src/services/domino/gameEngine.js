@@ -110,7 +110,7 @@ export class DominoGameEngine {
                 const newTile = {
                     tile: tileRight === boardEnds.left ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
                     side: 'LEFT',
-                    position: 0
+                    position: board.length
                 };
                 board.unshift(newTile);
             } else {
@@ -123,11 +123,6 @@ export class DominoGameEngine {
                 board.push(newTile);
             }
         }
-
-        // Update positions
-        board.forEach((tile, index) => {
-            tile.position = index;
-        });
 
         return board;
     }
