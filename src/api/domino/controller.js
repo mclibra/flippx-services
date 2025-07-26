@@ -217,7 +217,6 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
                             position: currentPlayer.position,
                             playerName: currentPlayer.playerName,
                             playerType: currentPlayer.playerType,
-                            action: action
                         },
                         board: game.board,
                         drawPile: game.drawPile,
@@ -269,10 +268,14 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
         // Use the existing autoPlay logic to determine bot's move
         const move = DominoGameEngine.autoPlay(game);
 
-        console.log(`[AUTO-MOVE] ${timedOutPlayer.playerName} decided to play:`, move);
+        const modifiedMov = {
+            drawnTile: move.drawnTile
+        };
+
+        console.log(`[AUTO-MOVE] ${timedOutPlayer.playerName} decided to play:`, modifiedMov);
 
         // Process the bot's move using existing game engine
-        const moveResult = DominoGameEngine.processMove(game, move);
+        const moveResult = DominoGameEngine.processMove(game, modifiedMov);
 
         if (!moveResult.success) {
             console.error(`[AUTO-MOVE] Auto move failed for ${timedOutPlayer.playerName}:`, moveResult.error);
@@ -306,27 +309,24 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             for (const player of game.players) {
                 if (player.user && player.playerType === 'HUMAN') {
-                    if (player.position != timedOutPlayerPosition) {
-                        sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
-                            gameId: game._id,
-                            players: game.players.map(gamePlayer => ({
-                                position: gamePlayer.position,
-                                playerType: gamePlayer.playerType,
-                                playerName: gamePlayer.playerName,
-                                isConnected: gamePlayer.isConnected,
-                                tileCount: gamePlayer.hand.length,
-                            })),
-                            lastMove: moveResult.move,
-                            moveBy: {
-                                position: timedOutPlayer.position,
-                                playerName: timedOutPlayer.playerName,
-                                playerType: timedOutPlayer.playerType,
-                                action: action
-                            },
-                            board: game.board,
-                            drawPile: game.drawPile,
-                        });
-                    }
+                    sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
+                        gameId: game._id,
+                        players: game.players.map(gamePlayer => ({
+                            position: gamePlayer.position,
+                            playerType: gamePlayer.playerType,
+                            playerName: gamePlayer.playerName,
+                            isConnected: gamePlayer.isConnected,
+                            tileCount: gamePlayer.hand.length,
+                        })),
+                        lastMove: moveResult.move,
+                        moveBy: {
+                            position: timedOutPlayer.position,
+                            playerName: timedOutPlayer.playerName,
+                            playerType: timedOutPlayer.playerType,
+                        },
+                        board: game.board,
+                        drawPile: game.drawPile,
+                    });
                 }
             }
 
