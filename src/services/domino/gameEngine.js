@@ -91,7 +91,7 @@ export class DominoGameEngine {
     }
 
     // Place tile on specific side of board
-    static placeTileOnBoard(tile, board, side) {
+    static placeTileOnBoard(tile, side, board, placedBy) {
         const [tileLeft, tileRight] = tile.split('-').map(Number);
 
         if (board.length === 0) {
@@ -100,7 +100,8 @@ export class DominoGameEngine {
                     tile: tile,
                     side: side,
                     hasRotation: false,
-                    position: board.length
+                    position: board.length,
+                    placedBy: placedBy,
                 }
             ]
         } else {
@@ -112,7 +113,8 @@ export class DominoGameEngine {
                     tile: tileRight === boardEnds.left ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
                     side: 'LEFT',
                     hasRotation: tileRight !== boardEnds.left,
-                    position: board.length
+                    position: board.length,
+                    placedBy: placedBy,
                 };
                 board.unshift(newTile);
             } else {
@@ -121,7 +123,8 @@ export class DominoGameEngine {
                     tile: tileLeft === boardEnds.right ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
                     side: 'RIGHT',
                     hasRotation: tileLeft !== boardEnds.right,
-                    position: board.length
+                    position: board.length,
+                    placedBy: placedBy,
                 };
                 board.push(newTile);
             }
@@ -313,7 +316,7 @@ export class DominoGameEngine {
             player.hand.splice(tileIndex, 1);
 
             // Place tile on board
-            gameState.board = this.placeTileOnBoard(move.tile, gameState.board, move.side);
+            gameState.board = this.placeTileOnBoard(move.tile, move.side, gameState.board, gameState.currentPlayer);
 
             // Reset consecutive passes
             player.consecutivePasses = 0;
