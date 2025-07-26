@@ -80,6 +80,7 @@ const DominoGameSchema = new Schema(
             tile: { type: String }, // "6-4"
             position: { type: Number },
             placedBy: { type: Number },
+            hasRotation: { type: Boolean },
             side: { type: String, enum: ['LEFT', 'RIGHT'] }, // which end was played
             placedAt: { type: Date, default: Date.now }
         }],

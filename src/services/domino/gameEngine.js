@@ -99,6 +99,7 @@ export class DominoGameEngine {
                 {
                     tile: tile,
                     side: side,
+                    hasRotation: false,
                     position: board.length
                 }
             ]
@@ -110,6 +111,7 @@ export class DominoGameEngine {
                 const newTile = {
                     tile: tileRight === boardEnds.left ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
                     side: 'LEFT',
+                    hasRotation: tileRight !== boardEnds.left,
                     position: board.length
                 };
                 board.unshift(newTile);
@@ -118,6 +120,7 @@ export class DominoGameEngine {
                 const newTile = {
                     tile: tileLeft === boardEnds.right ? `${tileLeft}-${tileRight}` : `${tileRight}-${tileLeft}`,
                     side: 'RIGHT',
+                    hasRotation: tileLeft !== boardEnds.right,
                     position: board.length
                 };
                 board.push(newTile);
