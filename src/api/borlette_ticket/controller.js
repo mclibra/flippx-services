@@ -1,11 +1,104 @@
 import moment from 'moment';
+import { Transaction } from '../transaction/model';
 import { makeTransaction } from '../transaction/controller';
+import { State } from '../admin/state-management/model';
 import { Wallet } from '../wallet/model';
 import { Lottery, LotteryRestriction } from '../lottery/model';
 import { BorletteTicket } from './model';
 import { LoyaltyService } from '../loyalty/service';
 import PayoutService from '../../services/payout/payoutService';
-import FlippXService from '../../services/flippx/collectionService'
+import FlippXService from '../../services/flippx/collectionService';
+
+export const list = async ({ }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		let query = {};
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const tickets = await BorletteTicket.find(query)
+			.populate('user', 'name email phone')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code'
+				}
+			})
+			.sort({ createdAt: -1 })
+			.exec();
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				tickets,
+				total: tickets.length
+			}
+		};
+	} catch (error) {
+		console.error('Error in list method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error
+			}
+		};
+	}
+};
+
+export const show = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Build query with ownership check for non-admins
+		let query = { _id: id };
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const ticket = await BorletteTicket.findOne(query)
+			.populate('user', 'name email phone role')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code'
+				}
+			})
+			.exec();
+
+		if (!ticket) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Ticket not found or access denied.'
+				}
+			};
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				ticket
+			}
+		};
+	} catch (error) {
+		console.error('Error in show method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error
+			}
+		};
+	}
+};
 
 export const listAllByLottery = async (
 	{ id },
@@ -71,6 +164,298 @@ export const listAllByLottery = async (
 				success: false,
 				error: error.errors || error,
 			},
+		};
+	}
+};
+
+export const ticketByLottery = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Build query - users can only see their own tickets for the lottery
+		let query = { lottery: id };
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const tickets = await BorletteTicket.find(query)
+			.populate('user', 'name email phone')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code'
+				}
+			})
+			.sort({ purchasedOn: -1 })
+			.exec();
+
+		// Get lottery information
+		const lottery = await Lottery.findById(id)
+			.populate('state', 'name code')
+			.exec();
+
+		if (!lottery) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Lottery not found.'
+				}
+			};
+		}
+
+		// Calculate summary stats
+		const totalAmountPlayed = tickets.reduce((sum, ticket) => sum + ticket.totalAmountPlayed, 0);
+		const totalAmountWon = tickets.reduce((sum, ticket) => sum + (ticket.totalAmountWon || 0), 0);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				lottery,
+				tickets,
+				summary: {
+					totalTickets: tickets.length,
+					totalAmountPlayed,
+					totalAmountWon,
+					netResult: totalAmountWon - totalAmountPlayed
+				}
+			}
+		};
+	} catch (error) {
+		console.error('Error in ticketByLottery method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error
+			}
+		};
+	}
+};
+
+export const listByState = async ({ stateId }, { offset, limit, startDate, endDate }, user) => {
+	try {
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Access denied. Admin privileges required.'
+				}
+			};
+		}
+
+		// Validate state exists
+		const state = await State.findById(stateId);
+		if (!state) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'State not found.'
+				}
+			};
+		}
+
+		// Get all lotteries for this state
+		const lotteries = await Lottery.find({ state: stateId }).select('_id');
+		const lotteryIds = lotteries.map(lottery => lottery._id.toString());
+
+		// Build query with date filters
+		let query = {
+			lottery: { $in: lotteryIds }
+		};
+
+		if (startDate || endDate) {
+			query.createdAt = {};
+			if (startDate) {
+				query.createdAt.$gte = moment(parseInt(startDate)).toDate();
+			}
+			if (endDate) {
+				query.createdAt.$lte = moment(parseInt(endDate)).toDate();
+			}
+		}
+
+		const tickets = await BorletteTicket.find(query)
+			.populate('user', 'name email phone')
+			.populate({
+				path: 'lottery',
+				select: 'title scheduledTime status',
+				populate: {
+					path: 'state',
+					select: 'name code'
+				}
+			})
+			.limit(limit ? parseInt(limit) : 50)
+			.skip(offset ? parseInt(offset) : 0)
+			.sort({ createdAt: -1 })
+			.exec();
+
+		const total = await BorletteTicket.countDocuments(query);
+
+		// Calculate summary statistics
+		const summary = await BorletteTicket.aggregate([
+			{ $match: query },
+			{
+				$group: {
+					_id: null,
+					totalTickets: { $sum: 1 },
+					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
+					totalAmountWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+					completedTickets: {
+						$sum: { $cond: [{ $eq: ['$status', 'COMPLETED'] }, 1, 0] }
+					},
+					activeTickets: {
+						$sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] }
+					},
+					cancelledTickets: {
+						$sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] }
+					}
+				}
+			}
+		]);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				state,
+				tickets,
+				pagination: {
+					total,
+					offset: parseInt(offset) || 0,
+					limit: parseInt(limit) || 50
+				},
+				summary: summary[0] || {
+					totalTickets: 0,
+					totalAmountPlayed: 0,
+					totalAmountWon: 0,
+					completedTickets: 0,
+					activeTickets: 0,
+					cancelledTickets: 0
+				}
+			}
+		};
+	} catch (error) {
+		console.error('Error in listByState method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error
+			}
+		};
+	}
+};
+
+export const stateCommissionSummary = async ({ stateId }, user) => {
+	try {
+		if (user.role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Access denied. Admin privileges required.'
+				}
+			};
+		}
+
+		// Validate state exists
+		const state = await State.findById(stateId);
+		if (!state) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'State not found.'
+				}
+			};
+		}
+
+		// Get all lotteries for this state
+		const lotteries = await Lottery.find({ state: stateId }).select('_id');
+		const lotteryIds = lotteries.map(lottery => lottery._id.toString());
+
+		// Get all tickets for state lotteries
+		const tickets = await BorletteTicket.find({
+			lottery: { $in: lotteryIds },
+			status: { $ne: 'CANCELLED' }
+		});
+
+		const ticketIds = tickets.map(ticket => ticket._id);
+
+		// Get commission transactions for these tickets
+		const commissionTransactions = await Transaction.find({
+			referenceIndex: { $in: ticketIds },
+			transactionIdentifier: {
+				$in: [
+					'TICKET_BORLETTE_COMMISSION',
+					'TICKET_BORLETTE_COMMISSION_CANCELLED'
+				]
+			}
+		}).populate('user', 'name email phone role');
+
+		// Aggregate commission data by user
+		const commissionByUser = {};
+		commissionTransactions.forEach(transaction => {
+			const userId = transaction.user._id;
+			if (!commissionByUser[userId]) {
+				commissionByUser[userId] = {
+					user: transaction.user,
+					totalCommissionEarned: 0,
+					totalCommissionCancelled: 0,
+					transactionCount: 0
+				};
+			}
+
+			if (transaction.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION') {
+				commissionByUser[userId].totalCommissionEarned += transaction.amount;
+			} else if (transaction.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION_CANCELLED') {
+				commissionByUser[userId].totalCommissionCancelled += transaction.amount;
+			}
+			commissionByUser[userId].transactionCount++;
+		});
+
+		// Calculate net commission for each user
+		Object.values(commissionByUser).forEach(userCommission => {
+			userCommission.netCommission =
+				userCommission.totalCommissionEarned - userCommission.totalCommissionCancelled;
+		});
+
+		// Calculate overall totals
+		const overallSummary = {
+			totalTickets: tickets.length,
+			totalTicketAmount: tickets.reduce((sum, ticket) => sum + ticket.totalAmountPlayed, 0),
+			totalCommissionEarned: Object.values(commissionByUser)
+				.reduce((sum, user) => sum + user.totalCommissionEarned, 0),
+			totalCommissionCancelled: Object.values(commissionByUser)
+				.reduce((sum, user) => sum + user.totalCommissionCancelled, 0),
+			uniqueCommissionEarners: Object.keys(commissionByUser).length
+		};
+
+		overallSummary.netCommissionPaid =
+			overallSummary.totalCommissionEarned - overallSummary.totalCommissionCancelled;
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				state,
+				overallSummary,
+				commissionByUser: Object.values(commissionByUser),
+				detailedTransactions: commissionTransactions
+			}
+		};
+	} catch (error) {
+		console.error('Error in stateCommissionSummary method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error
+			}
 		};
 	}
 };
@@ -1180,26 +1565,82 @@ export const cashoutTicket = async ({ id }, user) => {
 
 export const commissionSummary = async ({ id }, user) => {
 	try {
-		if (!['ADMIN'].includes(user.role)) {
-			throw new Error('You are not authorized to view commission data.');
+		// Get the ticket with full details
+		const ticket = await BorletteTicket.findById(id)
+			.populate('user', 'name email phone role')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code'
+				}
+			})
+			.exec();
+
+		if (!ticket) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Ticket not found.'
+				}
+			};
 		}
-		const borletteTickets = await BorletteTicket.find({
-			user: id,
-		}).populate('user');
+
+		// Authorization check - users can only see their own ticket commissions
+		if (user.role !== 'ADMIN' && ticket.user._id !== user._id) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Access denied.'
+				}
+			};
+		}
+
+		// Get related commission transactions
+		const commissionTransactions = await Transaction.find({
+			referenceIndex: ticket._id,
+			transactionIdentifier: {
+				$in: [
+					'TICKET_BORLETTE_COMMISSION',
+					'TICKET_BORLETTE_COMMISSION_CANCELLED'
+				]
+			}
+		}).populate('user', 'name email phone role');
+
+		// Calculate commission summary
+		const commissionSummary = {
+			ticketAmount: ticket.totalAmountPlayed,
+			ticketWon: ticket.totalAmountWon || 0,
+			commissionTransactions: commissionTransactions,
+			totalCommissionEarned: commissionTransactions
+				.filter(tx => tx.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION')
+				.reduce((sum, tx) => sum + tx.amount, 0),
+			totalCommissionCancelled: commissionTransactions
+				.filter(tx => tx.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION_CANCELLED')
+				.reduce((sum, tx) => sum + tx.amount, 0)
+		};
+
+		commissionSummary.netCommission =
+			commissionSummary.totalCommissionEarned - commissionSummary.totalCommissionCancelled;
+
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				borletteTickets,
-			},
+				ticket,
+				commissionSummary
+			}
 		};
 	} catch (error) {
-		console.log(error);
+		console.error('Error in commissionSummary method:', error);
 		return {
-			status: 500,
+			status: 409,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
-			},
+				success: false,
+				error: error.errors || error.message || error
+			}
 		};
 	}
 };
