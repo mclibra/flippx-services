@@ -317,8 +317,6 @@ async function processBotTurn(game) {
             return;
         }
 
-        console.log(`[BOT-TURN] Processing turn for bot ${currentPlayer.playerName} in game ${game._id} and board ${game.board}`);
-
         // Use the existing autoPlay logic to determine bot's move
         const move = DominoGameEngine.autoPlay(game);
 

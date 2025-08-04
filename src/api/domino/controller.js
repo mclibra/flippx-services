@@ -309,7 +309,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             for (const player of game.players) {
                 if (player.user && player.playerType === 'HUMAN') {
-                    sendDominoGameUpdateToUser(player.user, roomId, 'game-update', {
+                    sendDominoGameUpdateToUser(player.user, game.room.roomId, 'game-update', {
                         gameId: game._id,
                         players: game.players.map(gamePlayer => ({
                             position: gamePlayer.position,

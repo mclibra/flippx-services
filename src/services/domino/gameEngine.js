@@ -49,14 +49,10 @@ export class DominoGameEngine {
     static canPlaceTile(tile, board) {
         if (board.length === 0) return { canPlace: true, sides: ['LEFT', 'RIGHT'] };
 
-        console.log('Checking placement of ', tile, board);
-
         const [tileLeft, tileRight] = tile.split('-').map(Number);
 
-        console.log(`tileLeft => ${tileLeft} tileRight => ${tileRight}`);
         const boardEnds = this.getBoardEnds(board);
 
-        console.log(`boardEnds => ${JSON.stringify(boardEnds)}`);
         const validSides = [];
 
         // Check left end
@@ -68,8 +64,6 @@ export class DominoGameEngine {
         if (tileLeft === boardEnds.right || tileRight === boardEnds.right) {
             validSides.push('RIGHT');
         }
-
-        console.log(`validSides => ${validSides}`);
 
         return {
             canPlace: validSides.length > 0,
@@ -255,7 +249,6 @@ export class DominoGameEngine {
     }
 
     static processPlaceMove(gameState, move) {
-        console.log(`processPlaceMove => ${JSON.stringify(move)} and ${JSON.stringify(gameState.board)}`);
         const player = gameState.players[gameState.currentPlayer];
 
         if (move.drawnTile.length > 0) {
