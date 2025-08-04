@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import moment from 'moment-timezone';
 import { Lottery } from '../../api/lottery/model';
+import { State } from '../../api/admin/state-management/model';
 import { fetchGameResult } from '../lottery/externalLottery';
 import { publishResult } from '../lottery/resultPublisher';
 
@@ -34,11 +35,84 @@ cron.schedule('*/5 * * * *', async () => {
 	}
 });
 
+// Cron job to analyze lottery for each state and create missing lotteries
+cron.schedule('0 * * * *', async () => {
+	// Run every hour
+	console.log('Running cron job: Analyze and create missing lotteries');
+	try {
+		// Get all active states
+		const activeStates = await State.find({ isActive: true });
+
+		if (activeStates.length === 0) {
+			return;
+		}
+
+		const today = moment().format('dddd');
+		const tomorrow = moment().add(1, 'day').format('dddd');
+
+		let totalStatesProcessed = 0;
+		let totalLotteriesCreated = 0;
+
+		for (const state of activeStates) {
+			try {
+				// Check if state has upcoming draw days (today or tomorrow)
+				let hasUpcomingDrawDays = false;
+
+				// Check external lotteries
+				if (state.externalLotteries && state.externalLotteries.length > 0) {
+					for (const lotteryConfig of state.externalLotteries) {
+						if (lotteryConfig.drawDays?.[today] || lotteryConfig.drawDays?.[tomorrow]) {
+							hasUpcomingDrawDays = true;
+							break;
+						}
+					}
+				}
+
+				// Check mega millions if no external lotteries have upcoming draws
+				if (!hasUpcomingDrawDays && state.megaMillions?.drawDays) {
+					if (state.megaMillions.drawDays[today] || state.megaMillions.drawDays[tomorrow]) {
+						hasUpcomingDrawDays = true;
+					}
+				}
+
+				// Skip states with no upcoming draw days
+				if (!hasUpcomingDrawDays) {
+					continue;
+				}
+
+				totalStatesProcessed++;
+
+				// Call existing function to create lotteries for this state
+				const result = await createLotteriesForState(state);
+
+				// Only log when lotteries are actually created (not when they already exist)
+				if (result.success && result.message && result.message.includes('created')) {
+					console.log(`[LOTTERY: ANALYSIS] ${result.message}`);
+					totalLotteriesCreated++;
+				}
+
+			} catch (stateError) {
+				console.error(`Error analyzing state ${state.name} (${state.code}):`, stateError);
+			}
+		}
+
+		// Log summary only if lotteries were created
+		if (totalLotteriesCreated > 0) {
+			console.log(`[LOTTERY: ANALYSIS] Completed - Processed ${totalStatesProcessed} states, created lotteries for ${totalLotteriesCreated} states`);
+		}
+
+	} catch (error) {
+		console.error('Error in lottery analysis cron job:', error);
+	}
+});
+
 // Exported function to create lotteries for a state (used by state and lottery services)
 export const createLotteriesForState = async state => {
 	try {
 		const { externalLotteries, megaMillions } = state;
 		const today = moment().format('dddd');
+
+		let lotteriesCreated = 0;
 
 		// Create BORLETTE lotteries based on flexible configuration
 		if (externalLotteries && externalLotteries.length > 0) {
@@ -101,6 +175,7 @@ export const createLotteriesForState = async state => {
 					console.log(
 						`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
 					);
+					lotteriesCreated++;
 				} else {
 					console.log(
 						`BORLETTE lottery for ${state.name} ${lotteryConfig.name} has already been created`
@@ -141,12 +216,15 @@ export const createLotteriesForState = async state => {
 				console.log(
 					`Created new MEGAMILLION lottery for ${state.name}`
 				);
+				lotteriesCreated++;
 			}
 		}
 
 		return {
 			success: true,
-			message: `Lotteries created for state: ${state.name}`,
+			message: lotteriesCreated > 0
+				? `Lotteries created for state: ${state.name} (${lotteriesCreated} new lotteries)`
+				: `No new lotteries needed for state: ${state.name}`,
 		};
 	} catch (error) {
 		console.error(
