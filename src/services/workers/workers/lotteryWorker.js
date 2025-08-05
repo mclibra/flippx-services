@@ -1,4 +1,3 @@
-// src/services/workers/workers/lotteryWorker.js
 import BaseWorker from '../baseWorker';
 import moment from 'moment-timezone';
 import { Lottery } from '../../../api/lottery/model';

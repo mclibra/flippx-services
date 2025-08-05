@@ -1,4 +1,4 @@
-import moment from 'moment';
+import moment from 'moment-timezone';
 import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { BorletteTicket } from '../borlette_ticket/model';
 import { Lottery, LotteryRestriction } from './model';
