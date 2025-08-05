@@ -277,6 +277,8 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
         // Process the bot's move using existing game engine
         const moveResult = DominoGameEngine.processMove(game, modifiedMov);
 
+        console.log(`[AUTO-MOVE] completed for ${timedOutPlayer.playerName}`);
+
         if (!moveResult.success) {
             console.error(`[AUTO-MOVE] Auto move failed for ${timedOutPlayer.playerName}:`, moveResult.error);
             return;
@@ -305,6 +307,8 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
                 game.duration = updatedGameState.duration;
             }
 
+            console.log(`Saving game after auto move by ${timedOutPlayer.playerName}`);
+
             await game.save();
 
             for (const player of game.players) {
@@ -332,11 +336,13 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
             // Send turn notifications if game is still active
             if (game.gameState === 'ACTIVE') {
+                console.log(`Game is still active. Sending turn change notifications.`);
                 await notifyTurnChange(game.toJSON(), game.room.roomId, timedOutPlayerPosition);
             }
 
             // Check if game is completed or blocked
             if (game.gameState === 'COMPLETED' || game.gameState === 'BLOCKED') {
+                console.log(`Game is still COMPLETED or BLOCKED: ${game.gameState}`);
                 await handleGameCompletion(game);
             }
         }

@@ -26,21 +26,21 @@ class DominoWorker extends BaseWorker {
 
         // Fill VIRTUAL waiting rooms with bots after 30 seconds - every 3 seconds
         this.createSafeCronJob(
-            '*/3 * * * * *',
+            '*/30 * * * * *',
             'fill-virtual-rooms-with-bots',
             this.fillVirtualRoomsWithBots.bind(this)
         );
 
-        // Handle human timeouts - every 10 seconds
+        // Handle human timeouts - every 30 seconds
         this.createSafeCronJob(
-            '*/10 * * * * *',
+            '*/30 * * * * *',
             'handle-human-timeouts',
             this.handleHumanTimeouts.bind(this)
         );
 
-        // Process immediate bot turns - every 3 seconds
+        // Process immediate bot turns - every 15 seconds
         this.createSafeCronJob(
-            '*/3 * * * * *',
+            '*/15 * * * * *',
             'process-immediate-bot-turns',
             this.processImmediateBotTurns.bind(this)
         );
@@ -52,9 +52,9 @@ class DominoWorker extends BaseWorker {
             this.startFullRoomGames.bind(this)
         );
 
-        // Send turn warnings via socket - every 5 seconds
+        // Send turn warnings via socket - every 10 seconds
         this.createSafeCronJob(
-            '*/5 * * * * *',
+            '*/10 * * * * *',
             'send-turn-warnings',
             this.sendTurnWarningsJob.bind(this)
         );
@@ -177,8 +177,8 @@ class DominoWorker extends BaseWorker {
     */
     async processImmediateBotTurns() {
         try {
-            // Find active games where it's a bot's turn (within 3 seconds)
-            const timeoutThreshold = new Date(Date.now() - 3 * 1000); // 3 seconds ago
+            // Find active games where it's a bot's turn (within 15 seconds)
+            const timeoutThreshold = new Date(Date.now() - 15 * 1000); // 15 seconds ago
 
             const botTurnGames = await DominoGame.find({
                 gameState: 'ACTIVE',

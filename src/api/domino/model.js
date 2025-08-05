@@ -18,6 +18,8 @@ const DominoGameConfigSchema = new Schema(
         timestamps: true,
     }
 );
+// No additional indexes needed for DominoGameConfig as it's a single-document collection
+// and findOne() uses the default _id index.
 
 // Domino Room Model
 const DominoRoomSchema = new Schema(
@@ -62,6 +64,16 @@ const DominoRoomSchema = new Schema(
         },
     }
 );
+// Indexes for DominoRoom
+DominoRoomSchema.index({ status: 1, cashType: 1, createdAt: 1 }, {
+    name: 'status_cashType_createdAt_idx',
+    partialFilterExpression: { status: 'WAITING', cashType: 'VIRTUAL' }
+}); // For fillVirtualRoomsWithBots
+DominoRoomSchema.index({ status: 1, createdAt: 1 }, {
+    name: 'status_createdAt_idx',
+    partialFilterExpression: { status: 'WAITING' }
+}); // For startFullRoomGames and cleanupAbandonedRooms
+DominoRoomSchema.index({ roomId: 1 }, { unique: true }); // Already defined in schema, included for clarity
 
 // Domino Game Model
 const DominoGameSchema = new Schema(
@@ -74,8 +86,6 @@ const DominoGameSchema = new Schema(
             enum: ['ACTIVE', 'COMPLETED', 'BLOCKED', 'CANCELLED'],
             default: 'ACTIVE'
         },
-
-        // Game Board State
         board: [{
             tile: { type: String }, // "6-4"
             position: { type: Number },
@@ -84,8 +94,6 @@ const DominoGameSchema = new Schema(
             side: { type: String, enum: ['LEFT', 'RIGHT'] }, // which end was played
             placedAt: { type: Date, default: Date.now }
         }],
-
-        // Player Hands and States
         players: [{
             position: { type: Number },
             user: { type: String, ref: 'User' },
@@ -98,11 +106,7 @@ const DominoGameSchema = new Schema(
             lastAction: { type: Date, default: Date.now },
             consecutivePasses: { type: Number, default: 0 },
         }],
-
-        // Draw Pile
         drawPile: [{ type: String }],
-
-        // Game History
         moves: [{
             player: { type: Number },
             action: { type: String, enum: ['PLACE', 'DRAW', 'PASS'] },
@@ -111,8 +115,6 @@ const DominoGameSchema = new Schema(
             boardState: { type: String }, // snapshot of board
             timestamp: { type: Date, default: Date.now }
         }],
-
-        // Turn Management
         turnStartTime: { type: Date },
         turnTimeLimit: { type: Number, default: 60 },
         turnHistory: [{
@@ -121,8 +123,6 @@ const DominoGameSchema = new Schema(
             endTime: { type: Date },
             timeUsed: { type: Number }, // seconds
         }],
-
-        // Results
         winner: { type: Number }, // position
         endReason: {
             type: String,
@@ -143,14 +143,10 @@ const DominoGameSchema = new Schema(
             roundScore: { type: Number },
             totalScore: { type: Number }
         }],
-
-        // Financial
         totalPot: { type: Number },
         houseEdge: { type: Number },
         houseAmount: { type: Number },
         winnerPayout: { type: Number },
-
-        // Metadata
         duration: { type: Number }, // game duration in seconds
         totalMoves: { type: Number, default: 0 },
     },
@@ -161,6 +157,19 @@ const DominoGameSchema = new Schema(
         },
     }
 );
+// Indexes for DominoGame
+DominoGameSchema.index({ gameState: 1, turnStartTime: 1 }, {
+    name: 'gameState_turnStartTime_idx',
+    partialFilterExpression: { gameState: 'ACTIVE' }
+}); // For handleHumanTimeouts and sendTurnWarningsJob
+DominoGameSchema.index({ gameState: 1, turnStartTime: 1, 'players.playerType': 1 }, {
+    name: 'gameState_turnStartTime_playerType_idx',
+    partialFilterExpression: { gameState: 'ACTIVE', 'players.playerType': 'COMPUTER' }
+}); // For processImmediateBotTurns
+DominoGameSchema.index({ _id: 1, gameState: 1, currentPlayer: 1 }, {
+    name: 'id_gameState_currentPlayer_idx'
+}); // For processBotTurn findOneAndUpdate
+DominoGameSchema.index({ room: 1 }, { name: 'room_idx' }); // For room population and queries
 
 // Domino Chat Model
 const DominoChatSchema = new Schema(
@@ -182,8 +191,10 @@ const DominoChatSchema = new Schema(
         },
     }
 );
+// Index for DominoChat
+DominoChatSchema.index({ room: 1, createdAt: 1 }, { name: 'room_createdAt_idx' }); // For fetching chat messages by room
 
-// Domino Tournament Model (for future expansion)
+// Domino Tournament Model
 const DominoTournamentSchema = new Schema(
     {
         name: { type: String, required: true },
@@ -216,6 +227,8 @@ const DominoTournamentSchema = new Schema(
         },
     }
 );
+// Index for DominoTournament
+DominoTournamentSchema.index({ status: 1, startTime: 1 }, { name: 'status_startTime_idx' }); // For future tournament queries
 
 export const DominoGameConfig = mongoose.model('DominoGameConfig', DominoGameConfigSchema);
 export const DominoRoom = mongoose.model('DominoRoom', DominoRoomSchema);

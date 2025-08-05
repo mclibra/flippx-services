@@ -197,6 +197,7 @@ class BaseWorker {
             await this.executeCronJob(jobName, jobFunction);
         }, {
             scheduled: true,
+            noOverlap: true,
             ...options
         });
 

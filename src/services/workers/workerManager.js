@@ -1,6 +1,5 @@
 import { fork } from 'child_process';
 import path from 'path';
-import { env } from '../../../config';
 
 class WorkerManager {
     constructor() {
@@ -8,8 +7,8 @@ class WorkerManager {
         this.isShuttingDown = false;
         this.restartAttempts = new Map();
         this.maxRestartAttempts = 5;
-        this.baseRestartDelay = 1000; // 1 second base delay
-        this.maxRestartDelay = 30000; // 30 seconds max delay
+        this.baseRestartDelay = 1000;
+        this.maxRestartDelay = 30000;
     }
 
     /**
@@ -98,7 +97,6 @@ class WorkerManager {
         // Worker message handler (for inter-process communication)
         worker.on('message', (message) => {
             if (message.type === 'log') {
-                // Centralized logging - prefix with worker name
                 console.log(`[${config.name.toUpperCase()}] ${message.data}`);
             } else if (message.type === 'error') {
                 console.error(`[${config.name.toUpperCase()}] ERROR:`, message.data);

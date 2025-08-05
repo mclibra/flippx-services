@@ -328,8 +328,12 @@ export class DominoGameEngine {
         // Check if game should be blocked using enhanced logic
         const blockCheck = this.checkGameBlocked(gameState);
 
+        console.log(`Block check result: ${JSON.stringify(blockCheck)}`);
+
         // Check for game completion
         const winnerCheck = this.checkGameCompletion(gameState, blockCheck.isBlocked);
+
+        console.log(`Winner check result: ${JSON.stringify(winnerCheck)}`);
 
         if (winnerCheck.isComplete) {
             gameState.gameState = blockCheck.isBlocked ? 'BLOCKED' : 'COMPLETED';
@@ -347,6 +351,8 @@ export class DominoGameEngine {
             gameState.currentPlayer = this.getNextPlayer(gameState);
             gameState.turnStartTime = new Date();
         }
+
+        console.log(`Processing move has completed`);
 
         return {
             success: true,
@@ -452,6 +458,8 @@ export class DominoGameEngine {
             nextPlayer = (nextPlayer + 1) % gameState.players.length;
             attempts++;
         }
+
+        console.log(`Next player is: ${nextPlayer} (current: ${gameState.currentPlayer})`);
 
         return nextPlayer;
     }
