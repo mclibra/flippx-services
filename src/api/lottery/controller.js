@@ -151,6 +151,184 @@ export const nextLottery = async ({
 	}
 };
 
+export const closestUpcomingByState = async () => {
+	try {
+		const currentTime = moment.now();
+
+		// Get all active states
+		const activeStates = await State.find({ isActive: true })
+			.select('_id name code')
+			.lean();
+
+		if (!activeStates.length) {
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					states: [],
+					message: 'No active states found',
+				},
+			};
+		}
+
+		const stateIds = activeStates.map(state => state._id.toString());
+
+		// Get closest upcoming lottery for each state using aggregation
+		const closestLotteries = await Lottery.aggregate([
+			{
+				$match: {
+					state: { $in: stateIds },
+					status: 'SCHEDULED',
+					scheduledTime: { $gt: currentTime },
+				},
+			},
+			{
+				$sort: { scheduledTime: 1 }, // Sort by closest time first
+			},
+			{
+				$group: {
+					_id: '$state', // Group by state
+					closestLottery: { $first: '$ROOT' }, // Get the first (closest) lottery for each state
+				},
+			},
+			{
+				$lookup: {
+					from: 'states',
+					localField: '_id',
+					foreignField: '_id',
+					as: 'stateInfo',
+				},
+			},
+			{
+				$unwind: '$stateInfo',
+			},
+			{
+				$project: {
+					state: {
+						id: '$stateInfo._id',
+						name: '$stateInfo.name',
+						code: '$stateInfo.code',
+					},
+					lottery: {
+						id: '$closestLottery._id',
+						title: '$closestLottery.title',
+						type: '$closestLottery.type',
+						scheduledTime: '$closestLottery.scheduledTime',
+						jackpotAmount: '$closestLottery.jackpotAmount',
+						metadata: '$closestLottery.metadata',
+						status: '$closestLottery.status',
+						countdown: { $subtract: ['$closestLottery.scheduledTime', currentTime] },
+					},
+				},
+			},
+			{
+				$sort: { 'lottery.countdown': 1 }, // Sort by countdown (closest first)
+			},
+		]);
+
+		// Get the last winning numbers for each state
+		const lastWinningsPromises = stateIds.map(async stateId => {
+			const lastWinningLottery = await Lottery.findOne({
+				state: stateId,
+				status: 'COMPLETED',
+				results: { $ne: null }, // Only lotteries with results
+			})
+				.sort({ drawTime: -1 }) // Sort by most recent draw time
+				.select('_id title type results drawTime metadata')
+				.lean();
+
+			return {
+				stateId,
+				lastWinning: lastWinningLottery,
+			};
+		});
+
+		const lastWinningsData = await Promise.all(lastWinningsPromises);
+
+		// Create a map for quick lookup
+		const lastWinningsMap = {};
+		lastWinningsData.forEach(({ stateId, lastWinning }) => {
+			lastWinningsMap[stateId] = lastWinning;
+		});
+
+		// Enhance results with last winning numbers
+		const enhancedResults = closestLotteries.map(item => {
+			const stateId = item.state.id.toString();
+			const lastWinning = lastWinningsMap[stateId];
+
+			return {
+				...item,
+				lastWinning: lastWinning
+					? {
+						lotteryId: lastWinning._id,
+						title: lastWinning.title,
+						type: lastWinning.type,
+						metadata: lastWinning.metadata,
+						drawTime: lastWinning.drawTime,
+						results: lastWinning.results,
+					}
+					: null,
+			};
+		});
+
+		// Handle states without upcoming lotteries
+		const statesWithLotteries = closestLotteries.map(item => item.state.id.toString());
+		const statesWithoutLotteries = activeStates
+			.filter(state => !statesWithLotteries.includes(state._id.toString()))
+			.map(state => {
+				const stateId = state._id.toString();
+				const lastWinning = lastWinningsMap[stateId];
+
+				return {
+					state: {
+						id: state._id,
+						name: state.name,
+						code: state.code,
+					},
+					lottery: null,
+					lastWinning: lastWinning
+						? {
+							lotteryId: lastWinning._id,
+							title: lastWinning.title,
+							type: lastWinning.type,
+							metadata: lastWinning.metadata,
+							drawTime: lastWinning.drawTime,
+							results: lastWinning.results,
+						}
+						: null,
+					message: 'No upcoming lotteries scheduled',
+				};
+			});
+
+		// Combine results
+		const results = [...enhancedResults, ...statesWithoutLotteries];
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				states: results,
+				total: results.length,
+				summary: {
+					totalStates: activeStates.length,
+					statesWithUpcomingLotteries: closestLotteries.length,
+					statesWithoutUpcomingLotteries: statesWithoutLotteries.length,
+					statesWithLastWinnings: lastWinningsData.filter(item => item.lastWinning).length,
+				},
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.errors || error,
+			},
+		};
+	}
+};
+
 export const getLotteryDashboard = async (_, { role }) => {
 	try {
 		if (role !== 'ADMIN') {
