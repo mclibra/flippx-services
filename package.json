@@ -6,6 +6,8 @@
 	"scripts": {
 		"dev": "node app.js",
 		"tier:migrate": "node src/services/migrations migrate",
+		"lottery:migrate": "node src/services/migrations lottery",
+		"migrate:all": "node src/services/migrations all",
 		"start": "./node_modules/pm2/bin/pm2-runtime app.js",
 		"poststart": "node ./node_modules/pm2/bin/pm2 logs",
 		"eslint": "eslint .",

@@ -65,20 +65,20 @@ const LotteryRestrictionSchema = new Schema(
 );
 
 LotterySchema.index(
-	{ 'externalGameIds.pick3': 1 },
+	{ state: 1, 'externalGameIds.pick3': 1, scheduledTime: 1 },
 	{
 		unique: true,
 		sparse: true,
-		name: 'unique_pick3_sparse',
+		name: 'unique_state_pick3_time',
 	}
 );
 
 LotterySchema.index(
-	{ 'externalGameIds.pick4': 1 },
+	{ state: 1, 'externalGameIds.pick4': 1, scheduledTime: 1 },
 	{
 		unique: true,
 		sparse: true,
-		name: 'unique_pick4_sparse',
+		name: 'unique_state_pick4_time',
 	}
 );
 

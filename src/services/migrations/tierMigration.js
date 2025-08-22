@@ -242,11 +242,90 @@ const syncConstantsToDatabase = async () => {
 	}
 };
 
+/**
+ * Migration script to update lottery indexes
+ * This fixes the duplicate key error by making the unique constraints more specific
+ */
+const migrateLotteryIndexes = async () => {
+	try {
+		console.log('🔄 Starting lottery index migration...');
+
+		// Ensure MongoDB connection is established
+		if (!mongoose.connection.db) {
+			console.log('⏳ Waiting for MongoDB connection...');
+			await new Promise(resolve => {
+				if (mongoose.connection.readyState === 1) {
+					resolve();
+				} else {
+					mongoose.connection.once('connected', resolve);
+				}
+			});
+		}
+
+		const db = mongoose.connection.db;
+		if (!db) {
+			throw new Error('MongoDB connection not established');
+		}
+
+		const collection = db.collection('lotteries');
+
+		// Drop the old indexes
+		console.log('📤 Dropping old indexes...');
+		try {
+			await collection.dropIndex('unique_pick3_sparse');
+			console.log('✅ Dropped unique_pick3_sparse index');
+		} catch (error) {
+			console.log(
+				'ℹ️  Index unique_pick3_sparse not found or already dropped'
+			);
+		}
+
+		try {
+			await collection.dropIndex('unique_pick4_sparse');
+			console.log('✅ Dropped unique_pick4_sparse index');
+		} catch (error) {
+			console.log(
+				'ℹ️  Index unique_pick4_sparse not found or already dropped'
+			);
+		}
+
+		// Create the new compound unique indexes
+		console.log('📥 Creating new compound unique indexes...');
+
+		await collection.createIndex(
+			{ state: 1, 'externalGameIds.pick3': 1, scheduledTime: 1 },
+			{
+				unique: true,
+				sparse: true,
+				name: 'unique_state_pick3_time',
+			}
+		);
+		console.log('✅ Created unique_state_pick3_time index');
+
+		await collection.createIndex(
+			{ state: 1, 'externalGameIds.pick4': 1, scheduledTime: 1 },
+			{
+				unique: true,
+				sparse: true,
+				name: 'unique_state_pick4_time',
+			}
+		);
+		console.log('✅ Created unique_state_pick4_time index');
+
+		console.log('🎉 Lottery index migration completed successfully!');
+		return true;
+	} catch (error) {
+		console.error('❌ Error during lottery index migration:', error);
+		throw error;
+	}
+};
+
 // Export functions for use in migration scripts
 export {
 	migrateTierRequirements,
 	rollbackTierRequirements,
 	syncConstantsToDatabase,
+	migrateLotteryIndexes,
 };
 
 // If running directly
@@ -259,27 +338,71 @@ export {
 		useCreateIndex: true,
 	});
 
-	switch (command) {
-		case 'migrate':
-			migrateTierRequirements().then(() => process.exit(0));
-			break;
-		case 'rollback':
-			rollbackTierRequirements().then(() => process.exit(0));
-			break;
-		case 'sync':
-			syncConstantsToDatabase().then(() => process.exit(0));
-			break;
-		default:
-			console.log('Usage: node tierMigration.js [migrate|rollback|sync]');
-			console.log(
-				'  migrate  - Transfer constants to database (first time setup)'
-			);
-			console.log(
-				'  rollback - Remove database configs and revert to constants'
-			);
-			console.log(
-				'  sync     - Update database with any changes from constants'
-			);
+	// Wait for connection to be established
+	mongoose.connection.once('connected', async () => {
+		console.log('✅ MongoDB connected successfully');
+
+		try {
+			switch (command) {
+				case 'migrate':
+					await migrateTierRequirements();
+					break;
+				case 'rollback':
+					await rollbackTierRequirements();
+					break;
+				case 'sync':
+					await syncConstantsToDatabase();
+					break;
+				case 'lottery':
+					await migrateLotteryIndexes();
+					break;
+				case 'all':
+					await Promise.all([
+						migrateTierRequirements(),
+						migrateLotteryIndexes(),
+					]);
+					console.log('🎉 All migrations completed successfully!');
+					break;
+				default:
+					console.log(
+						'Usage: node tierMigration.js [migrate|rollback|sync|lottery|all]'
+					);
+					console.log(
+						'  migrate  - Transfer constants to database (first time setup)'
+					);
+					console.log(
+						'  rollback - Remove database configs and revert to constants'
+					);
+					console.log(
+						'  sync     - Update database with any changes from constants'
+					);
+					console.log(
+						'  lottery  - Fix lottery duplicate key error by updating indexes'
+					);
+					console.log(
+						'  all      - Run all migrations (tier + lottery)'
+					);
+					process.exit(1);
+			}
+
+			console.log('✅ Migration completed successfully');
+			process.exit(0);
+		} catch (error) {
+			console.error('❌ Migration failed:', error);
 			process.exit(1);
-	}
+		}
+	});
+
+	mongoose.connection.on('error', error => {
+		console.error('❌ MongoDB connection error:', error);
+		process.exit(1);
+	});
+
+	// Handle process termination
+	process.on('SIGINT', () => {
+		mongoose.connection.close(() => {
+			console.log('MongoDB connection closed');
+			process.exit(0);
+		});
+	});
 })();
