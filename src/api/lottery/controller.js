@@ -738,8 +738,13 @@ export const getLotteryDashboard = async (_, { role }) => {
 	}
 };
 
-export const lastLottery = async ({ type, metadata, stateId }) => {
-	// Added stateId parameter
+export const lastLottery = async ({
+	type,
+	metadata,
+	stateId,
+	offset = 0,
+	count = 1,
+}) => {
 	try {
 		const params = {
 			status: 'COMPLETED',
@@ -752,18 +757,31 @@ export const lastLottery = async ({ type, metadata, stateId }) => {
 			// Filter by state if provided
 			params.state = stateId;
 		}
-		const lottery = await Lottery.findOne(params)
+
+		// If count > 1, return multiple lotteries
+		const lotteries = await Lottery.find(params)
 			.sort({
 				createdAt: 'desc',
 			})
 			.populate('state', 'name code') // Populate state information
-			.skip(0)
+			.skip(parseInt(offset))
+			.limit(parseInt(count))
 			.exec();
+
+		// Get total count for pagination info
+		const total = await Lottery.countDocuments(params);
+
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				lottery,
+				lotteries,
+				pagination: {
+					offset: parseInt(offset),
+					count: parseInt(count),
+					total,
+					hasMore: parseInt(offset) + parseInt(count) < total,
+				},
 			},
 		};
 	} catch (error) {
@@ -778,9 +796,9 @@ export const lastLottery = async ({ type, metadata, stateId }) => {
 	}
 };
 
-export const show = async (
+export const showUserTickets = async (
 	{ id },
-	{ _id, role },
+	{ _id },
 	{
 		offset,
 		limit,
@@ -796,10 +814,150 @@ export const show = async (
 			.exec();
 		let params = {
 			lottery: id,
+			user: _id, // Always filter by user for user access
 		};
-		if (role !== 'ADMIN') {
-			params.user = _id;
+		if (startDate || endDate) {
+			params['$and'] = [];
+			if (startDate) {
+				params['$and'].push({
+					createdAt: {
+						$gte: moment(parseInt(startDate)).toISOString(),
+					},
+				});
+			}
+			if (endDate) {
+				params['$and'].push({
+					createdAt: {
+						$lte: moment(parseInt(endDate)).toISOString(),
+					},
+				});
+			}
 		}
+		let ticketList = [];
+		let amount = {};
+		let restrictions = {};
+		let total = 0;
+		switch (lottery.type) {
+			case 'BORLETTE':
+				ticketList = await BorletteTicket.find(params)
+					.limit(limit ? parseInt(limit) : 10)
+					.skip(offset ? parseInt(offset) : 0)
+					.sort({
+						[sortBy]: sortOrder.toLowerCase(),
+					})
+					.populate('user', 'name email phone')
+					.exec();
+				restrictions = await LotteryRestriction.findOne({
+					lottery: lottery._id.toString(),
+				});
+				total = await BorletteTicket.count(params).exec();
+				amount = await BorletteTicket.aggregate([
+					{
+						$match: {
+							lottery: id,
+							user: _id, // Filter by user for user access
+							status: {
+								$ne: 'CANCELLED',
+							},
+						},
+					},
+					{
+						$group: {
+							_id: null,
+							totalAmountPlayed: {
+								$sum: '$totalAmountPlayed',
+							},
+							totalAmountWon: {
+								$sum: '$totalAmountWon',
+							},
+						},
+					},
+				]);
+				break;
+			case 'MEGAMILLION':
+				ticketList = await MegaMillionTicket.find(params)
+					.limit(limit ? parseInt(limit) : 10)
+					.skip(offset ? parseInt(offset) : 0)
+					.sort({
+						[sortBy]: sortOrder.toLowerCase(),
+					})
+					.populate('user', 'name email phone')
+					.exec();
+				total = await MegaMillionTicket.count(params).exec();
+				amount = await MegaMillionTicket.aggregate([
+					{
+						$match: {
+							lottery: id,
+							user: _id, // Filter by user for user access
+							status: {
+								$ne: 'CANCELLED',
+							},
+						},
+					},
+					{
+						$group: {
+							_id: null,
+							totalAmountPlayed: {
+								$sum: '$amountPlayed',
+							},
+							totalAmountWon: {
+								$sum: '$amountWon',
+							},
+						},
+					},
+				]);
+				break;
+		}
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				total,
+				ticketList,
+				amount: amount.map(item => ({
+					...item,
+					totalAmountPlayed: parseFloat(
+						item.totalAmountPlayed
+					).toFixed(2),
+					totalAmountWon: parseFloat(item.totalAmountWon).toFixed(2),
+				})),
+				lottery: {
+					...lottery.toJSON(),
+					restrictions,
+				},
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const showAllTickets = async (
+	{ id },
+	{
+		offset,
+		limit,
+		startDate,
+		endDate,
+		sortBy = 'purchasedOn',
+		sortOrder = 'desc',
+	}
+) => {
+	try {
+		const lottery = await Lottery.findById(id)
+			.populate('state', 'name code')
+			.exec();
+		let params = {
+			lottery: id,
+		};
+		// Admin can see all tickets or filter by specific user if needed
 		if (startDate || endDate) {
 			params['$and'] = [];
 			if (startDate) {

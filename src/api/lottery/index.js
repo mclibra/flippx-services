@@ -7,7 +7,8 @@ import {
 	list,
 	nextLottery,
 	lastLottery,
-	show,
+	showUserTickets,
+	showAllTickets,
 	create,
 	update,
 	preview,
@@ -65,7 +66,14 @@ router.get(
 );
 
 router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await show(req.params, req.user, req.query))
+	done(res, await showUserTickets(req.params, req.user, req.query))
+);
+
+router.get(
+	'/admin/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await showAllTickets(req.params, req.query))
 );
 
 router.post(

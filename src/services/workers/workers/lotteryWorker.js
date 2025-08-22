@@ -302,7 +302,7 @@ class LotteryWorker extends BaseWorker {
 }
 
 // Start the worker
-const lotteryWorker = new LotteryWorker();
+new LotteryWorker();
 
 // Export for testing purposes
 export default LotteryWorker;
