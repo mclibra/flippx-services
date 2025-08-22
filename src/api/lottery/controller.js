@@ -149,9 +149,21 @@ export const nextLottery = async ({
 	}
 };
 
-export const closestUpcomingByState = async () => {
+export const closestUpcomingByState = async type => {
 	try {
 		const currentTime = moment.now();
+
+		// Validate type parameter
+		if (!type || !['BORLETTE', 'MEGAMILLION'].includes(type)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					message:
+						'Invalid type. Must be either BORLETTE or MEGAMILLION',
+				},
+			};
+		}
 
 		// Get all active states
 		const activeStates = await State.find({ isActive: true })
@@ -171,21 +183,25 @@ export const closestUpcomingByState = async () => {
 
 		const stateIds = activeStates.map(state => state._id.toString());
 
+		// Build match conditions for Lottery aggregation
+		const matchConditions = {
+			status: 'SCHEDULED',
+			type: type,
+			state: { $in: stateIds },
+			scheduledTime: { $gt: currentTime },
+		};
+
 		let closestLotteries = await Lottery.aggregate([
 			{
-				$match: {
-					state: { $in: stateIds },
-					status: 'SCHEDULED',
-					scheduledTime: { $gt: currentTime },
-				},
+				$match: matchConditions,
 			},
 			{
-				$sort: { scheduledTime: 1 }, // Sort by closest time first
+				$sort: { scheduledTime: 1 },
 			},
 			{
 				$group: {
-					_id: '$state', // Group by state
-					closestLottery: { $first: '$$ROOT' }, // Get the first (closest) lottery for each state
+					_id: '$state',
+					closestLottery: { $first: '$$ROOT' },
 				},
 			},
 			{
@@ -238,11 +254,19 @@ export const closestUpcomingByState = async () => {
 
 		// Get the last winning numbers for each state
 		const lastWinningsPromises = stateIds.map(async stateId => {
-			const lastWinningLottery = await Lottery.findOne({
+			// Build match conditions for last winning lottery
+			const lastWinningMatch = {
 				state: stateId,
 				status: 'COMPLETED',
 				results: { $ne: null }, // Only lotteries with results
-			})
+			};
+
+			// Add type filter if provided
+			if (type) {
+				lastWinningMatch.type = type;
+			}
+
+			const lastWinningLottery = await Lottery.findOne(lastWinningMatch)
 				.sort({ drawTime: -1 }) // Sort by most recent draw time
 				.select('_id title type results drawTime metadata')
 				.lean();

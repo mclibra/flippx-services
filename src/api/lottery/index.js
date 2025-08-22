@@ -33,7 +33,7 @@ router.get(
 	'/closest-by-state',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await closestUpcomingByState())
+	async (req, res) => done(res, await closestUpcomingByState(req.query.type))
 );
 
 router.get('/last', xApi(), token({ required: true }), async (req, res) =>
