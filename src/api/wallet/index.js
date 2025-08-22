@@ -82,11 +82,8 @@ router.get(
 );
 
 // Get user's own payments
-router.get(
-	'/payments',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => done(res, await getUserPayments({ ...req.user, query: req.query }))
+router.get('/payments', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getUserPayments({ ...req.user, query: req.query }))
 );
 
 export default router;

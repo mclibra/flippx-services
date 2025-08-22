@@ -7,7 +7,11 @@ import moment from 'moment';
 export const login = async user => {
 	try {
 		const refreshToken = generateToken(user._id.toString());
-		const accessToken = jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, });
+		const accessToken = jwtSign({
+			id: user._id.toString(),
+			userName: user.userName,
+			role: user.role,
+		});
 
 		// NEW: Update session tracking
 		const now = moment();
@@ -15,15 +19,24 @@ export const login = async user => {
 
 		// Check if this is a new daily login
 		let isNewDailyLogin = false;
-		if (!user.sessionTracking.lastDailyLoginDate ||
-			!moment(user.sessionTracking.lastDailyLoginDate).isSame(today, 'day')) {
+		if (
+			!user.sessionTracking.lastDailyLoginDate ||
+			!moment(user.sessionTracking.lastDailyLoginDate).isSame(
+				today,
+				'day'
+			)
+		) {
 			isNewDailyLogin = true;
 
 			// Update daily login streak
 			const lastLogin = user.sessionTracking.lastDailyLoginDate;
-			if (lastLogin && moment(lastLogin).add(1, 'day').isSame(today, 'day')) {
+			if (
+				lastLogin &&
+				moment(lastLogin).add(1, 'day').isSame(today, 'day')
+			) {
 				// Consecutive day login
-				user.sessionTracking.dailyLoginStreak = (user.sessionTracking.dailyLoginStreak || 0) + 1;
+				user.sessionTracking.dailyLoginStreak =
+					(user.sessionTracking.dailyLoginStreak || 0) + 1;
 			} else {
 				// Streak broken
 				user.sessionTracking.dailyLoginStreak = 1;
@@ -47,7 +60,10 @@ export const login = async user => {
 			try {
 				await LoyaltyService.recordDailyLogin(user._id.toString());
 			} catch (error) {
-				console.error('Error recording daily login for loyalty:', error);
+				console.error(
+					'Error recording daily login for loyalty:',
+					error
+				);
 			}
 		}
 
@@ -97,7 +113,11 @@ export const token = async query => {
 			entity: {
 				success: true,
 				refreshToken: generateToken(id),
-				accessToken: jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, }),
+				accessToken: jwtSign({
+					id: user._id.toString(),
+					userName: user.userName,
+					role: user.role,
+				}),
 			},
 		};
 	} catch (error) {

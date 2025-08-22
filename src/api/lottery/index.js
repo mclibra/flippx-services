@@ -29,8 +29,11 @@ router.get('/next', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await nextLottery(req.query, req.user))
 );
 
-router.get('/closest-by-state', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await closestUpcomingByState())
+router.get(
+	'/closest-by-state',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await closestUpcomingByState())
 );
 
 router.get('/last', xApi(), token({ required: true }), async (req, res) =>

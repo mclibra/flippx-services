@@ -217,7 +217,12 @@ export const closestUpcomingByState = async () => {
 						jackpotAmount: '$closestLottery.jackpotAmount',
 						metadata: '$closestLottery.metadata',
 						status: '$closestLottery.status',
-						countdown: { $subtract: ['$closestLottery.scheduledTime', currentTime] },
+						countdown: {
+							$subtract: [
+								'$closestLottery.scheduledTime',
+								currentTime,
+							],
+						},
 					},
 				},
 			},
@@ -260,21 +265,25 @@ export const closestUpcomingByState = async () => {
 				...item,
 				lastWinning: lastWinning
 					? {
-						lotteryId: lastWinning._id,
-						title: lastWinning.title,
-						type: lastWinning.type,
-						metadata: lastWinning.metadata,
-						drawTime: lastWinning.drawTime,
-						results: lastWinning.results,
-					}
+							lotteryId: lastWinning._id,
+							title: lastWinning.title,
+							type: lastWinning.type,
+							metadata: lastWinning.metadata,
+							drawTime: lastWinning.drawTime,
+							results: lastWinning.results,
+						}
 					: null,
 			};
 		});
 
 		// Handle states without upcoming lotteries
-		const statesWithLotteries = closestLotteries.map(item => item.state.id.toString());
+		const statesWithLotteries = closestLotteries.map(item =>
+			item.state.id.toString()
+		);
 		const statesWithoutLotteries = activeStates
-			.filter(state => !statesWithLotteries.includes(state._id.toString()))
+			.filter(
+				state => !statesWithLotteries.includes(state._id.toString())
+			)
 			.map(state => {
 				const stateId = state._id.toString();
 				const lastWinning = lastWinningsMap[stateId];
@@ -288,13 +297,13 @@ export const closestUpcomingByState = async () => {
 					lottery: null,
 					lastWinning: lastWinning
 						? {
-							lotteryId: lastWinning._id,
-							title: lastWinning.title,
-							type: lastWinning.type,
-							metadata: lastWinning.metadata,
-							drawTime: lastWinning.drawTime,
-							results: lastWinning.results,
-						}
+								lotteryId: lastWinning._id,
+								title: lastWinning.title,
+								type: lastWinning.type,
+								metadata: lastWinning.metadata,
+								drawTime: lastWinning.drawTime,
+								results: lastWinning.results,
+							}
 						: null,
 					message: 'No upcoming lotteries scheduled',
 				};
@@ -312,8 +321,11 @@ export const closestUpcomingByState = async () => {
 				summary: {
 					totalStates: activeStates.length,
 					statesWithUpcomingLotteries: closestLotteries.length,
-					statesWithoutUpcomingLotteries: statesWithoutLotteries.length,
-					statesWithLastWinnings: lastWinningsData.filter(item => item.lastWinning).length,
+					statesWithoutUpcomingLotteries:
+						statesWithoutLotteries.length,
+					statesWithLastWinnings: lastWinningsData.filter(
+						item => item.lastWinning
+					).length,
 				},
 			},
 		};
@@ -1207,19 +1219,19 @@ export const allStatesSummary = async (_, { role }) => {
 				borletteStats.length > 0
 					? borletteStats[0]
 					: {
-						totalAmountPlayed: 0,
-						totalAmountWon: 0,
-						ticketCount: 0,
-					};
+							totalAmountPlayed: 0,
+							totalAmountWon: 0,
+							ticketCount: 0,
+						};
 
 			const megaMillionData =
 				megaMillionStats.length > 0
 					? megaMillionStats[0]
 					: {
-						totalAmountPlayed: 0,
-						totalAmountWon: 0,
-						ticketCount: 0,
-					};
+							totalAmountPlayed: 0,
+							totalAmountWon: 0,
+							ticketCount: 0,
+						};
 
 			return {
 				state: {
@@ -1412,7 +1424,9 @@ export const createLotteriesForState = async state => {
 				if (!existingLottery) {
 					// Create a new lottery
 					const drawTime = moment.tz(
-						`${moment().format('YYYY-MM-DD')} ${lotteryConfig.drawTime}`,
+						`${moment().format('YYYY-MM-DD')} ${
+							lotteryConfig.drawTime
+						}`,
 						lotteryConfig.drawTimezone
 					);
 
@@ -1436,8 +1450,9 @@ export const createLotteriesForState = async state => {
 						externalGameIds,
 						// Store whether this lottery supports marriage numbers
 						additionalData: {
-							hasMarriageNumbers: lotteryConfig.hasMarriageNumbers
-						}
+							hasMarriageNumbers:
+								lotteryConfig.hasMarriageNumbers,
+						},
 					});
 
 					console.log(
@@ -1490,9 +1505,10 @@ export const createLotteriesForState = async state => {
 
 		return {
 			success: true,
-			message: lotteriesCreated > 0
-				? `Lotteries created for state: ${state.name} (${lotteriesCreated} new lotteries)`
-				: `No new lotteries needed for state: ${state.name}`,
+			message:
+				lotteriesCreated > 0
+					? `Lotteries created for state: ${state.name} (${lotteriesCreated} new lotteries)`
+					: `No new lotteries needed for state: ${state.name}`,
 		};
 	} catch (error) {
 		console.error(
@@ -1506,7 +1522,10 @@ export const createLotteriesForState = async state => {
 	}
 };
 
-const previewResult = async ({ _id, type, jackpotAmount, additionalData }, results) => {
+const previewResult = async (
+	{ _id, type, jackpotAmount, additionalData },
+	results
+) => {
 	let ticketList = [];
 	if (type === 'MEGAMILLION') {
 		ticketList = await MegaMillionTicket.find({
@@ -1663,28 +1682,35 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 							} else {
 								switch (number.numberPlayed.toString()) {
 									case `${winningNumbers[0]}${winningNumbers[1]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[1]}${winningNumbers[2]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[0]}${winningNumbers[2]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${bonusNumber}${winningNumbers[0]}`:
-										baseAmountWon = number.amountPlayed * 300;
+										baseAmountWon =
+											number.amountPlayed * 300;
 										break;
 									case `${winningNumbers[0]}`:
 										// 1st place: Base 60x (will be adjusted by tier)
-										baseAmountWon = number.amountPlayed * 60;
+										baseAmountWon =
+											number.amountPlayed * 60;
 										break;
 									case `${winningNumbers[1]}`:
 										// 2nd place: Fixed 15x for all tiers (FIXED from 20x to 15x)
-										baseAmountWon = number.amountPlayed * 15;
+										baseAmountWon =
+											number.amountPlayed * 15;
 										break;
 									case `${winningNumbers[2]}`:
 										// 3rd place: Fixed 10x for all tiers (already correct)
-										baseAmountWon = number.amountPlayed * 10;
+										baseAmountWon =
+											number.amountPlayed * 10;
 										break;
 								}
 							}
@@ -1692,24 +1718,33 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 							// NEW: Apply tier-based adjustment with position-specific logic for preview
 							if (baseAmountWon > 0) {
 								// Get user tier from ticket or default
-								const userTier = ticket.userTierAtPurchase || 'NONE';
+								const userTier =
+									ticket.userTierAtPurchase || 'NONE';
 
-								number.amountWon = await applyTierBasedPayoutForPreview(
-									baseAmountWon,
-									userTier,
-									number.numberPlayed.toString(),
-									winningNumbers
-								);
+								number.amountWon =
+									await applyTierBasedPayoutForPreview(
+										baseAmountWon,
+										userTier,
+										number.numberPlayed.toString(),
+										winningNumbers
+									);
 
 								// Update result tracking
 								if (borletteResult[number.numberPlayed]) {
-									borletteResult[number.numberPlayed].amountReceived += number.amountPlayed;
-									borletteResult[number.numberPlayed].amountWon += number.amountWon;
-									borletteResult[number.numberPlayed].counter += 1;
+									borletteResult[
+										number.numberPlayed
+									].amountReceived += number.amountPlayed;
+									borletteResult[
+										number.numberPlayed
+									].amountWon += number.amountWon;
+									borletteResult[
+										number.numberPlayed
+									].counter += 1;
 								}
 							}
 
-							borletteResult.totalAmountReceived += number.amountPlayed;
+							borletteResult.totalAmountReceived +=
+								number.amountPlayed;
 							borletteResult.totalAmountWon += number.amountWon;
 						}
 						break;
@@ -1752,7 +1787,8 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 							!matchedMegaBall
 						) {
 							megamillionResult.matches['4_only'].counter += 1;
-							megamillionResult.matches['4_only'].amountWon += 500;
+							megamillionResult.matches['4_only'].amountWon +=
+								500;
 							ticket.amountWon = 500;
 						} else if (
 							matchedNumbers.length === 3 &&
@@ -1812,7 +1848,12 @@ const previewResult = async ({ _id, type, jackpotAmount, additionalData }, resul
 		: { ...borletteResult, tickets };
 };
 
-const applyTierBasedPayoutForPreview = async (baseAmount, userTier, playedNumber, winningNumbers) => {
+const applyTierBasedPayoutForPreview = async (
+	baseAmount,
+	userTier,
+	playedNumber,
+	winningNumbers
+) => {
 	try {
 		// Map NONE tier to SILVER for payout purposes
 		const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
@@ -1826,7 +1867,10 @@ const applyTierBasedPayoutForPreview = async (baseAmount, userTier, playedNumber
 		}
 
 		// Apply tier-based multiplier only for 1st place wins
-		const payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+		const payoutConfig = await PayoutService.getPayoutPercentage(
+			payoutTier,
+			'BORLETTE'
+		);
 		const tierMultiplier = payoutConfig.percentage / 60; // 60% is the base (Silver)
 
 		return Math.round(baseAmount * tierMultiplier);

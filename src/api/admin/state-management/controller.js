@@ -51,20 +51,25 @@ export const list = async ({
 
 export const create = async body => {
 	try {
-		if (body.lotteryConfiguration && Array.isArray(body.lotteryConfiguration)) {
+		if (
+			body.lotteryConfiguration &&
+			Array.isArray(body.lotteryConfiguration)
+		) {
 			body.externalLotteries = [];
 
 			// Process the provided lottery configuration
 			for (const config of body.lotteryConfiguration) {
 				if (!config.name || !config.pick4Key) {
-					throw new Error('Each lottery configuration must have a name and pick4Key');
+					throw new Error(
+						'Each lottery configuration must have a name and pick4Key'
+					);
 				}
 
 				body.externalLotteries.push({
 					name: config.name,
 					pick3Key: config.pick3Key || null,
 					pick4Key: config.pick4Key,
-					hasMarriageNumbers: !!config.pick3Key
+					hasMarriageNumbers: !!config.pick3Key,
 				});
 			}
 		}
@@ -123,19 +128,24 @@ export const update = async ({ id }, body) => {
 	try {
 		const state = await State.findById(id);
 		if (state._id) {
-			if (body.lotteryConfiguration && Array.isArray(body.lotteryConfiguration)) {
+			if (
+				body.lotteryConfiguration &&
+				Array.isArray(body.lotteryConfiguration)
+			) {
 				body.externalLotteries = [];
 
 				for (const config of body.lotteryConfiguration) {
 					if (!config.name || !config.pick4Key) {
-						throw new Error('Each lottery configuration must have a name and pick4Key');
+						throw new Error(
+							'Each lottery configuration must have a name and pick4Key'
+						);
 					}
 
 					body.externalLotteries.push({
 						name: config.name,
 						pick3Key: config.pick3Key || null,
 						pick4Key: config.pick4Key,
-						hasMarriageNumbers: !!config.pick3Key
+						hasMarriageNumbers: !!config.pick3Key,
 					});
 				}
 			}
@@ -259,36 +269,46 @@ const fetchAndStoreLotteryGames = async state => {
 
 		// Update external lottery configurations with actual game data
 		if (state.externalLotteries && state.externalLotteries.length > 0) {
-			const updatedLotteries = state.externalLotteries.map(lotteryConfig => {
-				const updated = {
-					...lotteryConfig.toObject ? lotteryConfig.toObject() : lotteryConfig
-				};
+			const updatedLotteries = state.externalLotteries.map(
+				lotteryConfig => {
+					const updated = {
+						...(lotteryConfig.toObject
+							? lotteryConfig.toObject()
+							: lotteryConfig),
+					};
 
-				// Find pick 4 game (required)
-				const pick4Game = gameMap[lotteryConfig.pick4Key.toLowerCase()];
-				if (pick4Game) {
-					updated.pick4GameId = pick4Game.id;
-					updated.drawTime = pick4Game.drawTime;
-					updated.drawTimezone = pick4Game.drawTimezone;
-					updated.drawDays = pick4Game.drawDays;
-				} else {
-					console.warn(`Pick 4 game not found for key: ${lotteryConfig.pick4Key}`);
-				}
-
-				// Find pick 3 game (optional)
-				if (lotteryConfig.pick3Key) {
-					const pick3Game = gameMap[lotteryConfig.pick3Key.toLowerCase()];
-					if (pick3Game) {
-						updated.pick3GameId = pick3Game.id;
-						// If pick3 has different draw time/days, we might need to handle this
-						// For now, we'll use pick4's schedule as the primary
+					// Find pick 4 game (required)
+					const pick4Game =
+						gameMap[lotteryConfig.pick4Key.toLowerCase()];
+					if (pick4Game) {
+						updated.pick4GameId = pick4Game.id;
+						updated.drawTime = pick4Game.drawTime;
+						updated.drawTimezone = pick4Game.drawTimezone;
+						updated.drawDays = pick4Game.drawDays;
 					} else {
-						console.warn(`Pick 3 game not found for key: ${lotteryConfig.pick3Key}`);
+						console.warn(
+							`Pick 4 game not found for key: ${lotteryConfig.pick4Key}`
+						);
 					}
-				}
 
-				return updated;
-			});
+					// Find pick 3 game (optional)
+					if (lotteryConfig.pick3Key) {
+						const pick3Game =
+							gameMap[lotteryConfig.pick3Key.toLowerCase()];
+						if (pick3Game) {
+							updated.pick3GameId = pick3Game.id;
+							// If pick3 has different draw time/days, we might need to handle this
+							// For now, we'll use pick4's schedule as the primary
+						} else {
+							console.warn(
+								`Pick 3 game not found for key: ${lotteryConfig.pick3Key}`
+							);
+						}
+					}
+
+					return updated;
+				}
+			);
 
 			state.externalLotteries = updatedLotteries;
 		}

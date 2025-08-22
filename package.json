@@ -8,7 +8,10 @@
 		"tier:migrate": "node src/services/migrations migrate",
 		"start": "./node_modules/pm2/bin/pm2-runtime app.js",
 		"poststart": "node ./node_modules/pm2/bin/pm2 logs",
-		"eslint": "eslint ."
+		"eslint": "eslint .",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"lint:check": "eslint . --max-warnings 0"
 	},
 	"nodemonConfig": {
 		"ignore": [
@@ -23,7 +26,7 @@
 		"babel-loader": "^8.1.0",
 		"babel-plugin-source-map-support": "^2.1.2",
 		"cross-env": "^5.0.5",
-		"eslint": "^8.50.0",
+		"eslint": "^9.33.0",
 		"eslint-config-prettier": "^9.0.0",
 		"eslint-plugin-prettier": "^5.0.0",
 		"nock": "^9.0.2",

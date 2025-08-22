@@ -99,9 +99,8 @@ export const verifyWebhookSignature = (payload, signature) => {
 	const hmac = crypto.createHmac('sha256', payoneerConfig.webhookSecret);
 	const expectedSignature = hmac.update(payload).digest('hex');
 	return crypto.timingSafeEqual(
-		// eslint-disable-next-line no-undef
 		Buffer.from(signature),
-		// eslint-disable-next-line no-undef
+
 		Buffer.from(expectedSignature)
 	);
 };

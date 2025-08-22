@@ -2,18 +2,18 @@ import { Router } from 'express';
 import { done } from '../../../services/response/';
 import { xApi, token } from '../../../services/passport';
 import {
-    getUserList,
-    createUser,
-    updateUser,
-    getUserDetails,
-    verifyUserDocument,
-    rejectUserDocument,
-    updateUserLoyalty,
-    resetUserPassword,
-    resetUserPin,
-    updateUserStatus,
-    bulkUpdateUsers,
-    exportUsers,
+	getUserList,
+	createUser,
+	updateUser,
+	getUserDetails,
+	verifyUserDocument,
+	rejectUserDocument,
+	updateUserLoyalty,
+	resetUserPassword,
+	resetUserPin,
+	updateUserStatus,
+	bulkUpdateUsers,
+	exportUsers,
 } from './controller';
 
 const router = new Router();
@@ -40,10 +40,10 @@ const router = new Router();
  * - sortOrder: Sort order (asc/desc, default: desc)
  */
 router.get(
-    '',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getUserList(req.query))
+	'',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getUserList(req.query))
 );
 
 // ===== USER CRUD OPERATIONS =====
@@ -54,10 +54,10 @@ router.get(
  * Body: User creation data
  */
 router.post(
-    '',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await createUser(req.body, req.user))
+	'',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await createUser(req.body, req.user))
 );
 
 // ===== BULK OPERATIONS =====
@@ -68,10 +68,10 @@ router.post(
  * Body: { userIds: string[], action: string, data: object }
  */
 router.post(
-    '/bulk-update',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await bulkUpdateUsers(req.body, req.user))
+	'/bulk-update',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await bulkUpdateUsers(req.body, req.user))
 );
 
 /**
@@ -80,10 +80,10 @@ router.post(
  * Body: { format: 'csv' | 'excel', filters: object }
  */
 router.post(
-    '/export',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await exportUsers(req.body, req.user))
+	'/export',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await exportUsers(req.body, req.user))
 );
 
 /**
@@ -92,10 +92,11 @@ router.post(
  * Body: User update data
  */
 router.put(
-    '/:id',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await updateUser(req.params.id, req.body, req.user))
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await updateUser(req.params.id, req.body, req.user))
 );
 
 /**
@@ -103,10 +104,11 @@ router.put(
  * Get detailed user information including all related data
  */
 router.get(
-    '/:id',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getUserDetails(req.params.id, req.query))
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await getUserDetails(req.params.id, req.query))
 );
 
 // ===== DOCUMENT VERIFICATION =====
@@ -117,10 +119,11 @@ router.get(
  * Body: { documentType: 'idProof' | 'addressProof' }
  */
 router.post(
-    '/:id/verify-document',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await verifyUserDocument(req.params.id, req.body, req.user))
+	'/:id/verify-document',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await verifyUserDocument(req.params.id, req.body, req.user))
 );
 
 /**
@@ -129,10 +132,11 @@ router.post(
  * Body: { documentType: 'idProof' | 'addressProof', rejectionReason: string }
  */
 router.post(
-    '/:id/reject-document',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await rejectUserDocument(req.params.id, req.body, req.user))
+	'/:id/reject-document',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await rejectUserDocument(req.params.id, req.body, req.user))
 );
 
 // ===== LOYALTY & REWARDS MANAGEMENT =====
@@ -143,10 +147,11 @@ router.post(
  * Body: { tier: string, xpAdjustment: number, reason: string }
  */
 router.put(
-    '/:id/loyalty',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await updateUserLoyalty(req.params.id, req.body, req.user))
+	'/:id/loyalty',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await updateUserLoyalty(req.params.id, req.body, req.user))
 );
 
 // ===== USER ACCOUNT MANAGEMENT =====
@@ -157,10 +162,11 @@ router.put(
  * Body: { newPassword: string } - minimum 6 characters
  */
 router.post(
-    '/:id/reset-password',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await resetUserPassword(req.params.id, req.body, req.user))
+	'/:id/reset-password',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await resetUserPassword(req.params.id, req.body, req.user))
 );
 
 /**
@@ -168,10 +174,10 @@ router.post(
  * Reset user secure pin
  */
 router.post(
-    '/:id/reset-pin',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await resetUserPin(req.params.id, req.user))
+	'/:id/reset-pin',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await resetUserPin(req.params.id, req.user))
 );
 
 /**
@@ -180,10 +186,11 @@ router.post(
  * Body: { status: 'active' | 'suspended' | 'banned', reason: string }
  */
 router.put(
-    '/:id/status',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await updateUserStatus(req.params.id, req.body, req.user))
+	'/:id/status',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await updateUserStatus(req.params.id, req.body, req.user))
 );
 
 export default router;

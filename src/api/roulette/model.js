@@ -21,7 +21,7 @@ const RouletteSchema = new Schema(
 				delete ret._id;
 			},
 		},
-	},
+	}
 );
 
 export const Roulette = mongoose.model('Roulette', RouletteSchema);

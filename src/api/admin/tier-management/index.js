@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { done } from '../../../services/response/';
 import { xApi, token } from '../../../services/passport';
 import {
-    getTierRequirements,
-    getTierRequirement,
-    createTierRequirement,
-    updateTierRequirement,
-    deactivateTierRequirement,
-    reactivateTierRequirement,
-    initializeDefaultTierRequirements,
+	getTierRequirements,
+	getTierRequirement,
+	createTierRequirement,
+	updateTierRequirement,
+	deactivateTierRequirement,
+	reactivateTierRequirement,
+	initializeDefaultTierRequirements,
 } from './controller';
 
 const router = new Router();
@@ -22,10 +22,10 @@ const router = new Router();
  * - includeInactive: Include deactivated tiers (default: false)
  */
 router.get(
-    '/requirements',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getTierRequirements(req.query))
+	'/requirements',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getTierRequirements(req.query))
 );
 
 /**
@@ -34,10 +34,11 @@ router.get(
  * This will create all default tier configurations if none exist
  */
 router.post(
-    '/requirements/initialize',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await initializeDefaultTierRequirements(req.user))
+	'/requirements/initialize',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await initializeDefaultTierRequirements(req.user))
 );
 
 /**
@@ -79,10 +80,11 @@ router.post(
  * }
  */
 router.post(
-    '/requirements',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await createTierRequirement(req.body, req.user))
+	'/requirements',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await createTierRequirement(req.body, req.user))
 );
 
 /**
@@ -91,10 +93,10 @@ router.post(
  * Params: name
  */
 router.get(
-    '/requirements/:name',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await getTierRequirement(req.params.name))
+	'/requirements/:name',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getTierRequirement(req.params.name))
 );
 
 /**
@@ -104,10 +106,14 @@ router.get(
  * Body: Partial tier requirements data (same structure as POST)
  */
 router.put(
-    '/requirements/:name',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await updateTierRequirement(req.params.name, req.body, req.user))
+	'/requirements/:name',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(
+			res,
+			await updateTierRequirement(req.params.name, req.body, req.user)
+		)
 );
 
 /**
@@ -116,10 +122,11 @@ router.put(
  * Params: name
  */
 router.delete(
-    '/requirements/:name',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await deactivateTierRequirement(req.params.name, req.user))
+	'/requirements/:name',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await deactivateTierRequirement(req.params.name, req.user))
 );
 
 /**
@@ -128,10 +135,11 @@ router.delete(
  * Params: name
  */
 router.post(
-    '/requirements/:name',
-    xApi(),
-    token({ required: true, roles: ['ADMIN'] }),
-    async (req, res) => done(res, await reactivateTierRequirement(req.params.name, req.user))
+	'/requirements/:name',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await reactivateTierRequirement(req.params.name, req.user))
 );
 
 export default router;

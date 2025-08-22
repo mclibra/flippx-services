@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 import path from 'path';
 import merge from 'lodash/merge';
 import dotenv from 'dotenv-safe';
@@ -67,9 +66,14 @@ const environments = {
 			entryFees: [5, 10, 20, 30, 50, 100],
 			maxPlayersPerRoom: 4,
 			isActive: true,
-			computerPlayerNames: ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta'],
+			computerPlayerNames: [
+				'Bot_Alpha',
+				'Bot_Beta',
+				'Bot_Gamma',
+				'Bot_Delta',
+			],
 			newGameDelay: 30,
-		}
+		},
 	},
 
 	production: {

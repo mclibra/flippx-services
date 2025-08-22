@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 const { MongoClient } = require('mongodb');
 
 // Your MongoDB Atlas connection string

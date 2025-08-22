@@ -33,7 +33,8 @@ export const initiateWithdrawal = async req => {
 
 		// **NEW: Check loyalty-based withdrawal limits**
 		try {
-			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
+			const withdrawalLimitResult =
+				await LoyaltyService.checkWithdrawalLimit(user._id);
 			if (!withdrawalLimitResult.success) {
 				return {
 					status: 500,
@@ -76,8 +77,13 @@ export const initiateWithdrawal = async req => {
 				entity: {
 					success: false,
 					error: 'Insufficient withdrawable real cash balance',
-					availableWithdrawable: wallet ? wallet.realBalanceWithdrawable : 0,
-					totalReal: wallet ? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable : 0,
+					availableWithdrawable: wallet
+						? wallet.realBalanceWithdrawable
+						: 0,
+					totalReal: wallet
+						? wallet.realBalanceWithdrawable +
+							wallet.realBalanceNonWithdrawable
+						: 0,
 				},
 			};
 		}
@@ -331,7 +337,7 @@ export const getUserWithdrawals = async req => {
 				pagination: {
 					limit: parseInt(limit),
 					offset: parseInt(offset),
-					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+					hasMore: parseInt(offset) + parseInt(limit) < total,
 				},
 			},
 		};
@@ -382,7 +388,7 @@ export const getAdminWithdrawals = async req => {
 				pagination: {
 					limit: parseInt(limit),
 					offset: parseInt(offset),
-					hasMore: (parseInt(offset) + parseInt(limit)) < total,
+					hasMore: parseInt(offset) + parseInt(limit) < total,
 				},
 			},
 		};

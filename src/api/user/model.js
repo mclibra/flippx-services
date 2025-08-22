@@ -99,7 +99,7 @@ const userSchema = new Schema(
 		influencerContractId: {
 			type: Schema.Types.ObjectId,
 			ref: 'Influencer',
-			default: null
+			default: null,
 		},
 		// New fields for document verification
 		idProof: {

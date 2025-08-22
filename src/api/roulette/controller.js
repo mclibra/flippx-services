@@ -78,13 +78,13 @@ export const list = async ({
 				ticket =>
 					new Promise(async (resolve, reject) => {
 						let roulette = await Roulette.findById(
-							ticket._id,
+							ticket._id
 						).exec();
 						resolve({
 							...roulette._doc,
 							amount: [ticket],
 						});
-					}),
+					})
 			);
 		} else {
 			const rouletteList = await Roulette.find(params)
@@ -119,7 +119,7 @@ export const list = async ({
 							...roulette._doc,
 							amount,
 						});
-					}),
+					})
 			);
 		}
 		const roulette = await Promise.all(roulettePromise);
@@ -146,7 +146,7 @@ export const list = async ({
 
 export const show = async (
 	{ id },
-	{ offset, limit, sortBy = 'createdAt', sortOrder = 'desc' },
+	{ offset, limit, sortBy = 'createdAt', sortOrder = 'desc' }
 ) => {
 	try {
 		const roulette = await Roulette.findById(id).exec();
@@ -190,7 +190,7 @@ export const show = async (
 				amount: amount.map(item => ({
 					...item,
 					totalAmountPlayed: parseFloat(
-						item.totalAmountPlayed,
+						item.totalAmountPlayed
 					).toFixed(2),
 					totalAmountWon: parseFloat(item.totalAmountWon).toFixed(2),
 				})),
@@ -228,7 +228,7 @@ export const nextSpin = async () => {
 			});
 		}
 		const countdown = parseInt(
-			(nextRoulette.spinSchedlue - currentTime) / 1000,
+			(nextRoulette.spinSchedlue - currentTime) / 1000
 		);
 		return {
 			status: 200,

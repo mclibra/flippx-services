@@ -137,29 +137,50 @@ export const create = async body => {
 
 			// **NEW: Initialize loyalty profile for the user**
 			try {
-				const loyaltyResult = await LoyaltyService.initializeLoyaltyForUser(user._id);
+				const loyaltyResult =
+					await LoyaltyService.initializeLoyaltyForUser(user._id);
 				if (!loyaltyResult.success) {
-					console.warn(`Failed to initialize loyalty for user ${user._id}:`, loyaltyResult.error);
+					console.warn(
+						`Failed to initialize loyalty for user ${user._id}:`,
+						loyaltyResult.error
+					);
 					// Don't fail user creation if loyalty initialization fails
 				} else {
-					console.log(`Loyalty profile initialized for user ${user._id}`);
+					console.log(
+						`Loyalty profile initialized for user ${user._id}`
+					);
 				}
 			} catch (loyaltyError) {
-				console.error(`Error initializing loyalty for user ${user._id}:`, loyaltyError);
+				console.error(
+					`Error initializing loyalty for user ${user._id}:`,
+					loyaltyError
+				);
 				// Don't fail user creation if loyalty initialization fails
 			}
 
 			// **NEW: Process referral qualification if referral code exists**
 			if (refferalCode) {
 				try {
-					const referralResult = await LoyaltyService.processReferralQualification(user._id);
+					const referralResult =
+						await LoyaltyService.processReferralQualification(
+							user._id
+						);
 					if (!referralResult.success) {
-						console.warn(`Failed to process referral qualification for user ${user._id}:`, referralResult.error);
+						console.warn(
+							`Failed to process referral qualification for user ${user._id}:`,
+							referralResult.error
+						);
 					} else {
-						console.log(`Referral qualification processed for user ${user._id}`, referralResult);
+						console.log(
+							`Referral qualification processed for user ${user._id}`,
+							referralResult
+						);
 					}
 				} catch (referralError) {
-					console.error(`Error processing referral qualification for user ${user._id}:`, referralError);
+					console.error(
+						`Error processing referral qualification for user ${user._id}:`,
+						referralError
+					);
 				}
 			}
 
@@ -263,8 +284,9 @@ export const verifySecurePin = async (user, { securePin }) => {
 				error:
 					failedAttempts[user._id.toString()] > 2
 						? `Invalid secure pin. Your account has been blocked. Please contact MegaPay support.`
-						: `Invalid secure pin. You have ${3 - failedAttempts[user._id.toString()]
-						} attempt left.`,
+						: `Invalid secure pin. You have ${
+								3 - failedAttempts[user._id.toString()]
+							} attempt left.`,
 			},
 		};
 	} catch (error) {
@@ -548,7 +570,10 @@ export const getSignedUrl = async (user, { fileType }) => {
 	}
 };
 
-export const getSignedUrlForDocument = async (user, { fileType, documentType }) => {
+export const getSignedUrlForDocument = async (
+	user,
+	{ fileType, documentType }
+) => {
 	try {
 		const S3_BUCKET = config.s3Bucket;
 		AWS.config.region = config.s3Region;

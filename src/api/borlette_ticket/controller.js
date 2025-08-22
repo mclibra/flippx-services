@@ -9,7 +9,7 @@ import { LoyaltyService } from '../loyalty/service';
 import PayoutService from '../../services/payout/payoutService';
 import FlippXService from '../../services/flippx/collectionService';
 
-export const list = async ({ }, user) => {
+export const list = async ({}, user) => {
 	try {
 		const { _id: userId, role } = user;
 
@@ -24,8 +24,8 @@ export const list = async ({ }, user) => {
 				path: 'lottery',
 				populate: {
 					path: 'state',
-					select: 'name code'
-				}
+					select: 'name code',
+				},
 			})
 			.sort({ createdAt: -1 })
 			.exec();
@@ -35,8 +35,8 @@ export const list = async ({ }, user) => {
 			entity: {
 				success: true,
 				tickets,
-				total: tickets.length
-			}
+				total: tickets.length,
+			},
 		};
 	} catch (error) {
 		console.error('Error in list method:', error);
@@ -44,8 +44,8 @@ export const list = async ({ }, user) => {
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };
@@ -66,8 +66,8 @@ export const show = async ({ id }, user) => {
 				path: 'lottery',
 				populate: {
 					path: 'state',
-					select: 'name code'
-				}
+					select: 'name code',
+				},
 			})
 			.exec();
 
@@ -76,8 +76,8 @@ export const show = async ({ id }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'Ticket not found or access denied.'
-				}
+					error: 'Ticket not found or access denied.',
+				},
 			};
 		}
 
@@ -85,8 +85,8 @@ export const show = async ({ id }, user) => {
 			status: 200,
 			entity: {
 				success: true,
-				ticket
-			}
+				ticket,
+			},
 		};
 	} catch (error) {
 		console.error('Error in show method:', error);
@@ -94,8 +94,8 @@ export const show = async ({ id }, user) => {
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };
@@ -184,8 +184,8 @@ export const ticketByLottery = async ({ id }, user) => {
 				path: 'lottery',
 				populate: {
 					path: 'state',
-					select: 'name code'
-				}
+					select: 'name code',
+				},
 			})
 			.sort({ purchasedOn: -1 })
 			.exec();
@@ -200,14 +200,20 @@ export const ticketByLottery = async ({ id }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'Lottery not found.'
-				}
+					error: 'Lottery not found.',
+				},
 			};
 		}
 
 		// Calculate summary stats
-		const totalAmountPlayed = tickets.reduce((sum, ticket) => sum + ticket.totalAmountPlayed, 0);
-		const totalAmountWon = tickets.reduce((sum, ticket) => sum + (ticket.totalAmountWon || 0), 0);
+		const totalAmountPlayed = tickets.reduce(
+			(sum, ticket) => sum + ticket.totalAmountPlayed,
+			0
+		);
+		const totalAmountWon = tickets.reduce(
+			(sum, ticket) => sum + (ticket.totalAmountWon || 0),
+			0
+		);
 
 		return {
 			status: 200,
@@ -219,9 +225,9 @@ export const ticketByLottery = async ({ id }, user) => {
 					totalTickets: tickets.length,
 					totalAmountPlayed,
 					totalAmountWon,
-					netResult: totalAmountWon - totalAmountPlayed
-				}
-			}
+					netResult: totalAmountWon - totalAmountPlayed,
+				},
+			},
 		};
 	} catch (error) {
 		console.error('Error in ticketByLottery method:', error);
@@ -229,21 +235,25 @@ export const ticketByLottery = async ({ id }, user) => {
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };
 
-export const listByState = async ({ stateId }, { offset, limit, startDate, endDate }, user) => {
+export const listByState = async (
+	{ stateId },
+	{ offset, limit, startDate, endDate },
+	user
+) => {
 	try {
 		if (user.role !== 'ADMIN') {
 			return {
 				status: 403,
 				entity: {
 					success: false,
-					error: 'Access denied. Admin privileges required.'
-				}
+					error: 'Access denied. Admin privileges required.',
+				},
 			};
 		}
 
@@ -254,8 +264,8 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 				status: 404,
 				entity: {
 					success: false,
-					error: 'State not found.'
-				}
+					error: 'State not found.',
+				},
 			};
 		}
 
@@ -265,7 +275,7 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 
 		// Build query with date filters
 		let query = {
-			lottery: { $in: lotteryIds }
+			lottery: { $in: lotteryIds },
 		};
 
 		if (startDate || endDate) {
@@ -285,8 +295,8 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 				select: 'title scheduledTime status',
 				populate: {
 					path: 'state',
-					select: 'name code'
-				}
+					select: 'name code',
+				},
 			})
 			.limit(limit ? parseInt(limit) : 50)
 			.skip(offset ? parseInt(offset) : 0)
@@ -303,18 +313,24 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 					_id: null,
 					totalTickets: { $sum: 1 },
 					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
-					totalAmountWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+					totalAmountWon: {
+						$sum: { $ifNull: ['$totalAmountWon', 0] },
+					},
 					completedTickets: {
-						$sum: { $cond: [{ $eq: ['$status', 'COMPLETED'] }, 1, 0] }
+						$sum: {
+							$cond: [{ $eq: ['$status', 'COMPLETED'] }, 1, 0],
+						},
 					},
 					activeTickets: {
-						$sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] }
+						$sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] },
 					},
 					cancelledTickets: {
-						$sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] }
-					}
-				}
-			}
+						$sum: {
+							$cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0],
+						},
+					},
+				},
+			},
 		]);
 
 		return {
@@ -326,7 +342,7 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 				pagination: {
 					total,
 					offset: parseInt(offset) || 0,
-					limit: parseInt(limit) || 50
+					limit: parseInt(limit) || 50,
 				},
 				summary: summary[0] || {
 					totalTickets: 0,
@@ -334,9 +350,9 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 					totalAmountWon: 0,
 					completedTickets: 0,
 					activeTickets: 0,
-					cancelledTickets: 0
-				}
-			}
+					cancelledTickets: 0,
+				},
+			},
 		};
 	} catch (error) {
 		console.error('Error in listByState method:', error);
@@ -344,8 +360,8 @@ export const listByState = async ({ stateId }, { offset, limit, startDate, endDa
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };
@@ -357,8 +373,8 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: 'Access denied. Admin privileges required.'
-				}
+					error: 'Access denied. Admin privileges required.',
+				},
 			};
 		}
 
@@ -369,8 +385,8 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'State not found.'
-				}
+					error: 'State not found.',
+				},
 			};
 		}
 
@@ -381,7 +397,7 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 		// Get all tickets for state lotteries
 		const tickets = await BorletteTicket.find({
 			lottery: { $in: lotteryIds },
-			status: { $ne: 'CANCELLED' }
+			status: { $ne: 'CANCELLED' },
 		});
 
 		const ticketIds = tickets.map(ticket => ticket._id);
@@ -392,9 +408,9 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 			transactionIdentifier: {
 				$in: [
 					'TICKET_BORLETTE_COMMISSION',
-					'TICKET_BORLETTE_COMMISSION_CANCELLED'
-				]
-			}
+					'TICKET_BORLETTE_COMMISSION_CANCELLED',
+				],
+			},
 		}).populate('user', 'name email phone role');
 
 		// Aggregate commission data by user
@@ -406,14 +422,22 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 					user: transaction.user,
 					totalCommissionEarned: 0,
 					totalCommissionCancelled: 0,
-					transactionCount: 0
+					transactionCount: 0,
 				};
 			}
 
-			if (transaction.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION') {
-				commissionByUser[userId].totalCommissionEarned += transaction.amount;
-			} else if (transaction.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION_CANCELLED') {
-				commissionByUser[userId].totalCommissionCancelled += transaction.amount;
+			if (
+				transaction.transactionIdentifier ===
+				'TICKET_BORLETTE_COMMISSION'
+			) {
+				commissionByUser[userId].totalCommissionEarned +=
+					transaction.amount;
+			} else if (
+				transaction.transactionIdentifier ===
+				'TICKET_BORLETTE_COMMISSION_CANCELLED'
+			) {
+				commissionByUser[userId].totalCommissionCancelled +=
+					transaction.amount;
 			}
 			commissionByUser[userId].transactionCount++;
 		});
@@ -421,22 +445,31 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 		// Calculate net commission for each user
 		Object.values(commissionByUser).forEach(userCommission => {
 			userCommission.netCommission =
-				userCommission.totalCommissionEarned - userCommission.totalCommissionCancelled;
+				userCommission.totalCommissionEarned -
+				userCommission.totalCommissionCancelled;
 		});
 
 		// Calculate overall totals
 		const overallSummary = {
 			totalTickets: tickets.length,
-			totalTicketAmount: tickets.reduce((sum, ticket) => sum + ticket.totalAmountPlayed, 0),
-			totalCommissionEarned: Object.values(commissionByUser)
-				.reduce((sum, user) => sum + user.totalCommissionEarned, 0),
-			totalCommissionCancelled: Object.values(commissionByUser)
-				.reduce((sum, user) => sum + user.totalCommissionCancelled, 0),
-			uniqueCommissionEarners: Object.keys(commissionByUser).length
+			totalTicketAmount: tickets.reduce(
+				(sum, ticket) => sum + ticket.totalAmountPlayed,
+				0
+			),
+			totalCommissionEarned: Object.values(commissionByUser).reduce(
+				(sum, user) => sum + user.totalCommissionEarned,
+				0
+			),
+			totalCommissionCancelled: Object.values(commissionByUser).reduce(
+				(sum, user) => sum + user.totalCommissionCancelled,
+				0
+			),
+			uniqueCommissionEarners: Object.keys(commissionByUser).length,
 		};
 
 		overallSummary.netCommissionPaid =
-			overallSummary.totalCommissionEarned - overallSummary.totalCommissionCancelled;
+			overallSummary.totalCommissionEarned -
+			overallSummary.totalCommissionCancelled;
 
 		return {
 			status: 200,
@@ -445,8 +478,8 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 				state,
 				overallSummary,
 				commissionByUser: Object.values(commissionByUser),
-				detailedTransactions: commissionTransactions
-			}
+				detailedTransactions: commissionTransactions,
+			},
 		};
 	} catch (error) {
 		console.error('Error in stateCommissionSummary method:', error);
@@ -454,8 +487,8 @@ export const stateCommissionSummary = async ({ stateId }, user) => {
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };
@@ -567,7 +600,8 @@ export const placeBet = async ({ id }, body, user) => {
 			body.cashType = cashType;
 
 			// Check if marriage numbers are allowed
-			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers !== false;
+			const hasMarriageNumbers =
+				lottery.additionalData?.hasMarriageNumbers !== false;
 
 			if (!hasMarriageNumbers) {
 				const hasMarriageNumberInTicket = body.numbers.some(item => {
@@ -597,13 +631,13 @@ export const placeBet = async ({ id }, body, user) => {
 				// Check restrictions first
 				if (
 					availableAmount.individualNumber[
-					item.numberPlayed.toString()
+						item.numberPlayed.toString()
 					] !== undefined
 				) {
 					if (
 						parseInt(
 							availableAmount.individualNumber[
-							item.numberPlayed.toString()
+								item.numberPlayed.toString()
 							]
 						) < parseInt(item.amountPlayed)
 					) {
@@ -619,7 +653,7 @@ export const placeBet = async ({ id }, body, user) => {
 						numberLength === 2 &&
 						availableAmount.twoDigit[numberStr] !== undefined &&
 						parseInt(availableAmount.twoDigit[numberStr]) <
-						parseInt(item.amountPlayed)
+							parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
@@ -629,7 +663,7 @@ export const placeBet = async ({ id }, body, user) => {
 						numberLength === 3 &&
 						availableAmount.threeDigit[numberStr] !== undefined &&
 						parseInt(availableAmount.threeDigit[numberStr]) <
-						parseInt(item.amountPlayed)
+							parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
@@ -639,7 +673,7 @@ export const placeBet = async ({ id }, body, user) => {
 						numberLength === 4 &&
 						availableAmount.fourDigit[numberStr] !== undefined &&
 						parseInt(availableAmount.fourDigit[numberStr]) <
-						parseInt(item.amountPlayed)
+							parseInt(item.amountPlayed)
 					) {
 						throw new Error(
 							`${item.numberPlayed} cannot be played.`
@@ -649,11 +683,11 @@ export const placeBet = async ({ id }, body, user) => {
 						hasMarriageNumbers &&
 						numberLength === 5 &&
 						availableAmount.marriageNumber[
-						item.numberPlayed.toString()
+							item.numberPlayed.toString()
 						] !== undefined &&
 						parseInt(
 							availableAmount.marriageNumber[
-							item.numberPlayed.toString()
+								item.numberPlayed.toString()
 							]
 						) < parseInt(item.amountPlayed)
 					) {
@@ -685,21 +719,35 @@ export const placeBet = async ({ id }, body, user) => {
 
 					// **NEW: Record play activity for loyalty tracking**
 					try {
-						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								user._id
+							);
 						if (!loyaltyResult.success) {
-							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+							console.warn(
+								`Failed to record play activity for user ${user._id}:`,
+								loyaltyResult.error
+							);
 						} else {
-							console.log(`Play activity recorded for user ${user._id} - Borlette ticket purchase`);
+							console.log(
+								`Play activity recorded for user ${user._id} - Borlette ticket purchase`
+							);
 						}
 					} catch (loyaltyError) {
-						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						console.error(
+							`Error recording play activity for user ${user._id}:`,
+							loyaltyError
+						);
 						// Don't fail ticket creation if loyalty tracking fails
 					}
 
 					// **NEW: Award XP for ticket purchase**
 					try {
 						// Calculate XP based on amount played (1 XP per $5 played, minimum 5 XP)
-						const baseXP = Math.max(5, Math.floor(body.totalAmountPlayed / 5));
+						const baseXP = Math.max(
+							5,
+							Math.floor(body.totalAmountPlayed / 5)
+						);
 						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
 						const totalXP = baseXP * cashTypeMultiplier;
 
@@ -714,17 +762,25 @@ export const placeBet = async ({ id }, body, user) => {
 								amountPlayed: body.totalAmountPlayed,
 								cashType,
 								baseXP,
-								multiplier: cashTypeMultiplier
+								multiplier: cashTypeMultiplier,
 							}
 						);
 
 						if (!xpResult.success) {
-							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+							console.warn(
+								`Failed to award XP for user ${user._id}:`,
+								xpResult.error
+							);
 						} else {
-							console.log(`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`);
+							console.log(
+								`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`
+							);
 						}
 					} catch (xpError) {
-						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						console.error(
+							`Error awarding XP for user ${user._id}:`,
+							xpError
+						);
 						// Don't fail ticket creation if XP awarding fails
 					}
 
@@ -793,10 +849,17 @@ export const create = async (body, user) => {
 
 		// NEW: Get user's current tier for payout calculation
 		let userTier = 'NONE';
-		let payoutConfig = { percentage: 60, isCustom: false, configId: null, description: 'Default percentage' };
+		let payoutConfig = {
+			percentage: 60,
+			isCustom: false,
+			configId: null,
+			description: 'Default percentage',
+		};
 
 		try {
-			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(user._id);
+			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(
+				user._id
+			);
 			if (loyaltyResult.success && loyaltyResult.loyalty) {
 				userTier = loyaltyResult.loyalty.currentTier || 'NONE';
 			}
@@ -805,9 +868,15 @@ export const create = async (body, user) => {
 			const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
 
 			// Get payout configuration for this tier
-			payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+			payoutConfig = await PayoutService.getPayoutPercentage(
+				payoutTier,
+				'BORLETTE'
+			);
 		} catch (loyaltyError) {
-			console.warn(`Failed to get user tier for ${user._id}:`, loyaltyError);
+			console.warn(
+				`Failed to get user tier for ${user._id}:`,
+				loyaltyError
+			);
 			// Continue with defaults
 		}
 
@@ -821,11 +890,13 @@ export const create = async (body, user) => {
 
 		if (lottery && lottery.status === 'SCHEDULED') {
 			const walletData = await Wallet.findOne({ user: user._id });
-			const balanceField = cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
+			const balanceField =
+				cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
 			const balanceToCheck = walletData[balanceField];
 
 			// Check if lottery supports marriage numbers
-			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers || false;
+			const hasMarriageNumbers =
+				lottery.additionalData?.hasMarriageNumbers || false;
 
 			// Get lottery restrictions
 			const lotteryRestriction = await LotteryRestriction.findOne({
@@ -846,9 +917,11 @@ export const create = async (body, user) => {
 
 						if (isMarriageNumber) {
 							if (
-								availableAmount.marriageNumber[numberStr] !== undefined &&
-								parseInt(availableAmount.marriageNumber[numberStr]) <
-								parseInt(item.amountPlayed)
+								availableAmount.marriageNumber[numberStr] !==
+									undefined &&
+								parseInt(
+									availableAmount.marriageNumber[numberStr]
+								) < parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played.`
@@ -859,9 +932,10 @@ export const create = async (body, user) => {
 
 							if (
 								numberLength === 2 &&
-								availableAmount.twoDigit[numberStr] !== undefined &&
+								availableAmount.twoDigit[numberStr] !==
+									undefined &&
 								parseInt(availableAmount.twoDigit[numberStr]) <
-								parseInt(item.amountPlayed)
+									parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played.`
@@ -869,9 +943,11 @@ export const create = async (body, user) => {
 							}
 							if (
 								numberLength === 3 &&
-								availableAmount.threeDigit[numberStr] !== undefined &&
-								parseInt(availableAmount.threeDigit[numberStr]) <
-								parseInt(item.amountPlayed)
+								availableAmount.threeDigit[numberStr] !==
+									undefined &&
+								parseInt(
+									availableAmount.threeDigit[numberStr]
+								) < parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played.`
@@ -879,9 +955,10 @@ export const create = async (body, user) => {
 							}
 							if (
 								numberLength === 4 &&
-								availableAmount.fourDigit[numberStr] !== undefined &&
+								availableAmount.fourDigit[numberStr] !==
+									undefined &&
 								parseInt(availableAmount.fourDigit[numberStr]) <
-								parseInt(item.amountPlayed)
+									parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played.`
@@ -891,11 +968,11 @@ export const create = async (body, user) => {
 								hasMarriageNumbers &&
 								numberLength === 5 &&
 								availableAmount.marriageNumber[
-								item.numberPlayed.toString()
+									item.numberPlayed.toString()
 								] !== undefined &&
 								parseInt(
 									availableAmount.marriageNumber[
-									item.numberPlayed.toString()
+										item.numberPlayed.toString()
 									]
 								) < parseInt(item.amountPlayed)
 							) {
@@ -912,7 +989,7 @@ export const create = async (body, user) => {
 							numberLength === 2 &&
 							availableAmount.twoDigit[numberStr] !== undefined &&
 							parseInt(availableAmount.twoDigit[numberStr]) <
-							parseInt(item.amountPlayed)
+								parseInt(item.amountPlayed)
 						) {
 							throw new Error(
 								`${item.numberPlayed} cannot be played.`
@@ -920,9 +997,10 @@ export const create = async (body, user) => {
 						}
 						if (
 							numberLength === 3 &&
-							availableAmount.threeDigit[numberStr] !== undefined &&
+							availableAmount.threeDigit[numberStr] !==
+								undefined &&
 							parseInt(availableAmount.threeDigit[numberStr]) <
-							parseInt(item.amountPlayed)
+								parseInt(item.amountPlayed)
 						) {
 							throw new Error(
 								`${item.numberPlayed} cannot be played.`
@@ -930,9 +1008,10 @@ export const create = async (body, user) => {
 						}
 						if (
 							numberLength === 4 &&
-							availableAmount.fourDigit[numberStr] !== undefined &&
+							availableAmount.fourDigit[numberStr] !==
+								undefined &&
 							parseInt(availableAmount.fourDigit[numberStr]) <
-							parseInt(item.amountPlayed)
+								parseInt(item.amountPlayed)
 						) {
 							throw new Error(
 								`${item.numberPlayed} cannot be played.`
@@ -942,11 +1021,11 @@ export const create = async (body, user) => {
 							hasMarriageNumbers &&
 							numberLength === 5 &&
 							availableAmount.marriageNumber[
-							item.numberPlayed.toString()
+								item.numberPlayed.toString()
 							] !== undefined &&
 							parseInt(
 								availableAmount.marriageNumber[
-								item.numberPlayed.toString()
+									item.numberPlayed.toString()
 								]
 							) < parseInt(item.amountPlayed)
 						) {
@@ -979,21 +1058,35 @@ export const create = async (body, user) => {
 
 					// **NEW: Record play activity for loyalty tracking**
 					try {
-						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								user._id
+							);
 						if (!loyaltyResult.success) {
-							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+							console.warn(
+								`Failed to record play activity for user ${user._id}:`,
+								loyaltyResult.error
+							);
 						} else {
-							console.log(`Play activity recorded for user ${user._id} - Borlette ticket purchase`);
+							console.log(
+								`Play activity recorded for user ${user._id} - Borlette ticket purchase`
+							);
 						}
 					} catch (loyaltyError) {
-						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						console.error(
+							`Error recording play activity for user ${user._id}:`,
+							loyaltyError
+						);
 						// Don't fail ticket creation if loyalty tracking fails
 					}
 
 					// **NEW: Award XP for ticket purchase**
 					try {
 						// Calculate XP based on amount played (1 XP per $5 played, minimum 5 XP)
-						const baseXP = Math.max(5, Math.floor(body.totalAmountPlayed / 5));
+						const baseXP = Math.max(
+							5,
+							Math.floor(body.totalAmountPlayed / 5)
+						);
 						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
 						const totalXP = baseXP * cashTypeMultiplier;
 
@@ -1010,17 +1103,25 @@ export const create = async (body, user) => {
 								baseXP,
 								multiplier: cashTypeMultiplier,
 								userTier: userTier,
-								payoutPercentage: payoutConfig.percentage
+								payoutPercentage: payoutConfig.percentage,
 							}
 						);
 
 						if (!xpResult.success) {
-							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+							console.warn(
+								`Failed to award XP for user ${user._id}:`,
+								xpResult.error
+							);
 						} else {
-							console.log(`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`);
+							console.log(
+								`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`
+							);
 						}
 					} catch (xpError) {
-						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						console.error(
+							`Error awarding XP for user ${user._id}:`,
+							xpError
+						);
 						// Don't fail ticket creation if XP awarding fails
 					}
 
@@ -1114,10 +1215,17 @@ export const createMultiState = async (body, user) => {
 
 		// NEW: Get user's current tier for payout calculation
 		let userTier = 'NONE';
-		let payoutConfig = { percentage: 60, isCustom: false, configId: null, description: 'Default percentage' };
+		let payoutConfig = {
+			percentage: 60,
+			isCustom: false,
+			configId: null,
+			description: 'Default percentage',
+		};
 
 		try {
-			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(user._id);
+			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(
+				user._id
+			);
 			if (loyaltyResult.success && loyaltyResult.loyalty) {
 				userTier = loyaltyResult.loyalty.currentTier || 'NONE';
 			}
@@ -1126,9 +1234,15 @@ export const createMultiState = async (body, user) => {
 			const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
 
 			// Get payout configuration for this tier
-			payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+			payoutConfig = await PayoutService.getPayoutPercentage(
+				payoutTier,
+				'BORLETTE'
+			);
 		} catch (loyaltyError) {
-			console.warn(`Failed to get user tier for ${user._id}:`, loyaltyError);
+			console.warn(
+				`Failed to get user tier for ${user._id}:`,
+				loyaltyError
+			);
 			// Continue with defaults
 		}
 
@@ -1170,7 +1284,8 @@ export const createMultiState = async (body, user) => {
 			}
 
 			// Check if lottery supports marriage numbers
-			const hasMarriageNumbers = lottery.additionalData?.hasMarriageNumbers || false;
+			const hasMarriageNumbers =
+				lottery.additionalData?.hasMarriageNumbers || false;
 
 			// Get lottery restrictions
 			const lotteryRestriction = await LotteryRestriction.findOne({
@@ -1193,9 +1308,11 @@ export const createMultiState = async (body, user) => {
 
 						if (isMarriageNumber) {
 							if (
-								availableAmount.marriageNumber[numberStr] !== undefined &&
-								parseInt(availableAmount.marriageNumber[numberStr]) <
-								parseInt(item.amountPlayed)
+								availableAmount.marriageNumber[numberStr] !==
+									undefined &&
+								parseInt(
+									availableAmount.marriageNumber[numberStr]
+								) < parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
@@ -1206,9 +1323,10 @@ export const createMultiState = async (body, user) => {
 
 							if (
 								numberLength === 2 &&
-								availableAmount.twoDigit[numberStr] !== undefined &&
+								availableAmount.twoDigit[numberStr] !==
+									undefined &&
 								parseInt(availableAmount.twoDigit[numberStr]) <
-								parseInt(item.amountPlayed)
+									parseInt(item.amountPlayed)
 							) {
 								throw new Error(
 									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
@@ -1225,7 +1343,7 @@ export const createMultiState = async (body, user) => {
 							numberLength === 2 &&
 							availableAmount.twoDigit[numberStr] !== undefined &&
 							parseInt(availableAmount.twoDigit[numberStr]) <
-							parseInt(item.amountPlayed)
+								parseInt(item.amountPlayed)
 						) {
 							throw new Error(
 								`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
@@ -1303,14 +1421,23 @@ export const createMultiState = async (body, user) => {
 
 			// **NEW: Record play activity for loyalty tracking (once per multi-state purchase)**
 			try {
-				const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+				const loyaltyResult =
+					await LoyaltyService.recordUserPlayActivity(user._id);
 				if (!loyaltyResult.success) {
-					console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+					console.warn(
+						`Failed to record play activity for user ${user._id}:`,
+						loyaltyResult.error
+					);
 				} else {
-					console.log(`Play activity recorded for user ${user._id} - Multi-state Borlette purchase`);
+					console.log(
+						`Play activity recorded for user ${user._id} - Multi-state Borlette purchase`
+					);
 				}
 			} catch (loyaltyError) {
-				console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+				console.error(
+					`Error recording play activity for user ${user._id}:`,
+					loyaltyError
+				);
 			}
 
 			// **NEW: Award XP for multi-state purchase**
@@ -1318,8 +1445,13 @@ export const createMultiState = async (body, user) => {
 				// Calculate XP based on total amount played across all states
 				const baseXP = Math.max(10, Math.floor(totalAmount / 5)); // Higher minimum for multi-state
 				const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1;
-				const multiStateMultiplier = Math.min(2, 1 + (createdTickets.length - 1) * 0.2); // Bonus for multiple states
-				const totalXP = Math.floor(baseXP * cashTypeMultiplier * multiStateMultiplier);
+				const multiStateMultiplier = Math.min(
+					2,
+					1 + (createdTickets.length - 1) * 0.2
+				); // Bonus for multiple states
+				const totalXP = Math.floor(
+					baseXP * cashTypeMultiplier * multiStateMultiplier
+				);
 
 				const xpResult = await LoyaltyService.awardUserXP(
 					user._id,
@@ -1335,17 +1467,25 @@ export const createMultiState = async (body, user) => {
 						baseXP,
 						multiplier: cashTypeMultiplier * multiStateMultiplier,
 						userTier: userTier,
-						payoutPercentage: payoutConfig.percentage
+						payoutPercentage: payoutConfig.percentage,
 					}
 				);
 
 				if (!xpResult.success) {
-					console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+					console.warn(
+						`Failed to award XP for user ${user._id}:`,
+						xpResult.error
+					);
 				} else {
-					console.log(`Awarded ${totalXP} XP to user ${user._id} for multi-state Borlette purchase`);
+					console.log(
+						`Awarded ${totalXP} XP to user ${user._id} for multi-state Borlette purchase`
+					);
 				}
 			} catch (xpError) {
-				console.error(`Error awarding XP for user ${user._id}:`, xpError);
+				console.error(
+					`Error awarding XP for user ${user._id}:`,
+					xpError
+				);
 			}
 
 			return {
@@ -1510,9 +1650,12 @@ export const cashoutTicket = async ({ id }, user) => {
 		try {
 			// Calculate XP based on amount won
 			const baseXP = Math.max(20, Math.floor(netAmountWon / 10)); // Higher XP for wins
-			const cashTypeMultiplier = borletteTicket.cashType === 'REAL' ? 2 : 1;
+			const cashTypeMultiplier =
+				borletteTicket.cashType === 'REAL' ? 2 : 1;
 			const winMultiplier = 1.5; // Bonus for winning
-			const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+			const totalXP = Math.floor(
+				baseXP * cashTypeMultiplier * winMultiplier
+			);
 
 			const xpResult = await LoyaltyService.awardUserXP(
 				borletteTicket.user._id,
@@ -1528,17 +1671,25 @@ export const cashoutTicket = async ({ id }, user) => {
 					cashType: borletteTicket.cashType,
 					baseXP,
 					multiplier: cashTypeMultiplier * winMultiplier,
-					isWin: true
+					isWin: true,
 				}
 			);
 
 			if (!xpResult.success) {
-				console.warn(`Failed to award win XP for user ${borletteTicket.user._id}:`, xpResult.error);
+				console.warn(
+					`Failed to award win XP for user ${borletteTicket.user._id}:`,
+					xpResult.error
+				);
 			} else {
-				console.log(`Awarded ${totalXP} XP to user ${borletteTicket.user._id} for Borlette win`);
+				console.log(
+					`Awarded ${totalXP} XP to user ${borletteTicket.user._id} for Borlette win`
+				);
 			}
 		} catch (xpError) {
-			console.error(`Error awarding win XP for user ${borletteTicket.user._id}:`, xpError);
+			console.error(
+				`Error awarding win XP for user ${borletteTicket.user._id}:`,
+				xpError
+			);
 		}
 
 		await Object.assign(borletteTicket, {
@@ -1572,8 +1723,8 @@ export const commissionSummary = async ({ id }, user) => {
 				path: 'lottery',
 				populate: {
 					path: 'state',
-					select: 'name code'
-				}
+					select: 'name code',
+				},
 			})
 			.exec();
 
@@ -1582,8 +1733,8 @@ export const commissionSummary = async ({ id }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'Ticket not found.'
-				}
+					error: 'Ticket not found.',
+				},
 			};
 		}
 
@@ -1593,8 +1744,8 @@ export const commissionSummary = async ({ id }, user) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: 'Access denied.'
-				}
+					error: 'Access denied.',
+				},
 			};
 		}
 
@@ -1604,9 +1755,9 @@ export const commissionSummary = async ({ id }, user) => {
 			transactionIdentifier: {
 				$in: [
 					'TICKET_BORLETTE_COMMISSION',
-					'TICKET_BORLETTE_COMMISSION_CANCELLED'
-				]
-			}
+					'TICKET_BORLETTE_COMMISSION_CANCELLED',
+				],
+			},
 		}).populate('user', 'name email phone role');
 
 		// Calculate commission summary
@@ -1615,23 +1766,32 @@ export const commissionSummary = async ({ id }, user) => {
 			ticketWon: ticket.totalAmountWon || 0,
 			commissionTransactions: commissionTransactions,
 			totalCommissionEarned: commissionTransactions
-				.filter(tx => tx.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION')
+				.filter(
+					tx =>
+						tx.transactionIdentifier ===
+						'TICKET_BORLETTE_COMMISSION'
+				)
 				.reduce((sum, tx) => sum + tx.amount, 0),
 			totalCommissionCancelled: commissionTransactions
-				.filter(tx => tx.transactionIdentifier === 'TICKET_BORLETTE_COMMISSION_CANCELLED')
-				.reduce((sum, tx) => sum + tx.amount, 0)
+				.filter(
+					tx =>
+						tx.transactionIdentifier ===
+						'TICKET_BORLETTE_COMMISSION_CANCELLED'
+				)
+				.reduce((sum, tx) => sum + tx.amount, 0),
 		};
 
 		commissionSummary.netCommission =
-			commissionSummary.totalCommissionEarned - commissionSummary.totalCommissionCancelled;
+			commissionSummary.totalCommissionEarned -
+			commissionSummary.totalCommissionCancelled;
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				ticket,
-				commissionSummary
-			}
+				commissionSummary,
+			},
 		};
 	} catch (error) {
 		console.error('Error in commissionSummary method:', error);
@@ -1639,8 +1799,8 @@ export const commissionSummary = async ({ id }, user) => {
 			status: 409,
 			entity: {
 				success: false,
-				error: error.errors || error.message || error
-			}
+				error: error.errors || error.message || error,
+			},
 		};
 	}
 };

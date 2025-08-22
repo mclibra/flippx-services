@@ -29,7 +29,7 @@ export const createDominoConfig = async () => {
 	const configData = config.dominoConfigData;
 	try {
 		let dominoConfigData = await DominoGameConfig.findOne({
-			isActive: true
+			isActive: true,
 		}).exec();
 		if (!dominoConfigData) {
 			dominoConfigData = await DominoGameConfig.create(configData);
@@ -94,7 +94,9 @@ export const initializeTierRequirements = async () => {
 			// Get admin user for audit trail
 			const adminUser = await User.findOne({ role: 'ADMIN' });
 			if (!adminUser) {
-				console.warn('No admin user found for tier requirements initialization');
+				console.warn(
+					'No admin user found for tier requirements initialization'
+				);
 				return null;
 			}
 
@@ -104,7 +106,9 @@ export const initializeTierRequirements = async () => {
 			console.log('Tier requirements initialized successfully');
 			return true;
 		} else {
-			console.log(`Tier requirements already exist (${existingCount} records)`);
+			console.log(
+				`Tier requirements already exist (${existingCount} records)`
+			);
 			return true;
 		}
 	} catch (error) {

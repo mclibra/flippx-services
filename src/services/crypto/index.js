@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { secretSalt } from '../../../config';
 

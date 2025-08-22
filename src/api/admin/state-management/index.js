@@ -9,16 +9,14 @@ router.get(
 	'/',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await list(req.query))
+	async (req, res) => done(res, await list(req.query))
 );
 
 router.get(
 	'/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await show(req.params))
+	async (req, res) => done(res, await show(req.params))
 );
 
 router.post(

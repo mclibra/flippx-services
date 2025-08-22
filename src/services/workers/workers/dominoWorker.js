@@ -1,513 +1,597 @@
 import BaseWorker from '../baseWorker';
-import { DominoRoom, DominoGame, DominoGameConfig } from '../../../api/domino/model';
+import {
+	DominoRoom,
+	DominoGame,
+	DominoGameConfig,
+} from '../../../api/domino/model';
 import { DominoGameEngine } from '../../domino/gameEngine';
 import { makeTransaction } from '../../../api/transaction/controller';
 import {
-    startDominoGame,
-    handleTurnTimeout,
-    notifyTurnChange,
-    sendTurnWarnings,
-    handleGameCompletion,
-    removeDisconnectedPlayersFromWaitingRooms
+	startDominoGame,
+	handleTurnTimeout,
+	notifyTurnChange,
+	sendTurnWarnings,
+	handleGameCompletion,
+	removeDisconnectedPlayersFromWaitingRooms,
 } from '../../../api/domino/controller';
 import { broadcastDominoGameUpdateToRoom } from '../../socket/dominoGameSocket';
 
 class DominoWorker extends BaseWorker {
-    constructor() {
-        super('domino');
-        this.processingGames = new Set();
-    }
-
-    /**
-     * Initialize all domino-related cron jobs
-     */
-    async initializeCronJobs() {
-        this.log('Initializing domino cron jobs...');
-
-        // Fill VIRTUAL waiting rooms with bots after 30 seconds - every 3 seconds
-        this.createSafeCronJob(
-            '*/30 * * * * *',
-            'fill-virtual-rooms-with-bots',
-            this.fillVirtualRoomsWithBots.bind(this)
-        );
-
-        // Handle human timeouts - every 30 seconds
-        this.createSafeCronJob(
-            '*/30 * * * * *',
-            'handle-human-timeouts',
-            this.handleHumanTimeouts.bind(this)
-        );
-
-        // Process immediate bot turns - every 15 seconds
-        this.createSafeCronJob(
-            '*/15 * * * * *',
-            'process-immediate-bot-turns',
-            this.processImmediateBotTurns.bind(this)
-        );
-
-        // Start games when rooms are full - every 3 seconds
-        this.createSafeCronJob(
-            '*/3 * * * * *',
-            'start-full-room-games',
-            this.startFullRoomGames.bind(this)
-        );
-
-        // Send turn warnings via socket - every 10 seconds
-        this.createSafeCronJob(
-            '*/10 * * * * *',
-            'send-turn-warnings',
-            this.sendTurnWarningsJob.bind(this)
-        );
-
-        // Remove disconnected players from waiting rooms - every 30 seconds
-        this.createSafeCronJob(
-            '*/30 * * * * *',
-            'remove-disconnected-players',
-            this.removeDisconnectedPlayersJob.bind(this)
-        );
-
-        // Clean up abandoned rooms - every hour
-        this.createSafeCronJob(
-            '0 * * * *',
-            'cleanup-abandoned-rooms',
-            this.cleanupAbandonedRooms.bind(this)
-        );
-
-        this.log('Domino cron jobs initialized successfully');
-    }
-
-    /**
-     * Fill VIRTUAL waiting rooms with bots after 30 seconds
-     * Original: cron.schedule('*\/3 * * * * *', ...)
-     */
-    async fillVirtualRoomsWithBots() {
-        try {
-            const gameConfig = await DominoGameConfig.findOne();
-            if (!gameConfig) {
-                return;
-            }
-
-            const maxWaitTime = new Date(Date.now() - 30 * 1000); // 30 seconds ago
-
-            const virtualRoomsNeedingBots = await DominoRoom.find({
-                status: 'WAITING',
-                cashType: 'VIRTUAL',
-                createdAt: {
-                    $lte: maxWaitTime
-                },
-                $expr: { $lt: [{ $size: '$players' }, '$playerCount'] }
-            });
-
-            let roomsProcessed = 0;
-            let botsAdded = 0;
-
-            for (const room of virtualRoomsNeedingBots) {
-                try {
-                    const slotsNeeded = room.playerCount - room.players.length;
-
-                    if (slotsNeeded > 0) {
-                        this.log(`[CRON] Filling ${slotsNeeded} bot slots in VIRTUAL room ${room.roomId}`);
-
-                        await this.fillRoomWithBots(room, slotsNeeded, gameConfig);
-                        botsAdded += slotsNeeded;
-                        roomsProcessed++;
-                    }
-                } catch (error) {
-                    this.logError(`[CRON] Error filling room ${room.roomId} with bots:`, error);
-                }
-            }
-
-            if (roomsProcessed > 0) {
-                this.log(`[CRON] ✅ Added ${botsAdded} bots to ${roomsProcessed} VIRTUAL rooms`);
-            }
-
-        } catch (error) {
-            this.logError('[CRON] Error in bot room filling:', error);
-        }
-    }
-
-    /**
-     * Handle human timeouts
-     * Original: cron.schedule('*\/10 * * * * * ', ...)
-    */
-    async handleHumanTimeouts() {
-        try {
-            const config = await DominoGameConfig.findOne();
-            const timeoutSeconds = config?.turnTimeLimit || 30;
-            const timeoutThreshold = new Date(Date.now() - timeoutSeconds * 1000);
-
-            // Find games where human players have timed out
-            const timedOutGames = await DominoGame.find({
-                gameState: 'ACTIVE',
-                turnStartTime: { $lt: timeoutThreshold }
-            }).populate('room');
-
-            for (const game of timedOutGames) {
-                try {
-                    // Skip if already being processed
-                    if (this.processingGames.has(game._id.toString())) {
-                        continue;
-                    }
-
-                    this.processingGames.add(game._id.toString());
-
-                    this.log(`[CRON] Processing timeout for human player in game ${game._id}`);
-
-                    const currentPlayer = game.players[game.currentPlayer];
-
-                    if (currentPlayer && currentPlayer.playerType === 'HUMAN' && currentPlayer.user) {
-                        this.log(`[CRON] Handling turn timeout for human user ${currentPlayer.user} in game ${game._id}`);
-                        await handleTurnTimeout(game._id, currentPlayer);
-                    }
-                } catch (error) {
-                    this.logError(`[CRON] Error handling timeout for game ${game._id}:`, error);
-                } finally {
-                    this.processingGames.delete(game._id.toString());
-                }
-            }
-
-        } catch (error) {
-            this.logError('[CRON] Error checking human timeouts:', error);
-        }
-    }
-
-    /**
-     * Process immediate bot turns
-     * Original: cron.schedule('*\/3 * * * * * ', ...)
-    */
-    async processImmediateBotTurns() {
-        try {
-            // Find active games where it's a bot's turn (within 15 seconds)
-            const timeoutThreshold = new Date(Date.now() - 15 * 1000); // 15 seconds ago
-
-            const botTurnGames = await DominoGame.find({
-                gameState: 'ACTIVE',
-                turnStartTime: { $lt: timeoutThreshold },
-                'players.playerType': 'COMPUTER',
-                _id: { $nin: Array.from(this.processingGames) }
-            }).populate('room');
-
-            for (const game of botTurnGames) {
-                try {
-                    // Skip if already being processed
-                    if (this.processingGames.has(game._id.toString())) {
-                        continue;
-                    }
-
-                    const currentPlayer = game.players[game.currentPlayer];
-
-                    if (!currentPlayer || currentPlayer.playerType !== 'COMPUTER') {
-                        continue;
-                    }
-
-                    // Add to processing set
-                    this.processingGames.add(game._id.toString());
-
-                    this.log(`[CRON] Processing immediate bot turn for ${currentPlayer.playerName} in game ${game._id}`);
-
-                    // Process bot turn with enhanced concurrency control
-                    await this.processBotTurn(game);
-
-                } catch (error) {
-                    this.logError(`[CRON] Error processing immediate bot turn for game ${game._id}:`, error);
-                } finally {
-                    this.processingGames.delete(game._id.toString());
-                }
-            }
-
-        } catch (error) {
-            this.logError('[CRON] Error checking immediate bot turns:', error);
-        }
-    }
-
-    /**
-     * Start games when rooms are full
-     * Original: cron.schedule('*\/3 * * * * * ', ...)
-    */
-    async startFullRoomGames() {
-        try {
-            const tenSecondsAgo = new Date(Date.now() - 10 * 1000); // 10 seconds ago
-
-            // Find waiting rooms that are full
-            const fullRooms = await DominoRoom.find({
-                status: 'WAITING',
-                $expr: { $eq: ['$playerCount', { $size: '$players' }] },
-                createdAt: { $lt: tenSecondsAgo }
-            });
-
-            for (const room of fullRooms) {
-                try {
-                    this.log(`[CRON] Starting game for full room ${room.roomId} with ${room.players.length}/${room.playerCount} players`);
-                    await startDominoGame(room);
-                } catch (error) {
-                    this.logError(`[CRON] Error starting game for room ${room.roomId}:`, error);
-                }
-            }
-
-        } catch (error) {
-            this.logError('[CRON] Error checking for full rooms:', error);
-        }
-    }
-
-    /**
-     * Send turn warnings via socket
-     * Original: cron.schedule('*\/5 * * * * * ', ...)
-    */
-    async sendTurnWarningsJob() {
-        try {
-            const config = await DominoGameConfig.findOne();
-            const timeoutSeconds = config?.turnTimeLimit || 30;
-
-            // Check if there are any active games first
-            const activeGamesCount = await DominoGame.countDocuments({ gameState: 'ACTIVE' });
-
-            if (activeGamesCount === 0) {
-                return;
-            }
-
-            this.log(`[CRON] Found ${activeGamesCount} active games, checking for warnings needed`);
-            await sendTurnWarnings();
-            this.log('[CRON] ✅ Socket-based turn warnings completed');
-
-        } catch (error) {
-            this.logError('[CRON] Error checking for turn warnings:', error);
-        }
-    }
-
-    /**
-     * Remove disconnected players from waiting rooms
-     * Original: cron.schedule('*\/30 * * * * * ', ...)
-    */
-    async removeDisconnectedPlayersJob() {
-        try {
-            await removeDisconnectedPlayersFromWaitingRooms();
-            this.log('[CRON] Removed disconnected players from waiting rooms');
-        } catch (error) {
-            this.logError('[CRON] Error removing disconnected players:', error);
-        }
-    }
-
-    /**
-     * Clean up abandoned rooms
-     * Original: cron.schedule('0 * * * *', ...)
-     */
-    async cleanupAbandonedRooms() {
-        try {
-            this.log('[CRON] Cleaning up abandoned domino rooms...');
-
-            // Find rooms that have been waiting for more than 2 hours
-            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-
-            const abandonedRooms = await DominoRoom.find({
-                status: 'WAITING',
-                createdAt: { $lt: twoHoursAgo }
-            });
-
-            let cleanedCount = 0;
-
-            for (const room of abandonedRooms) {
-                try {
-                    // Refund entry fees to human players using DOMINO_REFUND
-                    for (const player of room.players) {
-                        if (player.user && player.playerType === 'HUMAN') {
-                            await makeTransaction(
-                                player.user,
-                                'USER',
-                                'DOMINO_REFUND',
-                                room.entryFee,
-                                room._id,
-                                room.cashType
-                            );
-                        }
-                    }
-
-                    // Mark room as cancelled
-                    room.status = 'CANCELLED';
-                    room.completedAt = new Date();
-                    await room.save();
-
-                    cleanedCount++;
-                } catch (error) {
-                    this.logError(`[CRON] Error cleaning up room ${room.roomId}:`, error);
-                }
-            }
-
-            if (cleanedCount > 0) {
-                this.log(`[CRON] ✅ Cleaned up ${cleanedCount} abandoned domino rooms`);
-            } else {
-                this.log('[CRON] ✅ No abandoned rooms to clean up');
-            }
-        } catch (error) {
-            this.logError('[CRON] Error in domino room cleanup:', error);
-        }
-    }
-
-    /**
-     * Fill room with bots helper function
-     * Extracted from original domino.js
-     */
-    async fillRoomWithBots(room, slotsNeeded, gameConfig) {
-        try {
-            const botNames = gameConfig.computerPlayerNames;
-            const usedNames = room.players.map(p => p.playerName);
-            const availableNames = botNames.filter(name => !usedNames.includes(name));
-
-            // If we need more bots than available names, generate numbered variants
-            const allBotNames = [...availableNames];
-            if (slotsNeeded > availableNames.length) {
-                for (let i = 1; i <= slotsNeeded - availableNames.length; i++) {
-                    allBotNames.push(`${i + botNames.length}`);
-                }
-            }
-
-            const bots = [];
-
-            for (let i = 0; i < slotsNeeded; i++) {
-                const botName = allBotNames[i] || `${room.players.length + i + 1}`;
-                bots.push({
-                    user: null,
-                    playerType: 'COMPUTER',
-                    playerName: botName,
-                    position: room.players.length + i,
-                    isReady: true,
-                    isConnected: true,
-                    lastConnectedAt: new Date(),
-                    disconnectedAt: null,
-                    joinedAt: new Date()
-                });
-                // Update total pot (bots contribute to pot in VIRTUAL games)
-                room.totalPot += room.entryFee;
-            }
-
-            room.players.push(...bots);
-            await room.save();
-
-            for (const bot of bots) {
-                broadcastDominoGameUpdateToRoom(room.roomId, 'player-joined', {
-                    user: bot.user,
-                    playerName: bot.playerName,
-                    room: room.toJSON(),
-                });
-            }
-            this.log(`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`);
-
-        } catch (error) {
-            this.logError(`[BOT-FILL] Error filling room ${room.roomId} with bots:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Process bot turn helper function
-     * Extracted from original domino.js
-     */
-    async processBotTurn(game) {
-        try {
-            const currentPlayer = game.players[game.currentPlayer];
-
-            if (!currentPlayer || currentPlayer.playerType !== 'COMPUTER') {
-                return;
-            }
-
-            // Use the existing autoPlay logic to determine bot's move
-            const move = DominoGameEngine.autoPlay(game);
-
-            this.log(`[BOT-TURN] Bot ${currentPlayer.playerName} decided to:`, move);
-
-            // Process the bot's move using existing game engine
-            const moveResult = DominoGameEngine.processMove(game, move);
-
-            if (!moveResult.success) {
-                this.logError(`[BOT-TURN] Bot move failed for ${currentPlayer.playerName}:`, moveResult.error);
-                return;
-            }
-
-            const updatedGameState = moveResult.gameState;
-
-            // Build update object for atomic operation
-            const updateFields = {
-                currentPlayer: updatedGameState.currentPlayer,
-                gameState: updatedGameState.gameState,
-                players: updatedGameState.players,
-                board: updatedGameState.board,
-                drawPile: updatedGameState.drawPile,
-                moves: updatedGameState.moves,
-                totalMoves: updatedGameState.totalMoves,
-                turnStartTime: updatedGameState.turnStartTime
-            };
-
-            // Add completion fields if game is completed
-            if (updatedGameState.gameState === 'COMPLETED' || updatedGameState.gameState === 'BLOCKED') {
-                updateFields.winner = updatedGameState.winner;
-                updateFields.endReason = updatedGameState.endReason;
-                updateFields.finalScores = updatedGameState.finalScores;
-                updateFields.completedAt = updatedGameState.completedAt;
-                updateFields.duration = updatedGameState.duration;
-            }
-
-            // Use findOneAndUpdate with version check to prevent concurrent modifications
-            const updatedGame = await DominoGame.findOneAndUpdate(
-                {
-                    _id: game._id,
-                    gameState: 'ACTIVE',
-                    currentPlayer: game.currentPlayer,
-                },
-                { $set: updateFields },
-                {
-                    new: true,
-                    runValidators: true,
-                    populate: 'room'
-                }
-            );
-
-            if (!updatedGame) {
-                this.log(`[BOT-TURN] Game ${game._id} was already updated by another process - skipping bot turn for ${currentPlayer.playerName}`);
-                return;
-            }
-
-            this.log(`[BOT-TURN] Successfully updated game ${game._id} for bot ${currentPlayer.playerName}`);
-
-            broadcastDominoGameUpdateToRoom(updatedGame.room.roomId, 'game-update', {
-                gameId: updatedGame._id,
-                players: updatedGame.players.map(player => ({
-                    position: player.position,
-                    user: player.user,
-                    playerType: player.playerType,
-                    playerName: player.playerName,
-                    isConnected: player.isConnected,
-                    tileCount: player.hand.length,
-                })),
-                lastMove: moveResult.move,
-                moveBy: {
-                    position: currentPlayer.position,
-                    playerName: currentPlayer.playerName,
-                    playerType: currentPlayer.playerType,
-                },
-                board: updatedGame.board,
-                drawPile: updatedGame.drawPile,
-            });
-
-            // Send turn notifications if game is still active
-            if (updatedGame.gameState === 'ACTIVE') {
-                await notifyTurnChange(updatedGame.toJSON(), updatedGame.room.roomId, updatedGame.currentPlayer - 1);
-            }
-
-            // Check if game is completed
-            if (updatedGame.gameState === 'COMPLETED' || updatedGame.gameState === 'BLOCKED') {
-                await handleGameCompletion(updatedGame);
-            }
-
-            this.log(`[BOT-TURN] ✅ Bot ${currentPlayer.playerName} completed ${JSON.stringify(moveResult.move)} in game ${updatedGame._id}`);
-
-        } catch (error) {
-            // Enhanced error logging for debugging
-            if (error.name === 'VersionError') {
-                this.log(`[BOT-TURN] Version conflict for game ${game._id} - another process updated the game concurrently`);
-            } else {
-                this.logError(`[BOT-TURN] Error processing bot turn for game ${game._id}:`, error);
-            }
-        }
-    }
+	constructor() {
+		super('domino');
+		this.processingGames = new Set();
+	}
+
+	/**
+	 * Initialize all domino-related cron jobs
+	 */
+	async initializeCronJobs() {
+		this.log('Initializing domino cron jobs...');
+
+		// Fill VIRTUAL waiting rooms with bots after 30 seconds - every 3 seconds
+		this.createSafeCronJob(
+			'*/30 * * * * *',
+			'fill-virtual-rooms-with-bots',
+			this.fillVirtualRoomsWithBots.bind(this)
+		);
+
+		// Handle human timeouts - every 30 seconds
+		this.createSafeCronJob(
+			'*/30 * * * * *',
+			'handle-human-timeouts',
+			this.handleHumanTimeouts.bind(this)
+		);
+
+		// Process immediate bot turns - every 15 seconds
+		this.createSafeCronJob(
+			'*/15 * * * * *',
+			'process-immediate-bot-turns',
+			this.processImmediateBotTurns.bind(this)
+		);
+
+		// Start games when rooms are full - every 3 seconds
+		this.createSafeCronJob(
+			'*/3 * * * * *',
+			'start-full-room-games',
+			this.startFullRoomGames.bind(this)
+		);
+
+		// Send turn warnings via socket - every 10 seconds
+		this.createSafeCronJob(
+			'*/10 * * * * *',
+			'send-turn-warnings',
+			this.sendTurnWarningsJob.bind(this)
+		);
+
+		// Remove disconnected players from waiting rooms - every 30 seconds
+		this.createSafeCronJob(
+			'*/30 * * * * *',
+			'remove-disconnected-players',
+			this.removeDisconnectedPlayersJob.bind(this)
+		);
+
+		// Clean up abandoned rooms - every hour
+		this.createSafeCronJob(
+			'0 * * * *',
+			'cleanup-abandoned-rooms',
+			this.cleanupAbandonedRooms.bind(this)
+		);
+
+		this.log('Domino cron jobs initialized successfully');
+	}
+
+	/**
+	 * Fill VIRTUAL waiting rooms with bots after 30 seconds
+	 * Original: cron.schedule('*\/3 * * * * *', ...)
+	 */
+	async fillVirtualRoomsWithBots() {
+		try {
+			const gameConfig = await DominoGameConfig.findOne();
+			if (!gameConfig) {
+				return;
+			}
+
+			const maxWaitTime = new Date(Date.now() - 30 * 1000); // 30 seconds ago
+
+			const virtualRoomsNeedingBots = await DominoRoom.find({
+				status: 'WAITING',
+				cashType: 'VIRTUAL',
+				createdAt: {
+					$lte: maxWaitTime,
+				},
+				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
+			});
+
+			let roomsProcessed = 0;
+			let botsAdded = 0;
+
+			for (const room of virtualRoomsNeedingBots) {
+				try {
+					const slotsNeeded = room.playerCount - room.players.length;
+
+					if (slotsNeeded > 0) {
+						this.log(
+							`[CRON] Filling ${slotsNeeded} bot slots in VIRTUAL room ${room.roomId}`
+						);
+
+						await this.fillRoomWithBots(
+							room,
+							slotsNeeded,
+							gameConfig
+						);
+						botsAdded += slotsNeeded;
+						roomsProcessed++;
+					}
+				} catch (error) {
+					this.logError(
+						`[CRON] Error filling room ${room.roomId} with bots:`,
+						error
+					);
+				}
+			}
+
+			if (roomsProcessed > 0) {
+				this.log(
+					`[CRON] ✅ Added ${botsAdded} bots to ${roomsProcessed} VIRTUAL rooms`
+				);
+			}
+		} catch (error) {
+			this.logError('[CRON] Error in bot room filling:', error);
+		}
+	}
+
+	/**
+	 * Handle human timeouts
+	 * Original: cron.schedule('*\/10 * * * * * ', ...)
+	 */
+	async handleHumanTimeouts() {
+		try {
+			const config = await DominoGameConfig.findOne();
+			const timeoutSeconds = config?.turnTimeLimit || 30;
+			const timeoutThreshold = new Date(
+				Date.now() - timeoutSeconds * 1000
+			);
+
+			// Find games where human players have timed out
+			const timedOutGames = await DominoGame.find({
+				gameState: 'ACTIVE',
+				turnStartTime: { $lt: timeoutThreshold },
+			}).populate('room');
+
+			for (const game of timedOutGames) {
+				try {
+					// Skip if already being processed
+					if (this.processingGames.has(game._id.toString())) {
+						continue;
+					}
+
+					this.processingGames.add(game._id.toString());
+
+					this.log(
+						`[CRON] Processing timeout for human player in game ${game._id}`
+					);
+
+					const currentPlayer = game.players[game.currentPlayer];
+
+					if (
+						currentPlayer &&
+						currentPlayer.playerType === 'HUMAN' &&
+						currentPlayer.user
+					) {
+						this.log(
+							`[CRON] Handling turn timeout for human user ${currentPlayer.user} in game ${game._id}`
+						);
+						await handleTurnTimeout(game._id, currentPlayer);
+					}
+				} catch (error) {
+					this.logError(
+						`[CRON] Error handling timeout for game ${game._id}:`,
+						error
+					);
+				} finally {
+					this.processingGames.delete(game._id.toString());
+				}
+			}
+		} catch (error) {
+			this.logError('[CRON] Error checking human timeouts:', error);
+		}
+	}
+
+	/**
+	 * Process immediate bot turns
+	 * Original: cron.schedule('*\/3 * * * * * ', ...)
+	 */
+	async processImmediateBotTurns() {
+		try {
+			// Find active games where it's a bot's turn (within 15 seconds)
+			const timeoutThreshold = new Date(Date.now() - 15 * 1000); // 15 seconds ago
+
+			const botTurnGames = await DominoGame.find({
+				gameState: 'ACTIVE',
+				turnStartTime: { $lt: timeoutThreshold },
+				'players.playerType': 'COMPUTER',
+				_id: { $nin: Array.from(this.processingGames) },
+			}).populate('room');
+
+			for (const game of botTurnGames) {
+				try {
+					// Skip if already being processed
+					if (this.processingGames.has(game._id.toString())) {
+						continue;
+					}
+
+					const currentPlayer = game.players[game.currentPlayer];
+
+					if (
+						!currentPlayer ||
+						currentPlayer.playerType !== 'COMPUTER'
+					) {
+						continue;
+					}
+
+					// Add to processing set
+					this.processingGames.add(game._id.toString());
+
+					this.log(
+						`[CRON] Processing immediate bot turn for ${currentPlayer.playerName} in game ${game._id}`
+					);
+
+					// Process bot turn with enhanced concurrency control
+					await this.processBotTurn(game);
+				} catch (error) {
+					this.logError(
+						`[CRON] Error processing immediate bot turn for game ${game._id}:`,
+						error
+					);
+				} finally {
+					this.processingGames.delete(game._id.toString());
+				}
+			}
+		} catch (error) {
+			this.logError('[CRON] Error checking immediate bot turns:', error);
+		}
+	}
+
+	/**
+	 * Start games when rooms are full
+	 * Original: cron.schedule('*\/3 * * * * * ', ...)
+	 */
+	async startFullRoomGames() {
+		try {
+			const tenSecondsAgo = new Date(Date.now() - 10 * 1000); // 10 seconds ago
+
+			// Find waiting rooms that are full
+			const fullRooms = await DominoRoom.find({
+				status: 'WAITING',
+				$expr: { $eq: ['$playerCount', { $size: '$players' }] },
+				createdAt: { $lt: tenSecondsAgo },
+			});
+
+			for (const room of fullRooms) {
+				try {
+					this.log(
+						`[CRON] Starting game for full room ${room.roomId} with ${room.players.length}/${room.playerCount} players`
+					);
+					await startDominoGame(room);
+				} catch (error) {
+					this.logError(
+						`[CRON] Error starting game for room ${room.roomId}:`,
+						error
+					);
+				}
+			}
+		} catch (error) {
+			this.logError('[CRON] Error checking for full rooms:', error);
+		}
+	}
+
+	/**
+	 * Send turn warnings via socket
+	 * Original: cron.schedule('*\/5 * * * * * ', ...)
+	 */
+	async sendTurnWarningsJob() {
+		try {
+			const config = await DominoGameConfig.findOne();
+			const timeoutSeconds = config?.turnTimeLimit || 30;
+
+			// Check if there are any active games first
+			const activeGamesCount = await DominoGame.countDocuments({
+				gameState: 'ACTIVE',
+			});
+
+			if (activeGamesCount === 0) {
+				return;
+			}
+
+			this.log(
+				`[CRON] Found ${activeGamesCount} active games, checking for warnings needed`
+			);
+			await sendTurnWarnings();
+			this.log('[CRON] ✅ Socket-based turn warnings completed');
+		} catch (error) {
+			this.logError('[CRON] Error checking for turn warnings:', error);
+		}
+	}
+
+	/**
+	 * Remove disconnected players from waiting rooms
+	 * Original: cron.schedule('*\/30 * * * * * ', ...)
+	 */
+	async removeDisconnectedPlayersJob() {
+		try {
+			await removeDisconnectedPlayersFromWaitingRooms();
+		} catch (error) {
+			this.logError('[CRON] Error removing disconnected players:', error);
+		}
+	}
+
+	/**
+	 * Clean up abandoned rooms
+	 * Original: cron.schedule('0 * * * *', ...)
+	 */
+	async cleanupAbandonedRooms() {
+		try {
+			this.log('[CRON] Cleaning up abandoned domino rooms...');
+
+			// Find rooms that have been waiting for more than 2 hours
+			const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+			const abandonedRooms = await DominoRoom.find({
+				status: 'WAITING',
+				createdAt: { $lt: twoHoursAgo },
+			});
+
+			let cleanedCount = 0;
+
+			for (const room of abandonedRooms) {
+				try {
+					// Refund entry fees to human players using DOMINO_REFUND
+					for (const player of room.players) {
+						if (player.user && player.playerType === 'HUMAN') {
+							await makeTransaction(
+								player.user,
+								'USER',
+								'DOMINO_REFUND',
+								room.entryFee,
+								room._id,
+								room.cashType
+							);
+						}
+					}
+
+					// Mark room as cancelled
+					room.status = 'CANCELLED';
+					room.completedAt = new Date();
+					await room.save();
+
+					cleanedCount++;
+				} catch (error) {
+					this.logError(
+						`[CRON] Error cleaning up room ${room.roomId}:`,
+						error
+					);
+				}
+			}
+
+			if (cleanedCount > 0) {
+				this.log(
+					`[CRON] ✅ Cleaned up ${cleanedCount} abandoned domino rooms`
+				);
+			} else {
+				this.log('[CRON] ✅ No abandoned rooms to clean up');
+			}
+		} catch (error) {
+			this.logError('[CRON] Error in domino room cleanup:', error);
+		}
+	}
+
+	/**
+	 * Fill room with bots helper function
+	 * Extracted from original domino.js
+	 */
+	async fillRoomWithBots(room, slotsNeeded, gameConfig) {
+		try {
+			const botNames = gameConfig.computerPlayerNames;
+			const usedNames = room.players.map(p => p.playerName);
+			const availableNames = botNames.filter(
+				name => !usedNames.includes(name)
+			);
+
+			// If we need more bots than available names, generate numbered variants
+			const allBotNames = [...availableNames];
+			if (slotsNeeded > availableNames.length) {
+				for (let i = 1; i <= slotsNeeded - availableNames.length; i++) {
+					allBotNames.push(`${i + botNames.length}`);
+				}
+			}
+
+			const bots = [];
+
+			for (let i = 0; i < slotsNeeded; i++) {
+				const botName =
+					allBotNames[i] || `${room.players.length + i + 1}`;
+				bots.push({
+					user: null,
+					playerType: 'COMPUTER',
+					playerName: botName,
+					position: room.players.length + i,
+					isReady: true,
+					isConnected: true,
+					lastConnectedAt: new Date(),
+					disconnectedAt: null,
+					joinedAt: new Date(),
+				});
+				// Update total pot (bots contribute to pot in VIRTUAL games)
+				room.totalPot += room.entryFee;
+			}
+
+			room.players.push(...bots);
+			await room.save();
+
+			for (const bot of bots) {
+				broadcastDominoGameUpdateToRoom(room.roomId, 'player-joined', {
+					user: bot.user,
+					playerName: bot.playerName,
+					room: room.toJSON(),
+				});
+			}
+			this.log(
+				`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`
+			);
+		} catch (error) {
+			this.logError(
+				`[BOT-FILL] Error filling room ${room.roomId} with bots:`,
+				error
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Process bot turn helper function
+	 * Extracted from original domino.js
+	 */
+	async processBotTurn(game) {
+		try {
+			const currentPlayer = game.players[game.currentPlayer];
+
+			if (!currentPlayer || currentPlayer.playerType !== 'COMPUTER') {
+				return;
+			}
+
+			// Use the existing autoPlay logic to determine bot's move
+			const move = DominoGameEngine.autoPlay(game);
+
+			this.log(
+				`[BOT-TURN] Bot ${currentPlayer.playerName} decided to:`,
+				move
+			);
+
+			// Process the bot's move using existing game engine
+			const moveResult = DominoGameEngine.processMove(game, move);
+
+			if (!moveResult.success) {
+				this.logError(
+					`[BOT-TURN] Bot move failed for ${currentPlayer.playerName}:`,
+					moveResult.error
+				);
+				return;
+			}
+
+			const updatedGameState = moveResult.gameState;
+
+			// Build update object for atomic operation
+			const updateFields = {
+				currentPlayer: updatedGameState.currentPlayer,
+				gameState: updatedGameState.gameState,
+				players: updatedGameState.players,
+				board: updatedGameState.board,
+				drawPile: updatedGameState.drawPile,
+				moves: updatedGameState.moves,
+				totalMoves: updatedGameState.totalMoves,
+				turnStartTime: updatedGameState.turnStartTime,
+			};
+
+			// Add completion fields if game is completed
+			if (
+				updatedGameState.gameState === 'COMPLETED' ||
+				updatedGameState.gameState === 'BLOCKED'
+			) {
+				updateFields.winner = updatedGameState.winner;
+				updateFields.endReason = updatedGameState.endReason;
+				updateFields.finalScores = updatedGameState.finalScores;
+				updateFields.completedAt = updatedGameState.completedAt;
+				updateFields.duration = updatedGameState.duration;
+			}
+
+			// Use findOneAndUpdate with version check to prevent concurrent modifications
+			const updatedGame = await DominoGame.findOneAndUpdate(
+				{
+					_id: game._id,
+					gameState: 'ACTIVE',
+					currentPlayer: game.currentPlayer,
+				},
+				{ $set: updateFields },
+				{
+					new: true,
+					runValidators: true,
+					populate: 'room',
+				}
+			);
+
+			if (!updatedGame) {
+				this.log(
+					`[BOT-TURN] Game ${game._id} was already updated by another process - skipping bot turn for ${currentPlayer.playerName}`
+				);
+				return;
+			}
+
+			this.log(
+				`[BOT-TURN] Successfully updated game ${game._id} for bot ${currentPlayer.playerName}`
+			);
+
+			broadcastDominoGameUpdateToRoom(
+				updatedGame.room.roomId,
+				'game-update',
+				{
+					gameId: updatedGame._id,
+					players: updatedGame.players.map(player => ({
+						position: player.position,
+						user: player.user,
+						playerType: player.playerType,
+						playerName: player.playerName,
+						isConnected: player.isConnected,
+						tileCount: player.hand.length,
+					})),
+					lastMove: moveResult.move,
+					moveBy: {
+						position: currentPlayer.position,
+						playerName: currentPlayer.playerName,
+						playerType: currentPlayer.playerType,
+					},
+					board: updatedGame.board,
+					drawPile: updatedGame.drawPile,
+				}
+			);
+
+			// Send turn notifications if game is still active
+			if (updatedGame.gameState === 'ACTIVE') {
+				await notifyTurnChange(
+					updatedGame.toJSON(),
+					updatedGame.room.roomId,
+					updatedGame.currentPlayer - 1
+				);
+			}
+
+			// Check if game is completed
+			if (
+				updatedGame.gameState === 'COMPLETED' ||
+				updatedGame.gameState === 'BLOCKED'
+			) {
+				await handleGameCompletion(updatedGame);
+			}
+
+			this.log(
+				`[BOT-TURN] ✅ Bot ${
+					currentPlayer.playerName
+				} completed ${JSON.stringify(moveResult.move)} in game ${
+					updatedGame._id
+				}`
+			);
+		} catch (error) {
+			// Enhanced error logging for debugging
+			if (error.name === 'VersionError') {
+				this.log(
+					`[BOT-TURN] Version conflict for game ${game._id} - another process updated the game concurrently`
+				);
+			} else {
+				this.logError(
+					`[BOT-TURN] Error processing bot turn for game ${game._id}:`,
+					error
+				);
+			}
+		}
+	}
 }
 
 // Start the worker

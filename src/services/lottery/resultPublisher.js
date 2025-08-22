@@ -49,12 +49,19 @@ const applyTierBasedPayout = async (baseAmount, ticket) => {
 		}
 
 		// Get current payout configuration (for older tickets without stored config)
-		const payoutConfig = await PayoutService.getPayoutPercentage(payoutTier, 'BORLETTE');
+		const payoutConfig = await PayoutService.getPayoutPercentage(
+			payoutTier,
+			'BORLETTE'
+		);
 		const tierMultiplier = payoutConfig.percentage / 60; // 60% is the base (Silver)
 
 		return Math.round(baseAmount * tierMultiplier);
 	} catch (error) {
-		console.error('Error applying tier-based payout for ticket:', ticket._id, error);
+		console.error(
+			'Error applying tier-based payout for ticket:',
+			ticket._id,
+			error
+		);
 		// Return original amount as fallback
 		return baseAmount;
 	}
@@ -63,9 +70,7 @@ const applyTierBasedPayout = async (baseAmount, ticket) => {
 async function processTicketsAndPublishResults(lotteryId, results) {
 	const lottery = await Lottery.findById(lotteryId);
 	if (!lottery || lottery.status !== 'WAITING') {
-		throw new Error(
-			'Invalid lottery or lottery not in scheduled state'
-		);
+		throw new Error('Invalid lottery or lottery not in scheduled state');
 	}
 
 	const { _id, type, jackpotAmount } = lottery;
@@ -183,32 +188,41 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 
 							if (
 								hasMarriageNumbers &&
-								marriageNumbers.indexOf(number.numberPlayed.toString()) !== -1
+								marriageNumbers.indexOf(
+									number.numberPlayed.toString()
+								) !== -1
 							) {
 								baseAmountWon = number.amountPlayed * 500;
 							} else {
 								switch (number.numberPlayed.toString()) {
 									case `${winningNumbers[0]}${winningNumbers[1]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[1]}${winningNumbers[2]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${winningNumbers[0]}${winningNumbers[2]}`:
-										baseAmountWon = number.amountPlayed * 800;
+										baseAmountWon =
+											number.amountPlayed * 800;
 										break;
 									case `${bonusNumber}${winningNumbers[0]}`:
-										baseAmountWon = number.amountPlayed * 300;
+										baseAmountWon =
+											number.amountPlayed * 300;
 										break;
 									case `${winningNumbers[0]}`:
-										baseAmountWon = number.amountPlayed * 60;
+										baseAmountWon =
+											number.amountPlayed * 60;
 										break;
 									case `${winningNumbers[1]}`:
 										// FIXED: Changed from 20 to 15 for 2nd place
-										baseAmountWon = number.amountPlayed * 15;
+										baseAmountWon =
+											number.amountPlayed * 15;
 										break;
 									case `${winningNumbers[2]}`:
-										baseAmountWon = number.amountPlayed * 10;
+										baseAmountWon =
+											number.amountPlayed * 10;
 										break;
 								}
 							}
@@ -216,20 +230,32 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 							// NEW: Apply tier-based adjustment to the base payout
 							if (baseAmountWon > 0) {
 								// Only apply tier adjustment for 1st place (winningNumbers[0])
-								if (number.numberPlayed.toString() === winningNumbers[0]) {
-									number.amountWon = await applyTierBasedPayout(baseAmountWon, ticket);
+								if (
+									number.numberPlayed.toString() ===
+									winningNumbers[0]
+								) {
+									number.amountWon =
+										await applyTierBasedPayout(
+											baseAmountWon,
+											ticket
+										);
 								} else {
 									// 2nd and 3rd place use fixed percentages (no tier adjustment)
 									number.amountWon = baseAmountWon;
 								}
 
 								// Update result tracking
-								borletteResult[number.numberPlayed].amountReceived += number.amountPlayed;
-								borletteResult[number.numberPlayed].amountWon += number.amountWon;
-								borletteResult[number.numberPlayed].counter += 1;
+								borletteResult[
+									number.numberPlayed
+								].amountReceived += number.amountPlayed;
+								borletteResult[number.numberPlayed].amountWon +=
+									number.amountWon;
+								borletteResult[number.numberPlayed].counter +=
+									1;
 							}
 
-							borletteResult.totalAmountReceived += number.amountPlayed;
+							borletteResult.totalAmountReceived +=
+								number.amountPlayed;
 							borletteResult.totalAmountWon += number.amountWon;
 							ticket.totalAmountWon += number.amountWon;
 						}
@@ -247,36 +273,44 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 						const matchedMegaBall =
 							ticket.megaBall === results.megaBall;
 						if (matchedNumbers.length === 5 && matchedMegaBall) {
-							megamillionResult.matches['5_megaball'].counter += 1;
-							megamillionResult.matches['5_megaball'].amountWon += jackpotAmount;
+							megamillionResult.matches['5_megaball'].counter +=
+								1;
+							megamillionResult.matches['5_megaball'].amountWon +=
+								jackpotAmount;
 							ticket.amountWon = jackpotAmount;
 						} else if (
 							matchedNumbers.length === 5 &&
 							!matchedMegaBall
 						) {
 							megamillionResult.matches['5_only'].counter += 1;
-							megamillionResult.matches['5_only'].amountWon += 75 * 1000;
+							megamillionResult.matches['5_only'].amountWon +=
+								75 * 1000;
 							ticket.amountWon = 75 * 1000;
 						} else if (
 							matchedNumbers.length === 4 &&
 							matchedMegaBall
 						) {
-							megamillionResult.matches['4_megaball'].counter += 1;
-							megamillionResult.matches['4_megaball'].amountWon += 10 * 1000;
+							megamillionResult.matches['4_megaball'].counter +=
+								1;
+							megamillionResult.matches['4_megaball'].amountWon +=
+								10 * 1000;
 							ticket.amountWon = 10 * 1000;
 						} else if (
 							matchedNumbers.length === 4 &&
 							!matchedMegaBall
 						) {
 							megamillionResult.matches['4_only'].counter += 1;
-							megamillionResult.matches['4_only'].amountWon += 500;
+							megamillionResult.matches['4_only'].amountWon +=
+								500;
 							ticket.amountWon = 500;
 						} else if (
 							matchedNumbers.length === 3 &&
 							matchedMegaBall
 						) {
-							megamillionResult.matches['3_megaball'].counter += 1;
-							megamillionResult.matches['3_megaball'].amountWon += 200;
+							megamillionResult.matches['3_megaball'].counter +=
+								1;
+							megamillionResult.matches['3_megaball'].amountWon +=
+								200;
 							ticket.amountWon = 200;
 						} else if (
 							matchedNumbers.length === 3 &&
@@ -289,25 +323,32 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 							matchedNumbers.length === 2 &&
 							matchedMegaBall
 						) {
-							megamillionResult.matches['2_megaball'].counter += 1;
-							megamillionResult.matches['2_megaball'].amountWon += 10;
+							megamillionResult.matches['2_megaball'].counter +=
+								1;
+							megamillionResult.matches['2_megaball'].amountWon +=
+								10;
 							ticket.amountWon = 10;
 						} else if (
 							matchedNumbers.length === 1 &&
 							matchedMegaBall
 						) {
-							megamillionResult.matches['1_megaball'].counter += 1;
-							megamillionResult.matches['1_megaball'].amountWon += 4;
+							megamillionResult.matches['1_megaball'].counter +=
+								1;
+							megamillionResult.matches['1_megaball'].amountWon +=
+								4;
 							ticket.amountWon = 4;
 						} else if (
 							matchedNumbers.length === 0 &&
 							matchedMegaBall
 						) {
-							megamillionResult.matches['0_megaball'].counter += 1;
-							megamillionResult.matches['0_megaball'].amountWon += 2;
+							megamillionResult.matches['0_megaball'].counter +=
+								1;
+							megamillionResult.matches['0_megaball'].amountWon +=
+								2;
 							ticket.amountWon = 2;
 						}
-						megamillionResult.totalAmountReceived += MEGAMILLION_TICKET_AMOUNT;
+						megamillionResult.totalAmountReceived +=
+							MEGAMILLION_TICKET_AMOUNT;
 						megamillionResult.totalAmountWon += ticket.amountWon;
 						break;
 					}
@@ -328,7 +369,7 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 						`WON_${type.toUpperCase()}`,
 						amount,
 						ticket._id,
-						ticket.cashType,
+						ticket.cashType
 					);
 				}
 				await ticket.save();
@@ -337,7 +378,11 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 	);
 
 	// Update lottery status
-	console.log(`Setting lottery status of ${lottery._id} to COMPLETED at ${moment.now()}`);
+	console.log(
+		`Setting lottery status of ${
+			lottery._id
+		} to COMPLETED at ${moment.now()}`
+	);
 	lottery.status = 'COMPLETED';
 	lottery.results = results;
 	lottery.drawTime = moment.now();

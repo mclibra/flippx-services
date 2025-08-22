@@ -15,27 +15,18 @@ import { LoyaltyService } from './service';
 const router = new Router();
 
 // Get user's loyalty profile
-router.get(
-	'/profile',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => done(res, await getUserLoyalty(req.user._id))
+router.get('/profile', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getUserLoyalty(req.user._id))
 );
 
 // Get user's loyalty progress
-router.get(
-	'/progress',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => done(res, await getLoyaltyProgress(req.user._id))
+router.get('/progress', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getLoyaltyProgress(req.user._id))
 );
 
 // Get user's XP transaction history
-router.get(
-	'/xp-history',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => done(res, await getUserXPHistory(req.user._id, req.query))
+router.get('/xp-history', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getUserXPHistory(req.user._id, req.query))
 );
 
 // Check weekly withdrawal limit
@@ -43,7 +34,8 @@ router.get(
 	'/withdrawal-limit',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await checkWeeklyWithdrawalLimit(req.user._id))
+	async (req, res) =>
+		done(res, await checkWeeklyWithdrawalLimit(req.user._id))
 );
 
 // Get withdrawal processing time
@@ -110,7 +102,9 @@ router.get(
 	xApi(),
 	token({ required: true }),
 	async (req, res) => {
-		const history = await LoyaltyService.getUserCashbackHistory(req.user._id);
+		const history = await LoyaltyService.getUserCashbackHistory(
+			req.user._id
+		);
 		done(res, {
 			status: history.success ? 200 : 500,
 			entity: history,

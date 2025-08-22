@@ -3,9 +3,12 @@ import { Plan } from '../plan/model';
 import { UserPlan } from '../plan/userPlanModel';
 import { Wallet, Payment } from './model';
 import { makeTransaction } from '../transaction/controller';
-import { createPaymentSession, verifyWebhookSignature } from '../../services/payoneer';
+import {
+	createPaymentSession,
+	verifyWebhookSignature,
+} from '../../services/payoneer';
 
-export const getUserBalance = async (user) => {
+export const getUserBalance = async user => {
 	try {
 		let wallet = await Wallet.findOne({ user: user._id });
 
@@ -42,7 +45,7 @@ export const getUserBalance = async (user) => {
 	}
 };
 
-export const getWalletSummary = async (req) => {
+export const getWalletSummary = async req => {
 	try {
 		const { user } = req;
 
@@ -65,7 +68,9 @@ export const getWalletSummary = async (req) => {
 					totalUsers: { $sum: 1 },
 					totalVirtualBalance: { $sum: '$virtualBalance' },
 					totalRealWithdrawable: { $sum: '$realBalanceWithdrawable' },
-					totalRealNonWithdrawable: { $sum: '$realBalanceNonWithdrawable' },
+					totalRealNonWithdrawable: {
+						$sum: '$realBalanceNonWithdrawable',
+					},
 					totalPendingWithdrawals: { $sum: '$pendingWithdrawals' },
 				},
 			},
@@ -84,7 +89,7 @@ export const getWalletSummary = async (req) => {
 
 		// Format payments data
 		const paymentsData = {};
-		paymentsSummary.forEach((item) => {
+		paymentsSummary.forEach(item => {
 			paymentsData[item._id] = {
 				count: item.count,
 				totalAmount: item.totalAmount,
@@ -122,7 +127,13 @@ export const getWalletSummary = async (req) => {
 export const initiateVirtualCashPurchase = async (req, res) => {
 	try {
 		const { user } = req;
-		const { amount, currency = 'USD', planId, virtualCashAmount = 0, realCashAmount = 0 } = req.body;
+		const {
+			amount,
+			currency = 'USD',
+			planId,
+			virtualCashAmount = 0,
+			realCashAmount = 0,
+		} = req.body;
 
 		// Validate required parameters
 		if (!amount || amount <= 0) {
@@ -197,7 +208,8 @@ export const initiateVirtualCashPurchase = async (req, res) => {
 			}
 		} else {
 			// Validate cash distribution for non-plan purchases
-			const totalCashAmount = finalVirtualCashAmount + finalRealCashAmount;
+			const totalCashAmount =
+				finalVirtualCashAmount + finalRealCashAmount;
 			if (Math.abs(totalCashAmount - amount) > 0.01) {
 				return {
 					status: 400,
@@ -477,7 +489,10 @@ export const createManualPayment = async (user, body) => {
 			finalAmount = plan.price;
 
 			// If amount was also provided, validate it matches the plan price
-			if (providedAmount && Math.abs(providedAmount - plan.price) > 0.01) {
+			if (
+				providedAmount &&
+				Math.abs(providedAmount - plan.price) > 0.01
+			) {
 				return {
 					status: 400,
 					entity: {
@@ -499,7 +514,9 @@ export const createManualPayment = async (user, body) => {
 		}
 
 		// Generate unique session ID for manual payments to avoid duplicate key error
-		const sessionId = `manual_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+		const sessionId = `manual_${userId}_${Date.now()}_${Math.random()
+			.toString(36)
+			.substr(2, 9)}`;
 
 		// Create manual payment record
 		const payment = await Payment.create({
@@ -555,7 +572,10 @@ export const confirmPayment = async (user, { paymentId }) => {
 		}
 
 		// Verify payment belongs to user (unless admin)
-		if (user.role !== 'ADMIN' && payment.user.toString() !== user._id.toString()) {
+		if (
+			user.role !== 'ADMIN' &&
+			payment.user.toString() !== user._id.toString()
+		) {
 			return {
 				status: 403,
 				entity: {
@@ -595,7 +615,9 @@ export const confirmPayment = async (user, { paymentId }) => {
 					amount: payment.amount,
 					virtualCashAmount: payment.virtualCashAmount,
 					realCashAmount: payment.realCashAmount,
-					plan: payment.plan ? { id: payment.plan._id, name: payment.plan.name } : null,
+					plan: payment.plan
+						? { id: payment.plan._id, name: payment.plan.name }
+						: null,
 					status: payment.status,
 				},
 			},
@@ -734,7 +756,9 @@ export const handlePurchaseSuccess = async (req, res) => {
 		}
 
 		// Find payment record
-		const payment = await Payment.findOne({ sessionId: session_id }).populate('plan');
+		const payment = await Payment.findOne({
+			sessionId: session_id,
+		}).populate('plan');
 		if (!payment) {
 			return {
 				status: 404,
@@ -778,7 +802,9 @@ export const handlePurchaseSuccess = async (req, res) => {
 					amount: payment.amount,
 					virtualCashAmount: payment.virtualCashAmount,
 					realCashAmount: payment.realCashAmount,
-					plan: payment.plan ? { id: payment.plan._id, name: payment.plan.name } : null,
+					plan: payment.plan
+						? { id: payment.plan._id, name: payment.plan.name }
+						: null,
 					status: payment.status,
 				},
 			},
@@ -845,7 +871,8 @@ export const handlePurchaseCancel = async (req, res) => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to process payment cancellation',
+				error:
+					error.message || 'Failed to process payment cancellation',
 			},
 		};
 	}
@@ -897,7 +924,9 @@ export const handlePayoneerWebhook = async (req, res) => {
 				}).populate('plan');
 
 				if (!payment) {
-					console.error(`Payment not found for session ID: ${sessionId}`);
+					console.error(
+						`Payment not found for session ID: ${sessionId}`
+					);
 					return {
 						status: 404,
 						entity: {
@@ -909,7 +938,9 @@ export const handlePayoneerWebhook = async (req, res) => {
 
 				// Only process if payment is still pending
 				if (payment.status !== 'PENDING') {
-					console.log(`Payment ${payment._id} already processed with status: ${payment.status}`);
+					console.log(
+						`Payment ${payment._id} already processed with status: ${payment.status}`
+					);
 					return {
 						status: 200,
 						entity: {
@@ -930,9 +961,14 @@ export const handlePayoneerWebhook = async (req, res) => {
 				// Process wallet credits and user plan creation
 				try {
 					await processPaymentCompletion(payment);
-					console.log(`Successfully processed payment ${payment._id} via webhook`);
+					console.log(
+						`Successfully processed payment ${payment._id} via webhook`
+					);
 				} catch (transactionError) {
-					console.error(`Error processing transactions for payment ${payment._id}:`, transactionError);
+					console.error(
+						`Error processing transactions for payment ${payment._id}:`,
+						transactionError
+					);
 					// Update payment status to failed
 					payment.status = 'FAILED';
 					payment.errorMessage = transactionError.message;
@@ -956,13 +992,16 @@ export const handlePayoneerWebhook = async (req, res) => {
 
 					if (payment && payment.status === 'PENDING') {
 						payment.status = 'FAILED';
-						payment.errorMessage = data.failure_reason || 'Payment failed';
+						payment.errorMessage =
+							data.failure_reason || 'Payment failed';
 						payment.providerResponse = {
 							...payment.providerResponse,
 							webhook_data: data,
 						};
 						await payment.save();
-						console.log(`Payment ${payment._id} marked as failed via webhook`);
+						console.log(
+							`Payment ${payment._id} marked as failed via webhook`
+						);
 					}
 				}
 				break;
@@ -992,7 +1031,7 @@ export const handlePayoneerWebhook = async (req, res) => {
 };
 
 // Helper function to process payment completion
-const processPaymentCompletion = async (payment) => {
+const processPaymentCompletion = async payment => {
 	// Credit virtual cash if specified
 	if (payment.virtualCashAmount > 0) {
 		await makeTransaction(
@@ -1030,9 +1069,13 @@ const processPaymentCompletion = async (payment) => {
 				realCashAmount: payment.plan.realCashAmount,
 				virtualCashAmount: payment.plan.virtualCashAmount,
 			},
-			purchaseMethod: payment.isManual ? 'MANUAL_PAYMENT' : 'PAYMENT_GATEWAY',
+			purchaseMethod: payment.isManual
+				? 'MANUAL_PAYMENT'
+				: 'PAYMENT_GATEWAY',
 		});
 
-		console.log(`Created user plan ${userPlan._id} for payment ${payment._id}`);
+		console.log(
+			`Created user plan ${userPlan._id} for payment ${payment._id}`
+		);
 	}
 };

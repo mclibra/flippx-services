@@ -3,7 +3,11 @@ import { env, mongo, port, ip, apiRoot } from './config';
 import mongoose from './src/services/mongoose';
 import express from './src/services/express';
 import { initializeSocket } from './src/services/socket';
-import { createAdmin, createSystemAccount, createDominoConfig } from './src/seedDb';
+import {
+	createAdmin,
+	createSystemAccount,
+	createDominoConfig,
+} from './src/seedDb';
 import api from './src/api';
 
 // Import WorkerManager for multi-core cron processing
@@ -66,8 +70,9 @@ setImmediate(async () => {
 		// This prevents cron jobs from blocking the main server startup
 		console.log('🚀 Starting cron worker processes...');
 		await workerManager.start();
-		console.log('✅ All systems operational - Main server + Worker processes running');
-
+		console.log(
+			'✅ All systems operational - Main server + Worker processes running'
+		);
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 
@@ -83,7 +88,7 @@ setImmediate(async () => {
 });
 
 // Graceful shutdown handler for the main process
-const gracefulShutdown = async (signal) => {
+const gracefulShutdown = async signal => {
 	console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
 
 	try {

@@ -24,7 +24,9 @@ export const fetchGameListByState = async stateCode => {
 
 export const fetchGameResult = async gameId => {
 	try {
-		console.log(`Fetching game result for lottery with external ID: ${gameId}`);
+		console.log(
+			`Fetching game result for lottery with external ID: ${gameId}`
+		);
 		const response = await api.get(
 			`/lottery-results/game-result?gameID=${gameId}`
 		);

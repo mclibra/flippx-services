@@ -53,14 +53,16 @@ router.get(
 	'/analytics/tier-payouts',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await getTierBasedPayoutAnalytics(req.query, req.user))
+	async (req, res) =>
+		done(res, await getTierBasedPayoutAnalytics(req.query, req.user))
 );
 
 router.get(
 	'/analytics/revenue-impact',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await getRevenueImpactComparison(req.query, req.user))
+	async (req, res) =>
+		done(res, await getRevenueImpactComparison(req.query, req.user))
 );
 
 export default router;

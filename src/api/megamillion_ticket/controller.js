@@ -134,14 +134,25 @@ export const placeBet = async ({ id }, body, user) => {
 
 					// **NEW: Record play activity for loyalty tracking**
 					try {
-						const loyaltyResult = await LoyaltyService.recordUserPlayActivity(user._id);
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								user._id
+							);
 						if (!loyaltyResult.success) {
-							console.warn(`Failed to record play activity for user ${user._id}:`, loyaltyResult.error);
+							console.warn(
+								`Failed to record play activity for user ${user._id}:`,
+								loyaltyResult.error
+							);
 						} else {
-							console.log(`Play activity recorded for user ${user._id} - Megamillion ticket purchase`);
+							console.log(
+								`Play activity recorded for user ${user._id} - Megamillion ticket purchase`
+							);
 						}
 					} catch (loyaltyError) {
-						console.error(`Error recording play activity for user ${user._id}:`, loyaltyError);
+						console.error(
+							`Error recording play activity for user ${user._id}:`,
+							loyaltyError
+						);
 						// Don't fail ticket creation if loyalty tracking fails
 					}
 
@@ -165,17 +176,25 @@ export const placeBet = async ({ id }, body, user) => {
 								baseXP,
 								multiplier: cashTypeMultiplier,
 								numbers: body.numbers,
-								megaBall: body.megaBall
+								megaBall: body.megaBall,
 							}
 						);
 
 						if (!xpResult.success) {
-							console.warn(`Failed to award XP for user ${user._id}:`, xpResult.error);
+							console.warn(
+								`Failed to award XP for user ${user._id}:`,
+								xpResult.error
+							);
 						} else {
-							console.log(`Awarded ${totalXP} XP to user ${user._id} for Megamillion ticket purchase`);
+							console.log(
+								`Awarded ${totalXP} XP to user ${user._id} for Megamillion ticket purchase`
+							);
 						}
 					} catch (xpError) {
-						console.error(`Error awarding XP for user ${user._id}:`, xpError);
+						console.error(
+							`Error awarding XP for user ${user._id}:`,
+							xpError
+						);
 						// Don't fail ticket creation if XP awarding fails
 					}
 
@@ -334,16 +353,19 @@ export const cashoutTicket = async ({ id }, user) => {
 			'WON_MEGAMILLION',
 			totalAmountWon,
 			megamillionTicket._id,
-			megamillionTicket.cashType,
+			megamillionTicket.cashType
 		);
 
 		// **NEW: Award XP for winning**
 		try {
 			// Calculate XP based on amount won
 			const baseXP = Math.max(25, Math.floor(totalAmountWon / 10)); // Higher XP for wins, Megamillion wins are typically larger
-			const cashTypeMultiplier = megamillionTicket.cashType === 'REAL' ? 2 : 1;
+			const cashTypeMultiplier =
+				megamillionTicket.cashType === 'REAL' ? 2 : 1;
 			const winMultiplier = 2; // Higher bonus for Megamillion wins
-			const totalXP = Math.floor(baseXP * cashTypeMultiplier * winMultiplier);
+			const totalXP = Math.floor(
+				baseXP * cashTypeMultiplier * winMultiplier
+			);
 
 			const xpResult = await LoyaltyService.awardUserXP(
 				megamillionTicket.user._id,
@@ -359,17 +381,25 @@ export const cashoutTicket = async ({ id }, user) => {
 					multiplier: cashTypeMultiplier * winMultiplier,
 					isWin: true,
 					numbers: megamillionTicket.numbers,
-					megaBall: megamillionTicket.megaBall
+					megaBall: megamillionTicket.megaBall,
 				}
 			);
 
 			if (!xpResult.success) {
-				console.warn(`Failed to award win XP for user ${megamillionTicket.user._id}:`, xpResult.error);
+				console.warn(
+					`Failed to award win XP for user ${megamillionTicket.user._id}:`,
+					xpResult.error
+				);
 			} else {
-				console.log(`Awarded ${totalXP} XP to user ${megamillionTicket.user._id} for Megamillion win`);
+				console.log(
+					`Awarded ${totalXP} XP to user ${megamillionTicket.user._id} for Megamillion win`
+				);
 			}
 		} catch (xpError) {
-			console.error(`Error awarding win XP for user ${megamillionTicket.user._id}:`, xpError);
+			console.error(
+				`Error awarding win XP for user ${megamillionTicket.user._id}:`,
+				xpError
+			);
 		}
 
 		await Object.assign(megamillionTicket, {

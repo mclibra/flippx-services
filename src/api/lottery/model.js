@@ -19,7 +19,7 @@ const LotterySchema = new Schema(
 			megaMillions: { type: Number, default: null },
 		},
 		additionalData: {
-			hasMarriageNumbers: { type: Boolean, default: true }
+			hasMarriageNumbers: { type: Boolean, default: true },
 		},
 		status: {
 			type: String,
@@ -69,7 +69,7 @@ LotterySchema.index(
 	{
 		unique: true,
 		sparse: true,
-		name: 'unique_pick3_sparse'
+		name: 'unique_pick3_sparse',
 	}
 );
 
@@ -78,7 +78,7 @@ LotterySchema.index(
 	{
 		unique: true,
 		sparse: true,
-		name: 'unique_pick4_sparse'
+		name: 'unique_pick4_sparse',
 	}
 );
 

@@ -20,13 +20,11 @@ const config = {
 const transactionText = {
 	amountCredited: {
 		user: 'Hi, $crediterName has sent you Gourde $amount. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent:
-			'Hi, you have successfully sent Gourde $amount to $creditedTo. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
+		agent: 'Hi, you have successfully sent Gourde $amount to $creditedTo. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
 	},
 	amountDebited: {
 		user: 'Hi, $debiterName has withdrawn Gourde $amount from your account. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent:
-			'Hi, you have successfully withdrawn Gourde $amount from $debitedFrom. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
+		agent: 'Hi, you have successfully withdrawn Gourde $amount from $debitedFrom. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
 	},
 };
 
@@ -195,7 +193,9 @@ export const makeTransaction = async (
 			throw new Error('Transaction amount must be greater than 0');
 		}
 
-		console.log(`Making ${transactionIdentifier} transaction for user ${userId}: ${transactionAmount} ${cashType}`);
+		console.log(
+			`Making ${transactionIdentifier} transaction for user ${userId}: ${transactionAmount} ${cashType}`
+		);
 
 		const walletData = await Wallet.findOne({
 			user: userId,
@@ -208,7 +208,8 @@ export const makeTransaction = async (
 		// Store previous balances for transaction records
 		const previousVirtualBalance = walletData.virtualBalance;
 		const previousWithdrawableBalance = walletData.realBalanceWithdrawable;
-		const previousNonWithdrawableBalance = walletData.realBalanceNonWithdrawable;
+		const previousNonWithdrawableBalance =
+			walletData.realBalanceNonWithdrawable;
 
 		let returnAmount = 0;
 
@@ -235,7 +236,9 @@ export const makeTransaction = async (
 						status: 'COMPLETED',
 					});
 				} else {
-					throw new Error('Virtual cash purchase must use VIRTUAL cash type');
+					throw new Error(
+						'Virtual cash purchase must use VIRTUAL cash type'
+					);
 				}
 				break;
 			}
@@ -253,8 +256,12 @@ export const makeTransaction = async (
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							paymentId: referenceIndex,
 							paymentType: transactionIdentifier,
@@ -263,7 +270,9 @@ export const makeTransaction = async (
 						status: 'COMPLETED',
 					});
 				} else {
-					throw new Error('Real cash purchase must use REAL cash type');
+					throw new Error(
+						'Real cash purchase must use REAL cash type'
+					);
 				}
 				break;
 			}
@@ -283,8 +292,12 @@ export const makeTransaction = async (
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							planId: referenceIndex,
 							transactionType: 'PLAN_PURCHASE',
@@ -320,8 +333,12 @@ export const makeTransaction = async (
 			case 'WITHDRAWAL_PENDING': {
 				if (cashType === 'REAL') {
 					// Only allow withdrawal from withdrawable Real Cash
-					if (transactionAmount > walletData.realBalanceWithdrawable) {
-						throw new Error('Insufficient withdrawable real balance.');
+					if (
+						transactionAmount > walletData.realBalanceWithdrawable
+					) {
+						throw new Error(
+							'Insufficient withdrawable real balance.'
+						);
 					}
 
 					walletData.realBalanceWithdrawable -= transactionAmount;
@@ -331,7 +348,9 @@ export const makeTransaction = async (
 						walletData.pendingWithdrawals = transactionAmount;
 					}
 				} else {
-					throw new Error('Withdrawals are only allowed for Real Cash');
+					throw new Error(
+						'Withdrawals are only allowed for Real Cash'
+					);
 				}
 
 				await walletData.save();
@@ -344,8 +363,12 @@ export const makeTransaction = async (
 					transactionType: 'PENDING_DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-					newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+					previousBalance:
+						previousWithdrawableBalance +
+						previousNonWithdrawableBalance,
+					newBalance:
+						walletData.realBalanceWithdrawable +
+						walletData.realBalanceNonWithdrawable,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						bankAccount: referenceIndex,
@@ -360,7 +383,10 @@ export const makeTransaction = async (
 			// WITHDRAWAL_COMPLETED - Finalize withdrawal
 			case 'WITHDRAWAL_COMPLETED': {
 				if (cashType === 'REAL') {
-					if (walletData.pendingWithdrawals && walletData.pendingWithdrawals >= transactionAmount) {
+					if (
+						walletData.pendingWithdrawals &&
+						walletData.pendingWithdrawals >= transactionAmount
+					) {
 						walletData.pendingWithdrawals -= transactionAmount;
 					}
 				}
@@ -375,12 +401,16 @@ export const makeTransaction = async (
 					transactionType: 'COMPLETED_DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						completionDate: new Date(),
@@ -395,7 +425,10 @@ export const makeTransaction = async (
 			case 'WITHDRAWAL_REJECTED': {
 				if (cashType === 'REAL') {
 					walletData.realBalanceWithdrawable += transactionAmount;
-					if (walletData.pendingWithdrawals && walletData.pendingWithdrawals >= transactionAmount) {
+					if (
+						walletData.pendingWithdrawals &&
+						walletData.pendingWithdrawals >= transactionAmount
+					) {
 						walletData.pendingWithdrawals -= transactionAmount;
 					}
 				} else {
@@ -412,12 +445,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						refundedToWithdrawable: cashType === 'REAL',
@@ -436,13 +473,18 @@ export const makeTransaction = async (
 			case 'DOMINO_ENTRY': {
 				if (cashType === 'REAL') {
 					// Check sufficient balance
-					const totalRealBalance = walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable;
+					const totalRealBalance =
+						walletData.realBalanceWithdrawable +
+						walletData.realBalanceNonWithdrawable;
 					if (transactionAmount > totalRealBalance) {
 						throw new Error('Insufficient real balance.');
 					}
 
 					// Deduct with priority (non-withdrawable first)
-					const deductionResult = deductRealCashWithPriority(walletData, transactionAmount);
+					const deductionResult = deductRealCashWithPriority(
+						walletData,
+						transactionAmount
+					);
 
 					await walletData.save();
 
@@ -454,12 +496,18 @@ export const makeTransaction = async (
 						transactionType: 'DEBIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							referenceIndex,
-							deductedFromNonWithdrawable: deductionResult.deductedFromNonWithdrawable,
-							deductedFromWithdrawable: deductionResult.deductedFromWithdrawable,
+							deductedFromNonWithdrawable:
+								deductionResult.deductedFromNonWithdrawable,
+							deductedFromWithdrawable:
+								deductionResult.deductedFromWithdrawable,
 						},
 						status: 'COMPLETED',
 					});
@@ -483,7 +531,10 @@ export const makeTransaction = async (
 						newBalance: walletData.virtualBalance,
 						transactionData: {
 							referenceIndex,
-							gameType: transactionIdentifier.replace('TICKET_', '').replace('_ENTRY', '').replace('_BET', ''),
+							gameType: transactionIdentifier
+								.replace('TICKET_', '')
+								.replace('_ENTRY', '')
+								.replace('_BET', ''),
 						},
 						status: 'COMPLETED',
 					});
@@ -492,31 +543,40 @@ export const makeTransaction = async (
 				// Process referral commission for gameplay
 				try {
 					const gameTypeMap = {
-						'TICKET_BORLETTE': 'BORLETTE',
-						'TICKET_MEGAMILLION': 'MEGAMILLION',
-						'DOMINO_ENTRY': 'DOMINOES',
-						'ROULETTE_BET': 'ROULETTE'
+						TICKET_BORLETTE: 'BORLETTE',
+						TICKET_MEGAMILLION: 'MEGAMILLION',
+						DOMINO_ENTRY: 'DOMINOES',
+						ROULETTE_BET: 'ROULETTE',
 					};
 					const gameType = gameTypeMap[transactionIdentifier];
 
 					if (gameType) {
-						const commissionResult = await LoyaltyService.processReferralCommission(
-							userId,
-							gameType,
-							transactionAmount,
-							referenceIndex
-						);
+						const commissionResult =
+							await LoyaltyService.processReferralCommission(
+								userId,
+								gameType,
+								transactionAmount,
+								referenceIndex
+							);
 						if (commissionResult.success) {
-							console.log(`${gameType} referral commission processed: ${commissionResult.message}`);
+							console.log(
+								`${gameType} referral commission processed: ${commissionResult.message}`
+							);
 						}
 					}
 				} catch (error) {
-					console.error('Error processing referral commission:', error);
+					console.error(
+						'Error processing referral commission:',
+						error
+					);
 				}
 
 				// Track spending for loyalty tier requirements
 				try {
-					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
+					await LoyaltyService.recordUserPlayActivity(
+						userId,
+						transactionAmount
+					);
 				} catch (error) {
 					console.error('Error tracking play activity:', error);
 				}
@@ -546,12 +606,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						referenceIndex,
 						gameType: transactionIdentifier.replace('WON_', ''),
@@ -588,12 +652,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						creditedToNonWithdrawable: cashType === 'REAL',
 						loyaltyType: transactionIdentifier,
@@ -622,12 +690,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: 'REFERRAL',
 						referenceId: referenceIndex,
@@ -659,12 +731,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						paymentId: referenceIndex,
 						paymentType: transactionIdentifier,
@@ -679,7 +755,9 @@ export const makeTransaction = async (
 			// WITHDRAW for agents/dealers withdrawing from users
 			case 'WITHDRAW': {
 				if (!referenceIndex) {
-					throw new Error('Reference index required for withdraw transaction');
+					throw new Error(
+						'Reference index required for withdraw transaction'
+					);
 				}
 
 				const targetWalletData = await Wallet.findOne({
@@ -691,33 +769,55 @@ export const makeTransaction = async (
 				}
 
 				// Calculate commissions (only for REAL cash)
-				const adminCommission = cashType === 'REAL'
-					? parseFloat((config.withdrawCommissionAdmin * transactionAmount).toFixed(2))
-					: 0;
+				const adminCommission =
+					cashType === 'REAL'
+						? parseFloat(
+								(
+									config.withdrawCommissionAdmin *
+									transactionAmount
+								).toFixed(2)
+							)
+						: 0;
 
-				const agentCommission = cashType === 'REAL' && userRole === 'AGENT'
-					? parseFloat((config.withdrawCommissionAgent * transactionAmount).toFixed(2))
-					: 0;
+				const agentCommission =
+					cashType === 'REAL' && userRole === 'AGENT'
+						? parseFloat(
+								(
+									config.withdrawCommissionAgent *
+									transactionAmount
+								).toFixed(2)
+							)
+						: 0;
 
 				const totalCommission = adminCommission + agentCommission;
-				const amountAfterCommission = transactionAmount - totalCommission;
+				const amountAfterCommission =
+					transactionAmount - totalCommission;
 
 				if (cashType === 'REAL') {
 					// Check if target user has sufficient balance
-					const targetTotalBalance = targetWalletData.realBalanceWithdrawable + targetWalletData.realBalanceNonWithdrawable;
+					const targetTotalBalance =
+						targetWalletData.realBalanceWithdrawable +
+						targetWalletData.realBalanceNonWithdrawable;
 					if (transactionAmount > targetTotalBalance) {
-						throw new Error('Target user has insufficient real balance.');
+						throw new Error(
+							'Target user has insufficient real balance.'
+						);
 					}
 
 					// Deduct from target user with priority
-					const deductionResult = deductRealCashWithPriority(targetWalletData, transactionAmount);
+					const deductionResult = deductRealCashWithPriority(
+						targetWalletData,
+						transactionAmount
+					);
 
 					// Credit to withdrawing agent/dealer (goes to withdrawable)
 					walletData.realBalanceWithdrawable += amountAfterCommission;
 				} else {
 					// For VIRTUAL cash
 					if (transactionAmount > targetWalletData.virtualBalance) {
-						throw new Error('Target user has insufficient virtual balance.');
+						throw new Error(
+							'Target user has insufficient virtual balance.'
+						);
 					}
 					targetWalletData.virtualBalance -= transactionAmount;
 					walletData.virtualBalance += amountAfterCommission;
@@ -735,12 +835,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount: amountAfterCommission,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						targetUserId: referenceIndex,
 						originalAmount: transactionAmount,
@@ -780,12 +884,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: transactionIdentifier,
 						referenceId: referenceIndex,
@@ -802,8 +910,12 @@ export const makeTransaction = async (
 			case 'DOMINO_REFUND_COMMISSION': {
 				if (cashType === 'REAL') {
 					// Check if agent has sufficient withdrawable balance for commission reversal
-					if (transactionAmount > walletData.realBalanceWithdrawable) {
-						throw new Error('Insufficient withdrawable balance for commission reversal.');
+					if (
+						transactionAmount > walletData.realBalanceWithdrawable
+					) {
+						throw new Error(
+							'Insufficient withdrawable balance for commission reversal.'
+						);
 					}
 
 					// Deduct commission from withdrawable Real Cash
@@ -811,7 +923,9 @@ export const makeTransaction = async (
 				} else {
 					// For VIRTUAL cash (rare case)
 					if (transactionAmount > walletData.virtualBalance) {
-						throw new Error('Insufficient virtual balance for commission reversal.');
+						throw new Error(
+							'Insufficient virtual balance for commission reversal.'
+						);
 					}
 					walletData.virtualBalance -= transactionAmount;
 				}
@@ -826,15 +940,21 @@ export const makeTransaction = async (
 					transactionType: 'DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: 'REVERSAL',
-						originalCommissionType: transactionIdentifier.replace('_CANCELLED', '').replace('_REFUND', ''),
+						originalCommissionType: transactionIdentifier
+							.replace('_CANCELLED', '')
+							.replace('_REFUND', ''),
 						referenceId: referenceIndex,
 						reason: 'Commission reversed due to cancellation/refund',
 					},
@@ -866,12 +986,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						referenceIndex,
 						refundReason: transactionIdentifier,
@@ -884,12 +1008,15 @@ export const makeTransaction = async (
 			}
 
 			default:
-				throw new Error(`Unknown transaction identifier: ${transactionIdentifier}`);
+				throw new Error(
+					`Unknown transaction identifier: ${transactionIdentifier}`
+				);
 		}
 
-		console.log(`Transaction ${transactionIdentifier} completed successfully for user ${userId}`);
+		console.log(
+			`Transaction ${transactionIdentifier} completed successfully for user ${userId}`
+		);
 		return returnAmount;
-
 	} catch (error) {
 		console.error(`Transaction error for ${transactionIdentifier}:`, error);
 		throw error;
@@ -991,7 +1118,9 @@ export const commissionSummaryByAgent = async (
 					summary.gameBreakdown.borlette.volume += amount;
 					summary.gameBreakdown.borlette.count++;
 				}
-			} else if (transaction.transactionIdentifier.includes('MEGAMILLION')) {
+			} else if (
+				transaction.transactionIdentifier.includes('MEGAMILLION')
+			) {
 				if (transaction.transactionIdentifier.includes('COMMISSION')) {
 					summary.gameBreakdown.megamillion.commission += amount;
 				} else {
@@ -1122,7 +1251,7 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 		// Build match criteria for tickets
 		let matchCriteria = {
 			status: 'COMPLETED',
-			...dateFilter
+			...dateFilter,
 		};
 
 		if (tier) {
@@ -1137,7 +1266,7 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 					_id: {
 						tier: '$userTierAtPurchase',
 						payoutPercentage: '$payoutConfig.percentage',
-						isCustom: '$payoutConfig.isCustom'
+						isCustom: '$payoutConfig.isCustom',
 					},
 					totalTickets: { $sum: 1 },
 					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
@@ -1146,35 +1275,40 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 					avgAmountWon: { $avg: '$totalAmountWon' },
 					winningTickets: {
 						$sum: {
-							$cond: [{ $gt: ['$totalAmountWon', 0] }, 1, 0]
-						}
-					}
-				}
+							$cond: [{ $gt: ['$totalAmountWon', 0] }, 1, 0],
+						},
+					},
+				},
 			},
 			{
 				$addFields: {
 					winRate: {
 						$multiply: [
 							{ $divide: ['$winningTickets', '$totalTickets'] },
-							100
-						]
+							100,
+						],
 					},
 					profitMargin: {
 						$multiply: [
 							{
 								$divide: [
-									{ $subtract: ['$totalAmountPlayed', '$totalAmountWon'] },
-									'$totalAmountPlayed'
-								]
+									{
+										$subtract: [
+											'$totalAmountPlayed',
+											'$totalAmountWon',
+										],
+									},
+									'$totalAmountPlayed',
+								],
 							},
-							100
-						]
-					}
-				}
+							100,
+						],
+					},
+				},
 			},
 			{
-				$sort: { '_id.tier': 1 }
-			}
+				$sort: { '_id.tier': 1 },
+			},
 		]);
 
 		// Get daily tier performance
@@ -1186,19 +1320,19 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 						date: {
 							$dateToString: {
 								format: '%Y-%m-%d',
-								date: '$createdAt'
-							}
+								date: '$createdAt',
+							},
 						},
-						tier: '$userTierAtPurchase'
+						tier: '$userTierAtPurchase',
 					},
 					totalTickets: { $sum: 1 },
 					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
-					totalAmountWon: { $sum: '$totalAmountWon' }
-				}
+					totalAmountWon: { $sum: '$totalAmountWon' },
+				},
 			},
 			{
-				$sort: { '_id.date': -1 }
-			}
+				$sort: { '_id.date': -1 },
+			},
 		]);
 
 		// Get payout configuration usage
@@ -1207,24 +1341,24 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 			{
 				$match: {
 					...dateFilter,
-					isActive: true
-				}
+					isActive: true,
+				},
 			},
 			{
 				$group: {
 					_id: {
 						tier: '$tier',
 						gameType: '$gameType',
-						percentage: '$payoutPercentage'
+						percentage: '$payoutPercentage',
 					},
 					usageCount: { $sum: 1 },
 					isPromotional: { $first: '$isPromotional' },
-					description: { $first: '$description' }
-				}
+					description: { $first: '$description' },
+				},
 			},
 			{
-				$sort: { '_id.tier': 1, '_id.gameType': 1 }
-			}
+				$sort: { '_id.tier': 1, '_id.gameType': 1 },
+			},
 		]);
 
 		// Calculate overall impact
@@ -1236,8 +1370,10 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 					totalRevenue: { $sum: '$totalAmountPlayed' },
 					totalPayouts: { $sum: '$totalAmountWon' },
 					totalTickets: { $sum: 1 },
-					avgPayoutPercentageUsed: { $avg: '$payoutConfig.percentage' }
-				}
+					avgPayoutPercentageUsed: {
+						$avg: '$payoutConfig.percentage',
+					},
+				},
 			},
 			{
 				$addFields: {
@@ -1245,15 +1381,20 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 						$multiply: [
 							{
 								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
+									{
+										$subtract: [
+											'$totalRevenue',
+											'$totalPayouts',
+										],
+									},
+									'$totalRevenue',
+								],
 							},
-							100
-						]
-					}
-				}
-			}
+							100,
+						],
+					},
+				},
+			},
 		]);
 
 		return {
@@ -1267,10 +1408,10 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 					overallImpact: overallImpact[0] || {},
 					dateRange: {
 						startDate: startDate || 'All time',
-						endDate: endDate || 'Present'
-					}
-				}
-			}
+						endDate: endDate || 'Present',
+					},
+				},
+			},
 		};
 	} catch (error) {
 		console.error('Error getting tier-based payout analytics:', error);
@@ -1278,8 +1419,8 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to retrieve analytics'
-			}
+				error: error.message || 'Failed to retrieve analytics',
+			},
 		};
 	}
 };
@@ -1301,8 +1442,8 @@ export const getRevenueImpactComparison = async (query, user) => {
 			{
 				$match: {
 					status: 'COMPLETED',
-					createdAt: { $lt: tierImplementationDate }
-				}
+					createdAt: { $lt: tierImplementationDate },
+				},
 			},
 			{
 				$group: {
@@ -1310,8 +1451,8 @@ export const getRevenueImpactComparison = async (query, user) => {
 					totalTickets: { $sum: 1 },
 					totalRevenue: { $sum: '$totalAmountPlayed' },
 					totalPayouts: { $sum: '$totalAmountWon' },
-					avgTicketValue: { $avg: '$totalAmountPlayed' }
-				}
+					avgTicketValue: { $avg: '$totalAmountPlayed' },
+				},
 			},
 			{
 				$addFields: {
@@ -1319,15 +1460,20 @@ export const getRevenueImpactComparison = async (query, user) => {
 						$multiply: [
 							{
 								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
+									{
+										$subtract: [
+											'$totalRevenue',
+											'$totalPayouts',
+										],
+									},
+									'$totalRevenue',
+								],
 							},
-							100
-						]
-					}
-				}
-			}
+							100,
+						],
+					},
+				},
+			},
 		]);
 
 		// Get statistics after tier implementation
@@ -1335,8 +1481,8 @@ export const getRevenueImpactComparison = async (query, user) => {
 			{
 				$match: {
 					status: 'COMPLETED',
-					createdAt: { $gte: tierImplementationDate }
-				}
+					createdAt: { $gte: tierImplementationDate },
+				},
 			},
 			{
 				$group: {
@@ -1344,8 +1490,8 @@ export const getRevenueImpactComparison = async (query, user) => {
 					totalTickets: { $sum: 1 },
 					totalRevenue: { $sum: '$totalAmountPlayed' },
 					totalPayouts: { $sum: '$totalAmountWon' },
-					avgTicketValue: { $avg: '$totalAmountPlayed' }
-				}
+					avgTicketValue: { $avg: '$totalAmountPlayed' },
+				},
 			},
 			{
 				$addFields: {
@@ -1353,15 +1499,20 @@ export const getRevenueImpactComparison = async (query, user) => {
 						$multiply: [
 							{
 								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
+									{
+										$subtract: [
+											'$totalRevenue',
+											'$totalPayouts',
+										],
+									},
+									'$totalRevenue',
+								],
 							},
-							100
-						]
-					}
-				}
-			}
+							100,
+						],
+					},
+				},
+			},
 		]);
 
 		const beforeStats = beforeTierStats[0] || {};
@@ -1370,22 +1521,34 @@ export const getRevenueImpactComparison = async (query, user) => {
 		// Calculate impact metrics
 		const impact = {
 			revenueChange: {
-				absolute: (afterStats.totalRevenue || 0) - (beforeStats.totalRevenue || 0),
+				absolute:
+					(afterStats.totalRevenue || 0) -
+					(beforeStats.totalRevenue || 0),
 				percentage: beforeStats.totalRevenue
-					? (((afterStats.totalRevenue || 0) - beforeStats.totalRevenue) / beforeStats.totalRevenue) * 100
-					: 0
+					? (((afterStats.totalRevenue || 0) -
+							beforeStats.totalRevenue) /
+							beforeStats.totalRevenue) *
+						100
+					: 0,
 			},
 			payoutChange: {
-				absolute: (afterStats.totalPayouts || 0) - (beforeStats.totalPayouts || 0),
+				absolute:
+					(afterStats.totalPayouts || 0) -
+					(beforeStats.totalPayouts || 0),
 				percentage: beforeStats.totalPayouts
-					? (((afterStats.totalPayouts || 0) - beforeStats.totalPayouts) / beforeStats.totalPayouts) * 100
-					: 0
+					? (((afterStats.totalPayouts || 0) -
+							beforeStats.totalPayouts) /
+							beforeStats.totalPayouts) *
+						100
+					: 0,
 			},
 			profitMarginChange: {
-				absolute: (afterStats.profitMargin || 0) - (beforeStats.profitMargin || 0),
+				absolute:
+					(afterStats.profitMargin || 0) -
+					(beforeStats.profitMargin || 0),
 				beforeMargin: beforeStats.profitMargin || 0,
-				afterMargin: afterStats.profitMargin || 0
-			}
+				afterMargin: afterStats.profitMargin || 0,
+			},
 		};
 
 		return {
@@ -1396,9 +1559,9 @@ export const getRevenueImpactComparison = async (query, user) => {
 					beforeTierImplementation: beforeStats,
 					afterTierImplementation: afterStats,
 					impact,
-					implementationDate: tierImplementationDate
-				}
-			}
+					implementationDate: tierImplementationDate,
+				},
+			},
 		};
 	} catch (error) {
 		console.error('Error getting revenue impact comparison:', error);
@@ -1406,8 +1569,8 @@ export const getRevenueImpactComparison = async (query, user) => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to retrieve impact comparison'
-			}
+				error: error.message || 'Failed to retrieve impact comparison',
+			},
 		};
 	}
 };
@@ -1419,14 +1582,20 @@ const deductRealCashWithPriority = (wallet, amount) => {
 
 	// First, deduct from non-withdrawable
 	if (remaining > 0 && wallet.realBalanceNonWithdrawable > 0) {
-		deductedFromNonWithdrawable = Math.min(remaining, wallet.realBalanceNonWithdrawable);
+		deductedFromNonWithdrawable = Math.min(
+			remaining,
+			wallet.realBalanceNonWithdrawable
+		);
 		wallet.realBalanceNonWithdrawable -= deductedFromNonWithdrawable;
 		remaining -= deductedFromNonWithdrawable;
 	}
 
 	// Then, deduct from withdrawable
 	if (remaining > 0 && wallet.realBalanceWithdrawable > 0) {
-		deductedFromWithdrawable = Math.min(remaining, wallet.realBalanceWithdrawable);
+		deductedFromWithdrawable = Math.min(
+			remaining,
+			wallet.realBalanceWithdrawable
+		);
 		wallet.realBalanceWithdrawable -= deductedFromWithdrawable;
 		remaining -= deductedFromWithdrawable;
 	}
@@ -1439,6 +1608,6 @@ const deductRealCashWithPriority = (wallet, amount) => {
 	};
 };
 
-const getTotalRealBalance = (wallet) => {
+const getTotalRealBalance = wallet => {
 	return wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable;
 };
