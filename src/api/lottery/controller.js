@@ -6,8 +6,6 @@ import { State } from '../admin/state-management/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
 import PayoutService from '../../services/payout/payoutService';
 
-const MEGAMILLION_TICKET_AMOUNT = 2;
-
 export const list = async ({
 	offset,
 	key,
@@ -173,8 +171,7 @@ export const closestUpcomingByState = async () => {
 
 		const stateIds = activeStates.map(state => state._id.toString());
 
-		// Get closest upcoming lottery for each state using aggregation
-		const closestLotteries = await Lottery.aggregate([
+		let closestLotteries = await Lottery.aggregate([
 			{
 				$match: {
 					state: { $in: stateIds },
@@ -188,14 +185,22 @@ export const closestUpcomingByState = async () => {
 			{
 				$group: {
 					_id: '$state', // Group by state
-					closestLottery: { $first: '$ROOT' }, // Get the first (closest) lottery for each state
+					closestLottery: { $first: '$$ROOT' }, // Get the first (closest) lottery for each state
 				},
 			},
 			{
 				$lookup: {
 					from: 'states',
-					localField: '_id',
-					foreignField: '_id',
+					let: { stateId: '$_id' },
+					pipeline: [
+						{
+							$match: {
+								$expr: {
+									$eq: ['$_id', { $toObjectId: '$$stateId' }],
+								},
+							},
+						},
+					],
 					as: 'stateInfo',
 				},
 			},
@@ -1277,7 +1282,7 @@ export const allStatesSummary = async (_, { role }) => {
 	}
 };
 
-export const preview = async (body, user) => {
+export const preview = async body => {
 	try {
 		const { id, numbers } = body;
 		if (!id) {
