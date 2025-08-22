@@ -1469,7 +1469,7 @@ export const createLotteriesForState = async state => {
 					}
 
 					await Lottery.create({
-						title: `${state.name} Borlette ${lotteryConfig.name}`,
+						title: lotteryConfig.name,
 						type: 'BORLETTE',
 						scheduledTime: drawTime.valueOf(),
 						metadata: lotteryConfig.name.toLowerCase(),
