@@ -9,7 +9,7 @@ import { LoyaltyService } from '../loyalty/service';
 import PayoutService from '../../services/payout/payoutService';
 import FlippXService from '../../services/flippx/collectionService';
 
-export const list = async ({}, user) => {
+export const list = async (_, user) => {
 	try {
 		const { _id: userId, role } = user;
 
@@ -1150,9 +1150,10 @@ export const create = async (body, user) => {
 				status: 500,
 				entity: {
 					success: false,
-					error: lottery._id
-						? 'Lottery is closed.'
-						: 'Invalid lottery ID.',
+					error:
+						lottery && lottery._id
+							? 'Lottery is closed.'
+							: 'Invalid lottery ID.',
 				},
 			};
 		}
