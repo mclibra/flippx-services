@@ -1278,7 +1278,14 @@ export const calculateTierProgress = async loyalty => {
 	const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
 	if (currentTier === 'NONE') {
-		const silverReqs = LOYALTY_TIERS.SILVER.requirements;
+		const silverReqs = LOYALTY_TIERS.SILVER?.requirements;
+		if (!silverReqs) {
+			console.warn('SILVER tier requirements not found in LOYALTY_TIERS');
+			return {
+				error: 'Tier configuration not available',
+				details: 'SILVER tier requirements are not configured'
+			};
+		}
 		progress = {
 			nextTier: 'SILVER',
 			depositProgress: {
@@ -1323,7 +1330,14 @@ export const calculateTierProgress = async loyalty => {
 			},
 		};
 	} else if (currentTier === 'SILVER') {
-		const goldReqs = LOYALTY_TIERS.GOLD.requirements;
+		const goldReqs = LOYALTY_TIERS.GOLD?.requirements;
+		if (!goldReqs) {
+			console.warn('GOLD tier requirements not found in LOYALTY_TIERS');
+			return {
+				error: 'Tier configuration not available',
+				details: 'GOLD tier requirements are not configured'
+			};
+		}
 		progress = {
 			nextTier: 'GOLD',
 			depositProgress: {
@@ -1368,7 +1382,14 @@ export const calculateTierProgress = async loyalty => {
 			},
 		};
 	} else if (currentTier === 'GOLD') {
-		const vipReqs = LOYALTY_TIERS.VIP.requirements;
+		const vipReqs = LOYALTY_TIERS.VIP?.requirements;
+		if (!vipReqs) {
+			console.warn('VIP tier requirements not found in LOYALTY_TIERS');
+			return {
+				error: 'Tier configuration not available',
+				details: 'VIP tier requirements are not configured'
+			};
+		}
 		progress = {
 			nextTier: 'VIP',
 			depositProgress: {
@@ -1416,8 +1437,10 @@ export const calculateTierProgress = async loyalty => {
 			nextTier: null,
 			message: "You've reached the highest tier!",
 			benefits: {
-				referralCommissions: LOYALTY_TIERS.VIP.referralCommissions,
-				noWinCashback: `${LOYALTY_TIERS.VIP.noWinCashbackPercentage}% after ${LOYALTY_TIERS.VIP.noWinCashbackDays} days`,
+						referralCommissions: LOYALTY_TIERS.VIP?.referralCommissions || {},
+		noWinCashback: LOYALTY_TIERS.VIP?.noWinCashbackPercentage && LOYALTY_TIERS.VIP?.noWinCashbackDays 
+			? `${LOYALTY_TIERS.VIP.noWinCashbackPercentage}% after ${LOYALTY_TIERS.VIP.noWinCashbackDays} days`
+			: 'Not available',
 			},
 		};
 	}
