@@ -457,8 +457,8 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 
 export const getSelfImage = async user => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
 		const fileName = `${user._id}_profile_pic.jpg`;
 		const s3Params = {
@@ -538,8 +538,8 @@ export const verifyReset = async body => {
 
 export const getSignedUrl = async (user, { fileType }) => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
 		const fileName = `${user._id}_profile_pic.${fileType}`;
 		const s3Params = {
@@ -575,8 +575,8 @@ export const getSignedUrlForDocument = async (
 	{ fileType, documentType }
 ) => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
 		const fileName = `${user._id}_${documentType}.${fileType}`;
 		const s3Params = {
