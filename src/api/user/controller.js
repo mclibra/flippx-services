@@ -547,6 +547,7 @@ export const getSignedUrl = async (user, { fileType }) => {
 			Key: fileName,
 			Expires: 60,
 			ContentType: `image/${fileType}`,
+			ACL: 'public-read',
 		};
 		const signedUrl = s3.getSignedUrl('putObject', s3Params);
 		return {
@@ -583,6 +584,7 @@ export const getSignedUrlForDocument = async (
 			Key: fileName,
 			Expires: 60,
 			ContentType: `image/${fileType}`,
+			ACL: 'public-read',
 		};
 		const signedUrl = s3.getSignedUrl('putObject', s3Params);
 		return {
