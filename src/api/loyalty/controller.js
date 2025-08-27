@@ -461,20 +461,61 @@ export const getLoyaltyProgress = async userId => {
 		const currentTier = loyalty.currentTier;
 
 		// Use TierConfigService to calculate progress
-		const progress = await TierConfigService.calculateTierProgress(
-			currentTier,
-			loyalty.tierProgress
-		);
+		let progress;
+		try {
+			progress = await TierConfigService.calculateTierProgress(
+				currentTier,
+				loyalty.tierProgress
+			);
+		} catch (progressError) {
+			console.warn('Error calculating tier progress, using fallback:', progressError.message);
+			// Try to get basic tier info from constants as fallback
+			try {
+				const { LOYALTY_TIERS } = await import('./constants.js');
+				if (LOYALTY_TIERS && LOYALTY_TIERS[currentTier]) {
+					progress = {
+						nextTier: currentTier === 'NONE' ? 'SILVER' : 
+								  currentTier === 'SILVER' ? 'GOLD' : 
+								  currentTier === 'GOLD' ? 'VIP' : null,
+						message: `Currently ${LOYALTY_TIERS[currentTier].name} tier`,
+						fallback: true
+					};
+				} else {
+					progress = {
+						nextTier: null,
+						message: 'Progress calculation temporarily unavailable',
+						error: progressError.message
+					};
+				}
+			} catch (constantsError) {
+				console.warn('Error loading constants fallback:', constantsError.message);
+				progress = {
+					nextTier: null,
+					message: 'Progress calculation temporarily unavailable',
+					error: progressError.message
+				};
+			}
+		}
 
 		return {
-			currentTier,
-			totalXP: loyalty.totalXP,
-			tierProgress: loyalty.tierProgress,
-			progress,
+			status: 200,
+			entity: {
+				success: true,
+				currentTier,
+				totalXP: loyalty.totalXP || 0,
+				tierProgress: loyalty.tierProgress,
+				progress,
+			},
 		};
 	} catch (error) {
 		console.error('Error getting loyalty progress:', error);
-		throw error;
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to retrieve loyalty progress',
+			},
+		};
 	}
 };
 
@@ -784,7 +825,38 @@ export const getUserLoyalty = async userId => {
 		}
 
 		// Calculate progress to next tier
-		const progress = calculateTierProgress(loyalty);
+		let progress;
+		try {
+			progress = await calculateTierProgress(loyalty);
+		} catch (progressError) {
+			console.warn('Error calculating tier progress in getUserLoyalty, using fallback:', progressError.message);
+			// Try to get basic tier info from constants as fallback
+			try {
+				const { LOYALTY_TIERS } = await import('./constants.js');
+				if (LOYALTY_TIERS && LOYALTY_TIERS[loyalty.currentTier]) {
+					progress = {
+						nextTier: loyalty.currentTier === 'NONE' ? 'SILVER' : 
+								  loyalty.currentTier === 'SILVER' ? 'GOLD' : 
+								  loyalty.currentTier === 'GOLD' ? 'VIP' : null,
+						message: `Currently ${LOYALTY_TIERS[loyalty.currentTier].name} tier`,
+						fallback: true
+					};
+				} else {
+					progress = {
+						nextTier: null,
+						message: 'Progress calculation temporarily unavailable',
+						error: progressError.message
+					};
+				}
+			} catch (constantsError) {
+				console.warn('Error loading constants fallback in getUserLoyalty:', constantsError.message);
+				progress = {
+					nextTier: null,
+					message: 'Progress calculation temporarily unavailable',
+					error: progressError.message
+				};
+			}
+		}
 
 		return {
 			status: 200,

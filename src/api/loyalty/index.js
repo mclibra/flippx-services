@@ -14,15 +14,62 @@ import { LoyaltyService } from './service';
 
 const router = new Router();
 
+// Health check for tier configuration
+router.get(
+	'/tier-config-status',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => {
+		try {
+			const TierConfigService = (await import('./service'))
+				.LoyaltyService;
+			const tierRequirements =
+				await TierConfigService.getTierRequirements();
+
+			done(res, {
+				status: 200,
+				entity: {
+					success: true,
+					tierConfigLoaded: !!tierRequirements,
+					tierCount: Object.keys(tierRequirements || {}).length,
+					tiers: Object.keys(tierRequirements || {}),
+					timestamp: new Date().toISOString(),
+				},
+			});
+		} catch (error) {
+			console.error('Error checking tier config status:', error);
+			done(res, {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Failed to check tier configuration status',
+				},
+			});
+		}
+	}
+);
+
 // Get user's loyalty profile
 router.get('/profile', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await getUserLoyalty(req.user._id))
 );
 
 // Get user's loyalty progress
-router.get('/progress', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await getLoyaltyProgress(req.user._id))
-);
+router.get('/progress', xApi(), token({ required: true }), async (req, res) => {
+	try {
+		const result = await getLoyaltyProgress(req.user._id);
+		done(res, result);
+	} catch (error) {
+		console.error('Error in loyalty progress endpoint:', error);
+		done(res, {
+			status: 500,
+			entity: {
+				success: false,
+				error: 'Internal server error in loyalty progress endpoint',
+			},
+		});
+	}
+});
 
 // Get user's XP transaction history
 router.get('/xp-history', xApi(), token({ required: true }), async (req, res) =>
