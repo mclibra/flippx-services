@@ -49,6 +49,56 @@ router.get(
 	}
 );
 
+// Test tier progress calculation directly
+router.get(
+	'/test-tier-progress/:tier',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => {
+		try {
+			const { tier } = req.params;
+			const TierConfigService = (
+				await import('../../services/tier/tierConfigService')
+			).default;
+
+			// Mock user progress data
+			const mockProgress = {
+				totalDeposit30Days: 100,
+				totalDeposit60Days: 500,
+				totalDeposit90Days: 1000,
+				daysPlayedThisWeek: 2,
+				weeklySpending: 100,
+				dailySessionMinutesToday: 3,
+				dailyLoginStreak: 5,
+			};
+
+			const progress = await TierConfigService.calculateTierProgress(
+				tier,
+				mockProgress
+			);
+
+			done(res, {
+				status: 200,
+				entity: {
+					success: true,
+					testTier: tier,
+					progress,
+					timestamp: new Date().toISOString(),
+				},
+			});
+		} catch (error) {
+			console.error('Error testing tier progress:', error);
+			done(res, {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Failed to test tier progress calculation',
+				},
+			});
+		}
+	}
+);
+
 // Get user's loyalty profile
 router.get('/profile', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await getUserLoyalty(req.user._id))

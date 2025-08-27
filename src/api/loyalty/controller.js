@@ -463,10 +463,12 @@ export const getLoyaltyProgress = async userId => {
 		// Use TierConfigService to calculate progress
 		let progress;
 		try {
+			console.log(`[DEBUG] Calculating progress for tier: ${currentTier}`);
 			progress = await TierConfigService.calculateTierProgress(
 				currentTier,
 				loyalty.tierProgress
 			);
+			console.log(`[DEBUG] Progress result:`, JSON.stringify(progress, null, 2));
 		} catch (progressError) {
 			console.warn('Error calculating tier progress, using fallback:', progressError.message);
 			// Try to get basic tier info from constants as fallback
@@ -478,21 +480,38 @@ export const getLoyaltyProgress = async userId => {
 								  currentTier === 'SILVER' ? 'GOLD' : 
 								  currentTier === 'GOLD' ? 'VIP' : null,
 						message: `Currently ${LOYALTY_TIERS[currentTier].name} tier`,
-						fallback: true
+						fallback: true,
+						// Add basic progress info even in fallback mode
+						depositProgress: {
+							current: loyalty.tierProgress.totalDeposit30Days || 0,
+							required: LOYALTY_TIERS.SILVER?.requirements?.depositAmount30Days || 150,
+							percentage: Math.min(100, ((loyalty.tierProgress.totalDeposit30Days || 0) / (LOYALTY_TIERS.SILVER?.requirements?.depositAmount30Days || 150)) * 100)
+						},
+						playProgress: {
+							current: loyalty.tierProgress.daysPlayedThisWeek || 0,
+							required: LOYALTY_TIERS.SILVER?.requirements?.daysPlayedPerWeek || 3,
+							percentage: Math.min(100, ((loyalty.tierProgress.daysPlayedThisWeek || 0) / (LOYALTY_TIERS.SILVER?.requirements?.daysPlayedPerWeek || 3)) * 100)
+						}
 					};
 				} else {
 					progress = {
-						nextTier: null,
+						nextTier: currentTier === 'NONE' ? 'SILVER' : 
+								  currentTier === 'SILVER' ? 'GOLD' : 
+								  currentTier === 'GOLD' ? 'VIP' : null,
 						message: 'Progress calculation temporarily unavailable',
-						error: progressError.message
+						error: progressError.message,
+						fallback: true
 					};
 				}
 			} catch (constantsError) {
 				console.warn('Error loading constants fallback:', constantsError.message);
 				progress = {
-					nextTier: null,
+					nextTier: currentTier === 'NONE' ? 'SILVER' : 
+							  currentTier === 'SILVER' ? 'GOLD' : 
+							  currentTier === 'GOLD' ? 'VIP' : null,
 					message: 'Progress calculation temporarily unavailable',
-					error: progressError.message
+					error: progressError.message,
+					fallback: true
 				};
 			}
 		}
@@ -827,7 +846,9 @@ export const getUserLoyalty = async userId => {
 		// Calculate progress to next tier
 		let progress;
 		try {
+			console.log(`[DEBUG] Calculating progress for user loyalty tier: ${loyalty.currentTier}`);
 			progress = await calculateTierProgress(loyalty);
+			console.log(`[DEBUG] User loyalty progress result:`, JSON.stringify(progress, null, 2));
 		} catch (progressError) {
 			console.warn('Error calculating tier progress in getUserLoyalty, using fallback:', progressError.message);
 			// Try to get basic tier info from constants as fallback
@@ -839,21 +860,37 @@ export const getUserLoyalty = async userId => {
 								  loyalty.currentTier === 'SILVER' ? 'GOLD' : 
 								  loyalty.currentTier === 'GOLD' ? 'VIP' : null,
 						message: `Currently ${LOYALTY_TIERS[loyalty.currentTier].name} tier`,
-						fallback: true
+						fallback: true,
+						// Add basic progress info even in fallback mode
+						depositProgress: {
+							current: loyalty.tierProgress.totalDeposit30Days || 0,
+							required: LOYALTY_TIERS.SILVER?.requirements?.depositAmount30Days || 150,
+							percentage: Math.min(100, ((loyalty.tierProgress.totalDeposit30Days || 0) / (LOYALTY_TIERS.SILVER?.requirements?.depositAmount30Days || 150)) * 100)
+						},
+						playProgress: {
+							current: loyalty.tierProgress.daysPlayedThisWeek || 0,
+							required: LOYALTY_TIERS.SILVER?.requirements?.daysPlayedPerWeek || 3,
+							percentage: Math.min(100, ((loyalty.tierProgress.daysPlayedThisWeek || 0) / (LOYALTY_TIERS.SILVER?.requirements?.daysPlayedPerWeek || 3)) * 100)
+						}
 					};
 				} else {
 					progress = {
-						nextTier: null,
+						nextTier: loyalty.currentTier === 'NONE' ? 'SILVER' : 
+								  loyalty.currentTier === 'GOLD' ? 'VIP' : null,
 						message: 'Progress calculation temporarily unavailable',
-						error: progressError.message
+						error: progressError.message,
+						fallback: true
 					};
 				}
 			} catch (constantsError) {
 				console.warn('Error loading constants fallback in getUserLoyalty:', constantsError.message);
 				progress = {
-					nextTier: null,
+					nextTier: loyalty.currentTier === 'NONE' ? 'SILVER' : 
+							  loyalty.currentTier === 'SILVER' ? 'GOLD' : 
+							  loyalty.currentTier === 'GOLD' ? 'VIP' : null,
 					message: 'Progress calculation temporarily unavailable',
-					error: progressError.message
+					error: progressError.message,
+					fallback: true
 				};
 			}
 		}
@@ -1509,10 +1546,10 @@ export const calculateTierProgress = async loyalty => {
 			nextTier: null,
 			message: "You've reached the highest tier!",
 			benefits: {
-						referralCommissions: LOYALTY_TIERS.VIP?.referralCommissions || {},
-		noWinCashback: LOYALTY_TIERS.VIP?.noWinCashbackPercentage && LOYALTY_TIERS.VIP?.noWinCashbackDays 
-			? `${LOYALTY_TIERS.VIP.noWinCashbackPercentage}% after ${LOYALTY_TIERS.VIP.noWinCashbackDays} days`
-			: 'Not available',
+				referralCommissions: LOYALTY_TIERS.VIP?.referralCommissions || {},
+				noWinCashback: LOYALTY_TIERS.VIP?.noWinCashbackPercentage && LOYALTY_TIERS.VIP?.noWinCashbackDays 
+					? `${LOYALTY_TIERS.VIP.noWinCashbackPercentage}% after ${LOYALTY_TIERS.VIP.noWinCashbackDays} days`
+					: 'Not available',
 			},
 		};
 	}

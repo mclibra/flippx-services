@@ -15,20 +15,25 @@ class TierConfigService {
 	// Get tier requirements from database with fallback to constants
 	async getTierRequirements() {
 		try {
+			console.log(`[TIER-SERVICE] Getting tier requirements...`);
 			// Check cache first
 			if (
 				this.cachedTiers &&
 				this.cacheExpiry &&
 				Date.now() < this.cacheExpiry
 			) {
+				console.log(`[TIER-SERVICE] Returning cached tiers:`, Object.keys(this.cachedTiers || {}));
 				return this.cachedTiers;
 			}
 
 			// Fetch from database
+			console.log(`[TIER-SERVICE] Fetching from database...`);
 			const dbTiers = await TierRequirements.getAsConstants();
+			console.log(`[TIER-SERVICE] Database tiers:`, dbTiers ? Object.keys(dbTiers) : 'null');
 
 			if (dbTiers && Object.keys(dbTiers).length > 0) {
 				// Cache the result
+				console.log(`[TIER-SERVICE] Using database tiers, caching result`);
 				this.cachedTiers = dbTiers;
 				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return dbTiers;
@@ -37,6 +42,7 @@ class TierConfigService {
 				console.warn(
 					'No tier requirements found in database, using fallback constants'
 				);
+				console.log(`[TIER-SERVICE] Using fallback constants:`, Object.keys(FALLBACK_TIERS));
 				return FALLBACK_TIERS;
 			}
 		} catch (error) {
@@ -174,8 +180,11 @@ class TierConfigService {
 
 	// Calculate tier progress for display
 	async calculateTierProgress(currentTier, userProgress) {
+		console.log(`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`);
 		const allTiers = await this.getTierRequirements();
+		console.log(`[TIER-SERVICE] Available tiers:`, Object.keys(allTiers || {}));
 		const nextTierName = this.getNextTier(currentTier);
+		console.log(`[TIER-SERVICE] Next tier: ${nextTierName}`);
 
 		if (!nextTierName) {
 			return {
