@@ -186,7 +186,7 @@ TierRequirementsSchema.statics.getActiveTierConfig = async function (
 ) {
 	const query = { isActive: true };
 	if (name) {
-		query.name = name.toUpperCase();
+		query.name = { $regex: new RegExp(`^${name}$`, 'i') };
 		return await this.findOne(query);
 	}
 	return await this.find(query).sort({ name: 1 });

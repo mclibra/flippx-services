@@ -182,7 +182,7 @@ export const getTierRequirements = async query => {
 export const getTierRequirement = async name => {
 	try {
 		const tierRequirement = await TierRequirements.findOne({
-			name: name.toUpperCase(),
+			name: { $regex: new RegExp(`^${name}$`, 'i') },
 		})
 			.populate('createdBy', 'name userName')
 			.populate('updatedBy', 'name userName');
@@ -239,7 +239,7 @@ export const createTierRequirement = async (body, adminUser) => {
 
 		// Check if tier already exists
 		const existingTier = await TierRequirements.findOne({
-			name: name.toUpperCase(),
+			name: { $regex: new RegExp(`^${name}$`, 'i') },
 		});
 
 		if (existingTier) {
@@ -328,7 +328,7 @@ export const createTierRequirement = async (body, adminUser) => {
 export const updateTierRequirement = async (name, body, adminUser) => {
 	try {
 		const existingTier = await TierRequirements.findOne({
-			name: name.toUpperCase(),
+			name: { $regex: new RegExp(`^${name}$`, 'i') },
 		});
 
 		if (!existingTier) {
@@ -410,7 +410,7 @@ export const updateTierRequirement = async (name, body, adminUser) => {
 export const deactivateTierRequirement = async (name, adminUser) => {
 	try {
 		const tierRequirement = await TierRequirements.findOne({
-			name: name.toUpperCase(),
+			name: { $regex: new RegExp(`^${name}$`, 'i') },
 			isActive: true,
 		});
 
@@ -463,7 +463,7 @@ export const deactivateTierRequirement = async (name, adminUser) => {
 export const reactivateTierRequirement = async (name, adminUser) => {
 	try {
 		const tierRequirement = await TierRequirements.findOne({
-			name: name.toUpperCase(),
+			name: { $regex: new RegExp(`^${name}$`, 'i') },
 			isActive: false,
 		});
 
