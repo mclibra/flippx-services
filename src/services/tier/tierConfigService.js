@@ -184,7 +184,7 @@ class TierConfigService {
 	}
 
 	// Calculate tier progress for display
-	async calculateTierProgress(currentTier, userProgress) {
+	async calculateTierProgress(currentTier, userProgress, userData = null) {
 		console.log(`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`);
 		const allTiers = await this.getTierRequirements();
 		console.log(`[TIER-SERVICE] Available tiers:`, Object.keys(allTiers || {}));
@@ -310,6 +310,19 @@ class TierConfigService {
 					100,
 					((userProgress.dailyLoginStreak || 0) / 7) * 100
 				),
+			};
+		}
+
+		// Add ID verification requirement if needed
+		if (requirements.requireIDVerification) {
+			// Check if user has completed ID verification
+			const isIDVerified = userData && userData.idProof && userData.idProof.verificationStatus === 'VERIFIED';
+			
+			progress.idVerificationRequired = {
+				required: true,
+				message: 'ID verification is required for this tier',
+				completed: isIDVerified || false,
+				status: isIDVerified ? 'VERIFIED' : 'PENDING',
 			};
 		}
 

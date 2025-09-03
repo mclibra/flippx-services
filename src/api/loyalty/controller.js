@@ -458,6 +458,9 @@ export const getLoyaltyProgress = async userId => {
 
 		const currentTier = loyalty.currentTier;
 
+		// Get user data for ID verification check
+		const user = await User.findById(userId);
+
 		// Use TierConfigService to calculate progress
 		let progress;
 		try {
@@ -466,7 +469,8 @@ export const getLoyaltyProgress = async userId => {
 			);
 			progress = await TierConfigService.calculateTierProgress(
 				currentTier,
-				loyalty.tierProgress
+				loyalty.tierProgress,
+				user
 			);
 			console.log(
 				`[DEBUG] Progress result:`,
@@ -887,6 +891,9 @@ export const getUserLoyalty = async userId => {
 			loyalty = await initializeLoyalty(userId);
 		}
 
+		// Get user data for ID verification check
+		const user = await User.findById(userId);
+
 		// Calculate progress to next tier
 		let progress;
 		try {
@@ -895,7 +902,8 @@ export const getUserLoyalty = async userId => {
 			);
 			progress = await TierConfigService.calculateTierProgress(
 				loyalty.currentTier,
-				loyalty.tierProgress
+				loyalty.tierProgress,
+				user
 			);
 			console.log(
 				`[DEBUG] User loyalty progress result:`,
