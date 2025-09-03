@@ -43,6 +43,8 @@ class TierConfigService {
 					'No tier requirements found in database, using fallback constants'
 				);
 				console.log(`[TIER-SERVICE] Using fallback constants:`, Object.keys(FALLBACK_TIERS));
+				this.cachedTiers = FALLBACK_TIERS;
+				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return FALLBACK_TIERS;
 			}
 		} catch (error) {
@@ -51,6 +53,9 @@ class TierConfigService {
 				error
 			);
 			// Fallback to constants on error
+			console.log(`[TIER-SERVICE] Error occurred, using fallback constants:`, Object.keys(FALLBACK_TIERS));
+			this.cachedTiers = FALLBACK_TIERS;
+			this.cacheExpiry = Date.now() + this.cacheTimeout;
 			return FALLBACK_TIERS;
 		}
 	}
@@ -183,7 +188,7 @@ class TierConfigService {
 		console.log(`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`);
 		const allTiers = await this.getTierRequirements();
 		console.log(`[TIER-SERVICE] Available tiers:`, Object.keys(allTiers || {}));
-		const nextTierName = this.getNextTier(currentTier);
+		const nextTierName = this.getNextTierCaseInsensitive(currentTier);
 		console.log(`[TIER-SERVICE] Next tier: ${nextTierName}`);
 
 		if (!nextTierName) {
@@ -193,15 +198,27 @@ class TierConfigService {
 			};
 		}
 
-		const nextTierConfig = allTiers[nextTierName];
+		// Find the next tier configuration with case-insensitive matching
+		const nextTierConfig = allTiers[nextTierName] || allTiers[nextTierName.charAt(0).toUpperCase() + nextTierName.slice(1).toLowerCase()];
 		if (!nextTierConfig) {
+			console.warn(`[TIER-SERVICE] Next tier configuration not found for: ${nextTierName}`);
 			return {
 				nextTier: null,
 				message: 'Tier configuration not found',
+				error: `Configuration for ${nextTierName} tier is not available`
 			};
 		}
 
 		const requirements = nextTierConfig.requirements;
+		if (!requirements) {
+			console.warn(`[TIER-SERVICE] No requirements found for tier: ${nextTierName}`);
+			return {
+				nextTier: nextTierName,
+				message: 'Tier requirements not configured',
+				error: `Requirements for ${nextTierName} tier are not configured`
+			};
+		}
+
 		const progress = {
 			nextTier: nextTierName,
 		};
@@ -303,6 +320,28 @@ class TierConfigService {
 	getNextTier(currentTier) {
 		const tierOrder = ['NONE', 'SILVER', 'GOLD', 'VIP'];
 		const currentIndex = tierOrder.indexOf(currentTier);
+		return currentIndex >= 0 && currentIndex < tierOrder.length - 1
+			? tierOrder[currentIndex + 1]
+			: null;
+	}
+
+	// Helper method to get next tier with case-insensitive matching
+	getNextTierCaseInsensitive(currentTier) {
+		// Map the current tier to the expected format
+		const tierMapping = {
+			'NONE': 'NONE',
+			'None': 'NONE',
+			'SILVER': 'SILVER',
+			'Silver': 'SILVER',
+			'GOLD': 'GOLD',
+			'Gold': 'GOLD',
+			'VIP': 'VIP',
+			'Vip': 'VIP'
+		};
+
+		const normalizedTier = tierMapping[currentTier] || currentTier;
+		const tierOrder = ['NONE', 'SILVER', 'GOLD', 'VIP'];
+		const currentIndex = tierOrder.indexOf(normalizedTier);
 		return currentIndex >= 0 && currentIndex < tierOrder.length - 1
 			? tierOrder[currentIndex + 1]
 			: null;

@@ -194,25 +194,36 @@ TierRequirementsSchema.statics.getActiveTierConfig = async function (
 
 // Static method to get all tiers configuration as constants format
 TierRequirementsSchema.statics.getAsConstants = async function () {
-	const tiers = await this.find({ isActive: true }).sort({ name: 1 });
-	const constants = {};
+	try {
+		const tiers = await this.find({ isActive: true }).sort({ name: 1 });
+		const constants = {};
 
-	tiers.forEach(tier => {
-		constants[tier.name] = {
-			name: tier.name,
-			weeklyWithdrawalLimit: tier.benefits.weeklyWithdrawalLimit,
-			withdrawalTime: tier.benefits.withdrawalTime,
-			weeklyCashbackPercentage: tier.benefits.weeklyCashbackPercentage,
-			monthlyCashbackPercentage: tier.benefits.monthlyCashbackPercentage,
-			referralXP: tier.benefits.referralXP,
-			noWinCashbackPercentage: tier.benefits.noWinCashbackPercentage,
-			noWinCashbackDays: tier.benefits.noWinCashbackDays,
-			requirements: tier.requirements,
-			referralCommissions: tier.referralCommissions,
-		};
-	});
+		tiers.forEach(tier => {
+			constants[tier.name] = {
+				name: tier.name,
+				weeklyWithdrawalLimit: tier.benefits.weeklyWithdrawalLimit,
+				withdrawalTime: tier.benefits.withdrawalTime,
+				weeklyCashbackPercentage:
+					tier.benefits.weeklyCashbackPercentage,
+				monthlyCashbackPercentage:
+					tier.benefits.monthlyCashbackPercentage,
+				referralXP: tier.benefits.referralXP,
+				noWinCashbackPercentage: tier.benefits.noWinCashbackPercentage,
+				noWinCashbackDays: tier.benefits.noWinCashbackDays,
+				requirements: tier.requirements,
+				referralCommissions: tier.referralCommissions,
+			};
+		});
 
-	return constants;
+		console.log(
+			`[TIER-MODEL] Found ${Object.keys(constants).length} active tiers:`,
+			Object.keys(constants)
+		);
+		return constants;
+	} catch (error) {
+		console.error('[TIER-MODEL] Error getting tier constants:', error);
+		return {};
+	}
 };
 
 export const TierRequirements = mongoose.model(

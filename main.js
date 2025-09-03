@@ -7,6 +7,7 @@ import {
 	createAdmin,
 	createSystemAccount,
 	createDominoConfig,
+	initializeTierRequirements,
 } from './src/seedDb';
 import api from './src/api';
 
@@ -54,6 +55,14 @@ setImmediate(async () => {
 			console.log('Domino game config initialized');
 		} else {
 			console.log('Unable to create domino game config');
+		}
+
+		// Initialize tier requirements
+		const tierRequirements = await initializeTierRequirements();
+		if (tierRequirements) {
+			console.log('Tier requirements initialized');
+		} else {
+			console.log('Unable to initialize tier requirements');
 		}
 
 		// Start the HTTP server
