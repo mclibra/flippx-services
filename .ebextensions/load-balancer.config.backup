@@ -15,4 +15,3 @@ option_settings:
     NODE_ENV: production
     PORT: 8080
     IP: 0.0.0.0
-    SKIP_WORKERS: true

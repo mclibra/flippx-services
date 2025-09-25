@@ -11,8 +11,8 @@ import {
 } from './src/seedDb';
 import api from './src/api';
 
-// Import WorkerManager for multi-core cron processing
-import WorkerManager from './src/services/workers/workerManager';
+// Import CronJobManager for cron job processing
+import CronJobManager from './src/services/cron/cronJobManager';
 
 const app = express(apiRoot, api);
 
@@ -25,8 +25,8 @@ const server = http.createServer(app);
 
 initializeSocket(server);
 
-// Initialize Worker Manager for cron jobs
-const workerManager = new WorkerManager();
+// Initialize Cron Job Manager for cron jobs
+const cronJobManager = new CronJobManager();
 
 // eslint-disable-next-line no-undef
 setImmediate(async () => {
@@ -75,25 +75,19 @@ setImmediate(async () => {
 			);
 		});
 
-		// Start worker processes for cron jobs AFTER server is running
+		// Start cron jobs AFTER server is running
 		// This prevents cron jobs from blocking the main server startup
-		// Skip workers during initial deployment to avoid startup issues
-		if (process.env.SKIP_WORKERS !== 'true') {
-			console.log('🚀 Starting cron worker processes...');
-			await workerManager.start();
-			console.log(
-				'✅ All systems operational - Main server + Worker processes running'
-			);
-		} else {
-			console.log('⏭️ Skipping worker processes (SKIP_WORKERS=true)');
-			console.log('✅ Main server running (workers disabled)');
-		}
+		console.log('🚀 Starting cron job manager...');
+		await cronJobManager.start();
+		console.log(
+			'✅ All systems operational - Main server + Cron jobs running'
+		);
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 
-		// Attempt to shutdown workers gracefully on startup failure
+		// Attempt to shutdown cron jobs gracefully on startup failure
 		try {
-			await workerManager.shutdown();
+			await cronJobManager.stop();
 		} catch (shutdownError) {
 			console.error('❌ Error during graceful shutdown:', shutdownError);
 		}
@@ -113,9 +107,9 @@ const gracefulShutdown = async signal => {
 			console.log('✅ HTTP server closed');
 		});
 
-		// Shutdown worker processes
-		console.log('🛑 Shutting down worker processes...');
-		await workerManager.shutdown();
+		// Shutdown cron jobs
+		console.log('🛑 Shutting down cron jobs...');
+		await cronJobManager.stop();
 
 		// Close database connection
 		console.log('🔌 Closing database connection...');
