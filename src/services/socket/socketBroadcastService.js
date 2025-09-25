@@ -30,7 +30,6 @@ class SocketBroadcastService {
 		}
 	}
 
-
 	/**
 	 * Broadcast to domino room (works in both main and worker processes)
 	 */
@@ -38,12 +37,16 @@ class SocketBroadcastService {
 		try {
 			if (this.isMainProcess) {
 				// In main process, call directly
-				console.log(`[SOCKET-BROADCAST] Main process broadcasting ${event} to room ${roomId}`);
+				console.log(
+					`[SOCKET-BROADCAST] Main process broadcasting ${event} to room ${roomId}`
+				);
 				broadcastDominoGameUpdateToRoom(roomId, event, payload);
 			} else {
 				// In worker process, send IPC message to main process (fire and forget)
 				// This prevents timeout issues and unhandled promise rejections
-				console.log(`[SOCKET-BROADCAST] Worker process sending ${event} to room ${roomId} via IPC`);
+				console.log(
+					`[SOCKET-BROADCAST] Worker process sending ${event} to room ${roomId} via IPC`
+				);
 				try {
 					process.send({
 						type: 'socket-broadcast',
@@ -55,7 +58,10 @@ class SocketBroadcastService {
 						},
 					});
 				} catch (sendError) {
-					console.error('Failed to send socket broadcast IPC message:', sendError);
+					console.error(
+						'Failed to send socket broadcast IPC message:',
+						sendError
+					);
 				}
 			}
 		} catch (error) {
