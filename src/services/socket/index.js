@@ -12,6 +12,19 @@ export const initializeSocket = server => {
 		},
 		transports: ['websocket', 'polling'],
 		allowEIO3: true,
+		// Production-specific configurations for EBS
+		pingTimeout: 60000,
+		pingInterval: 25000,
+		upgradeTimeout: 10000,
+		// Enable compression for better performance
+		compression: true,
+		// Configure for load balancer environments
+		allowUpgrades: true,
+		// Set connection state recovery for better reliability
+		connectionStateRecovery: {
+			maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+			skipMiddlewares: true,
+		},
 	});
 
 	// Add authentication middleware

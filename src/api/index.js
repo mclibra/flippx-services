@@ -22,6 +22,16 @@ import adminTierManagement from './admin/tier-management';
 
 const router = new Router();
 
+// Health check endpoint for EBS load balancer
+router.get('/health', (req, res) => {
+	res.status(200).json({
+		status: 'healthy',
+		timestamp: new Date().toISOString(),
+		uptime: process.uptime(),
+		environment: process.env.NODE_ENV || 'development',
+	});
+});
+
 router.use('/user', user);
 router.use('/oauth', oauth);
 router.use('/lottery', lottery);

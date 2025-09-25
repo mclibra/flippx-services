@@ -597,9 +597,23 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 		return;
 	}
 
-	console.log(`Broadcasting ${event} to room ${roomId}`);
-	console.log(data);
-	dominoNamespace.to(roomId).emit(event, data);
+	try {
+		console.log(`Broadcasting ${event} to room ${roomId}`);
+		console.log('Broadcast data:', data);
+
+		// Get all sockets in the room
+		const roomSockets = dominoNamespace.adapter.rooms.get(roomId);
+		if (!roomSockets || roomSockets.size === 0) {
+			console.warn(`No sockets found in room ${roomId}`);
+			return;
+		}
+
+		console.log(`Found ${roomSockets.size} sockets in room ${roomId}`);
+		dominoNamespace.to(roomId).emit(event, data);
+		console.log(`Successfully broadcasted ${event} to room ${roomId}`);
+	} catch (error) {
+		console.error(`Error broadcasting ${event} to room ${roomId}:`, error);
+	}
 };
 
 // Send message to specific user
