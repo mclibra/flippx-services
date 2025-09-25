@@ -1,6 +1,5 @@
 import { DominoRoom, DominoGame, DominoChat, DominoGameConfig } from './model';
 import { DominoGameEngine } from '../../services/domino/gameEngine';
-import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
 import { LoyaltyService } from '../loyalty/service';
@@ -8,6 +7,35 @@ import {
 	broadcastDominoGameUpdateToRoom,
 	sendDominoGameUpdateToUser,
 } from '../../services/socket/dominoGameSocket';
+import SocketBroadcastService from '../../services/socket/socketBroadcastService';
+
+// Helper function to send socket messages that works in both main and worker processes
+const sendSocketMessage = async (userId, roomId, event, data) => {
+	// Check if we're in a worker process (has process.send)
+	const isWorkerProcess = process.send !== undefined;
+
+	if (isWorkerProcess) {
+		// In worker process, use IPC to send to main process
+		await SocketBroadcastService.broadcastToDominoRoom(roomId, event, data);
+	} else {
+		// In main process, call socket function directly
+		sendDominoGameUpdateToUser(userId, roomId, event, data);
+	}
+};
+
+// Helper function to broadcast socket messages that works in both main and worker processes
+const broadcastSocketMessage = async (roomId, event, data) => {
+	// Check if we're in a worker process (has process.send)
+	const isWorkerProcess = process.send !== undefined;
+
+	if (isWorkerProcess) {
+		// In worker process, use IPC to send to main process
+		await SocketBroadcastService.broadcastToDominoRoom(roomId, event, data);
+	} else {
+		// In main process, call socket function directly
+		broadcastDominoGameUpdateToRoom(roomId, event, data);
+	}
+};
 
 export const startDominoGame = async room => {
 	try {
@@ -49,24 +77,19 @@ export const startDominoGame = async room => {
 					// Don't fail the game start if loyalty tracking fails
 				}
 
-				sendDominoGameUpdateToUser(
-					userId,
-					room.roomId,
-					'game-started',
-					{
-						gameId: game._id,
-						board: game.board,
-						drawPile: game.drawPile,
-						players: game.players.map(player => ({
-							position: player.position,
-							playerType: player.playerType,
-							playerName: player.playerName,
-							isConnected: player.isConnected,
-							tileCount: player.hand.length,
-						})),
-						...player,
-					}
-				);
+				sendSocketMessage(userId, room.roomId, 'game-started', {
+					gameId: game._id,
+					board: game.board,
+					drawPile: game.drawPile,
+					players: game.players.map(player => ({
+						position: player.position,
+						playerType: player.playerType,
+						playerName: player.playerName,
+						isConnected: player.isConnected,
+						tileCount: player.hand.length,
+					})),
+					...player,
+				});
 			}
 		}
 
@@ -99,33 +122,23 @@ export const notifyTurnChange = async (
 		for (const player of game.players) {
 			if (player.user && player.playerType === 'HUMAN') {
 				if (player.position == game.currentPlayer) {
-					sendDominoGameUpdateToUser(
-						player.user,
-						roomId,
-						'your-turn',
-						{
-							gameId: game._id,
-							board: game.board,
-							drawPile: game.drawPile,
-							...player,
-						}
-					);
+					sendSocketMessage(player.user, roomId, 'your-turn', {
+						gameId: game._id,
+						board: game.board,
+						drawPile: game.drawPile,
+						...player,
+					});
 				} else {
-					sendDominoGameUpdateToUser(
-						player.user,
-						roomId,
-						'turn-changed',
-						{
-							gameId: game._id,
-							board: game.board,
-							drawPile: game.drawPile,
-							currentPlayerPosition: currentPlayer.position,
-							currentPlayerName: currentPlayer?.playerName,
-							previousPlayerPosition: previousPlayerPosition,
-							previousPlayerName: previousPlayer?.playerName,
-							turnStartTime: game.turnStartTime,
-						}
-					);
+					sendSocketMessage(player.user, roomId, 'turn-changed', {
+						gameId: game._id,
+						board: game.board,
+						drawPile: game.drawPile,
+						currentPlayerPosition: currentPlayer.position,
+						currentPlayerName: currentPlayer?.playerName,
+						previousPlayerPosition: previousPlayerPosition,
+						previousPlayerName: previousPlayer?.playerName,
+						turnStartTime: game.turnStartTime,
+					});
 				}
 			}
 		}
@@ -137,24 +150,27 @@ export const notifyTurnChange = async (
 // Enhanced function to send turn reminders/warnings
 const sendTurnReminder = async (game, timeRemaining) => {
 	const currentPlayer = game.players[game.currentPlayer];
+
+	if (!game.room) {
+		console.error(
+			`Game ${game._id} has no room associated for turn reminder`
+		);
+		return;
+	}
+
 	const roomId = game.room.roomId || game.room;
 
 	console.log('Sending turn-reminder to user ', currentPlayer.user);
 	if (currentPlayer && currentPlayer.user) {
-		sendDominoGameUpdateToUser(
-			currentPlayer.user,
-			roomId,
-			'turn-reminder',
-			{
-				gameId: game._id,
-				timeRemaining,
-				message: `Hurry up! You have ${timeRemaining} seconds left to make your move.`,
-			}
-		);
+		sendSocketMessage(currentPlayer.user, roomId, 'turn-reminder', {
+			gameId: game._id,
+			timeRemaining,
+			message: `Hurry up! You have ${timeRemaining} seconds left to make your move.`,
+		});
 	}
 
 	// Notify other players about the time warning
-	broadcastDominoGameUpdateToRoom(roomId, 'turn-time-warning', {
+	broadcastSocketMessage(roomId, 'turn-time-warning', {
 		gameId: game._id,
 		currentPlayer: game.currentPlayer,
 		timeRemaining,
@@ -252,9 +268,9 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
 		for (const player of game.players) {
 			if (player.user && player.playerType === 'HUMAN') {
 				if (player.position != currentPlayerPosition) {
-					sendDominoGameUpdateToUser(
+					sendSocketMessage(
 						player.user,
-						roomId,
+						game.room.roomId,
 						'game-update',
 						{
 							gameId: game._id,
@@ -319,6 +335,11 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 			return;
 		}
 
+		if (!game.room) {
+			console.error(`Game ${gameId} has no room associated`);
+			return;
+		}
+
 		const timedOutPlayer = game.players[game.currentPlayer];
 		const timedOutPlayerPosition = currentPlayer.position;
 
@@ -335,7 +356,11 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 		);
 
 		// Process the bot's move using existing game engine
-		const moveResult = DominoGameEngine.processMove(game, modifiedMov);
+		const moveResult = DominoGameEngine.processMove(
+			game,
+			modifiedMov,
+			true
+		);
 
 		console.log(`[AUTO-MOVE] completed for ${timedOutPlayer.playerName}`);
 
@@ -381,7 +406,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
 			for (const player of game.players) {
 				if (player.user && player.playerType === 'HUMAN') {
-					sendDominoGameUpdateToUser(
+					sendSocketMessage(
 						player.user,
 						game.room.roomId,
 						'game-update',
@@ -509,7 +534,7 @@ export const sendMessage = async ({ roomId }, { message }, user) => {
 		});
 
 		// Broadcast to room
-		broadcastDominoGameUpdateToRoom(roomId, 'new-message', {
+		broadcastSocketMessage(roomId, 'new-message', {
 			messageId: chatMessage._id,
 			user: user._id,
 			playerName: playerInRoom.playerName,
@@ -588,7 +613,7 @@ export const getChatHistory = async ({ roomId }, query, user) => {
 
 // ===================== ADMIN CONFIGURATION =====================
 
-export const updateGameConfig = async (body, user) => {
+export const updateGameConfig = async body => {
 	try {
 		const config = await DominoGameConfig.findOneAndUpdate({}, body, {
 			new: true,
@@ -708,7 +733,7 @@ export const removeDisconnectedPlayersFromWaitingRooms = async () => {
 					await room.save();
 
 					// Broadcast the updated room state to remaining players
-					broadcastDominoGameUpdateToRoom(
+					broadcastSocketMessage(
 						room.roomId,
 						'player-removed-timeout',
 						{
@@ -839,7 +864,7 @@ export const removeDisconnectedPlayersFromWaitingRooms = async () => {
 //         room.completedAt = new Date();
 //         await room.save();
 
-//         broadcastDominoGameUpdateToRoom(room.roomId, 'game-completed', {
+//         broadcastSocketMessage(room.roomId, 'game-completed', {
 //             gameState: game,
 //             winner: game.winner,
 //             finalScores: game.finalScores,
@@ -932,7 +957,7 @@ const handleStandardGameCompletion = async (game, room) => {
 		await distributePrizes(game, room);
 
 		// Broadcast final game completion
-		broadcastDominoGameUpdateToRoom(room.roomId, 'game-completed', {
+		broadcastSocketMessage(room.roomId, 'game-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: game.winner,
@@ -995,7 +1020,7 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
 		await distributePrizes(game, room, winnerPlayer);
 
 		// Broadcast challenge completion
-		broadcastDominoGameUpdateToRoom(room.roomId, 'challenge-completed', {
+		broadcastSocketMessage(room.roomId, 'challenge-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: {
@@ -1031,7 +1056,7 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 		);
 
 		// Broadcast round completion with countdown
-		broadcastDominoGameUpdateToRoom(room.roomId, 'round-completed', {
+		broadcastSocketMessage(room.roomId, 'round-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
 			roundNumber: game.gameNumber,
@@ -1059,7 +1084,7 @@ const startCountdownWithUpdates = async (room, totalSeconds) => {
 	// Send countdown updates every 5 seconds for the first part, then every second for last 5 seconds
 	const sendCountdownUpdate = () => {
 		if (remainingSeconds > 0) {
-			broadcastDominoGameUpdateToRoom(room.roomId, 'new-game-countdown', {
+			broadcastSocketMessage(room.roomId, 'new-game-countdown', {
 				roomId: room.roomId,
 				remainingSeconds,
 				message: `Next game starts in ${remainingSeconds} seconds...`,
@@ -1139,24 +1164,19 @@ const startNewGameInRoom = async room => {
 					// Don't fail the game start if loyalty tracking fails
 				}
 
-				sendDominoGameUpdateToUser(
-					userId,
-					room.roomId,
-					'game-started',
-					{
-						gameId: game._id,
-						board: game.board,
-						drawPile: game.drawPile,
-						players: game.players.map(player => ({
-							position: player.position,
-							playerType: player.playerType,
-							playerName: player.playerName,
-							isConnected: player.isConnected,
-							tileCount: player.hand.length,
-						})),
-						...player,
-					}
-				);
+				sendSocketMessage(userId, room.roomId, 'game-started', {
+					gameId: game._id,
+					board: game.board,
+					drawPile: game.drawPile,
+					players: game.players.map(player => ({
+						position: player.position,
+						playerType: player.playerType,
+						playerName: player.playerName,
+						isConnected: player.isConnected,
+						tileCount: player.hand.length,
+					})),
+					...player,
+				});
 			}
 		}
 

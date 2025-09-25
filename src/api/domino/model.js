@@ -145,6 +145,7 @@ const DominoGameSchema = new Schema(
 				fromHand: { type: Boolean, default: true },
 				boardState: { type: String }, // snapshot of board
 				timestamp: { type: Date, default: Date.now },
+				isAutoMove: { type: Boolean, default: false },
 			},
 		],
 		turnStartTime: { type: Date },

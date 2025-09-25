@@ -14,7 +14,7 @@ import {
 	handleGameCompletion,
 	removeDisconnectedPlayersFromWaitingRooms,
 } from '../../../api/domino/controller';
-import { broadcastDominoGameUpdateToRoom } from '../../socket/dominoGameSocket';
+import SocketBroadcastService from '../../socket/socketBroadcastService';
 
 class DominoWorker extends BaseWorker {
 	constructor() {
@@ -28,9 +28,9 @@ class DominoWorker extends BaseWorker {
 	async initializeCronJobs() {
 		this.log('Initializing domino cron jobs...');
 
-		// Fill VIRTUAL waiting rooms with bots after 30 seconds - every 3 seconds
+		// Fill VIRTUAL waiting rooms with bots after 10 seconds - every 10 seconds
 		this.createSafeCronJob(
-			'*/30 * * * * *',
+			'*/10 * * * * *',
 			'fill-virtual-rooms-with-bots',
 			this.fillVirtualRoomsWithBots.bind(this)
 		);
@@ -44,7 +44,7 @@ class DominoWorker extends BaseWorker {
 
 		// Process immediate bot turns - every 15 seconds
 		this.createSafeCronJob(
-			'*/15 * * * * *',
+			'*/5 * * * * *',
 			'process-immediate-bot-turns',
 			this.processImmediateBotTurns.bind(this)
 		);
@@ -77,6 +77,13 @@ class DominoWorker extends BaseWorker {
 			this.cleanupAbandonedRooms.bind(this)
 		);
 
+		// Clean up orphaned games (games without rooms) - every 5 minutes
+		this.createSafeCronJob(
+			'*/5 * * * *',
+			'cleanup-orphaned-games',
+			this.cleanupOrphanedGames.bind(this)
+		);
+
 		this.log('Domino cron jobs initialized successfully');
 	}
 
@@ -86,12 +93,14 @@ class DominoWorker extends BaseWorker {
 	 */
 	async fillVirtualRoomsWithBots() {
 		try {
+			this.log('[CRON] fillVirtualRoomsWithBots started');
 			const gameConfig = await DominoGameConfig.findOne();
 			if (!gameConfig) {
+				this.log('[CRON] No game config found, skipping bot filling');
 				return;
 			}
 
-			const maxWaitTime = new Date(Date.now() - 30 * 1000); // 30 seconds ago
+			const maxWaitTime = new Date(Date.now() - 10 * 1000); // 10 seconds ago
 
 			const virtualRoomsNeedingBots = await DominoRoom.find({
 				status: 'WAITING',
@@ -101,6 +110,10 @@ class DominoWorker extends BaseWorker {
 				},
 				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
 			});
+
+			this.log(
+				`[CRON] Found ${virtualRoomsNeedingBots.length} VIRTUAL rooms needing bots`
+			);
 
 			let roomsProcessed = 0;
 			let botsAdded = 0;
@@ -134,6 +147,8 @@ class DominoWorker extends BaseWorker {
 				this.log(
 					`[CRON] ✅ Added ${botsAdded} bots to ${roomsProcessed} VIRTUAL rooms`
 				);
+			} else {
+				this.log('[CRON] No VIRTUAL rooms needed bot filling');
 			}
 		} catch (error) {
 			this.logError('[CRON] Error in bot room filling:', error);
@@ -162,6 +177,14 @@ class DominoWorker extends BaseWorker {
 				try {
 					// Skip if already being processed
 					if (this.processingGames.has(game._id.toString())) {
+						continue;
+					}
+
+					// Skip games without valid rooms
+					if (!game.room) {
+						this.log(
+							`[CRON] Skipping timeout processing for game ${game._id} - no room associated`
+						);
 						continue;
 					}
 
@@ -203,8 +226,8 @@ class DominoWorker extends BaseWorker {
 	 */
 	async processImmediateBotTurns() {
 		try {
-			// Find active games where it's a bot's turn (within 15 seconds)
-			const timeoutThreshold = new Date(Date.now() - 15 * 1000); // 15 seconds ago
+			// Find active games where it's a bot's turn (within 5 seconds)
+			const timeoutThreshold = new Date(Date.now() - 5 * 1000); // 5 seconds ago
 
 			const botTurnGames = await DominoGame.find({
 				gameState: 'ACTIVE',
@@ -291,9 +314,6 @@ class DominoWorker extends BaseWorker {
 	 */
 	async sendTurnWarningsJob() {
 		try {
-			const config = await DominoGameConfig.findOne();
-			const timeoutSeconds = config?.turnTimeLimit || 30;
-
 			// Check if there are any active games first
 			const activeGamesCount = await DominoGame.countDocuments({
 				gameState: 'ACTIVE',
@@ -386,6 +406,58 @@ class DominoWorker extends BaseWorker {
 	}
 
 	/**
+	 * Clean up orphaned games (games without valid rooms)
+	 */
+	async cleanupOrphanedGames() {
+		try {
+			this.log('[CRON] Cleaning up orphaned domino games...');
+
+			// Find games that are ACTIVE but have no room or invalid room
+			const activeGames = await DominoGame.find({
+				gameState: 'ACTIVE',
+			}).populate('room');
+
+			// Filter games where room is null after population
+			const orphanedGames = activeGames.filter(game => !game.room);
+
+			let cleanedCount = 0;
+
+			for (const game of orphanedGames) {
+				try {
+					this.log(
+						`[CRON] Cleaning up orphaned game ${game._id} (no room associated)`
+					);
+
+					// Mark game as completed with a special end reason
+					game.gameState = 'COMPLETED';
+					game.endReason = 'BLOCKED_NO_MOVES';
+					game.completedAt = new Date();
+					game.winner = null; // No winner for orphaned games
+					game.finalScores = [];
+
+					await game.save();
+					cleanedCount++;
+				} catch (error) {
+					this.logError(
+						`[CRON] Error cleaning up orphaned game ${game._id}:`,
+						error
+					);
+				}
+			}
+
+			if (cleanedCount > 0) {
+				this.log(
+					`[CRON] ✅ Cleaned up ${cleanedCount} orphaned domino games`
+				);
+			} else {
+				this.log('[CRON] ✅ No orphaned games to clean up');
+			}
+		} catch (error) {
+			this.logError('[CRON] Error in orphaned games cleanup:', error);
+		}
+	}
+
+	/**
 	 * Fill room with bots helper function
 	 * Extracted from original domino.js
 	 */
@@ -429,11 +501,16 @@ class DominoWorker extends BaseWorker {
 			await room.save();
 
 			for (const bot of bots) {
-				broadcastDominoGameUpdateToRoom(room.roomId, 'player-joined', {
-					user: bot.user,
-					playerName: bot.playerName,
-					room: room.toJSON(),
-				});
+				console.log('Broadcasting player joined to room', room.roomId);
+				await SocketBroadcastService.broadcastToDominoRoom(
+					room.roomId,
+					'player-joined',
+					{
+						user: bot.user,
+						playerName: bot.playerName,
+						room: room.toJSON(),
+					}
+				);
 			}
 			this.log(
 				`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`
@@ -468,7 +545,7 @@ class DominoWorker extends BaseWorker {
 			);
 
 			// Process the bot's move using existing game engine
-			const moveResult = DominoGameEngine.processMove(game, move);
+			const moveResult = DominoGameEngine.processMove(game, move, true);
 
 			if (!moveResult.success) {
 				this.logError(
@@ -526,11 +603,19 @@ class DominoWorker extends BaseWorker {
 				return;
 			}
 
+			// Check if room is properly populated
+			if (!updatedGame.room) {
+				this.logError(
+					`[BOT-TURN] Game ${game._id} room is not populated - skipping broadcast for ${currentPlayer.playerName}`
+				);
+				return;
+			}
+
 			this.log(
 				`[BOT-TURN] Successfully updated game ${game._id} for bot ${currentPlayer.playerName}`
 			);
 
-			broadcastDominoGameUpdateToRoom(
+			await SocketBroadcastService.broadcastToDominoRoom(
 				updatedGame.room.roomId,
 				'game-update',
 				{
@@ -555,7 +640,7 @@ class DominoWorker extends BaseWorker {
 			);
 
 			// Send turn notifications if game is still active
-			if (updatedGame.gameState === 'ACTIVE') {
+			if (updatedGame.gameState === 'ACTIVE' && updatedGame.room) {
 				await notifyTurnChange(
 					updatedGame.toJSON(),
 					updatedGame.room.roomId,
@@ -593,9 +678,6 @@ class DominoWorker extends BaseWorker {
 		}
 	}
 }
-
-// Start the worker
-const dominoWorker = new DominoWorker();
 
 // Export for testing purposes
 export default DominoWorker;

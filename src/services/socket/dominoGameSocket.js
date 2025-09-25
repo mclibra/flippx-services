@@ -309,9 +309,9 @@ export const initializeDominoGameSocket = io => {
 		});
 
 		// Handle reconnection - EXISTING SOCKET EVENT
-		socket.on('reconnect-to-room', async roomId => {
+		socket.on('reconnect-to-room', async () => {
 			try {
-				const { userId, userName, role, roomId } = socket;
+				const { userId, userName, roomId } = socket;
 
 				console.log(
 					`User ${userName} requesting to re-connect to domino room: ${roomId}`
@@ -591,28 +591,42 @@ const leaveRoom = async (roomId, userId) => {
 
 // Broadcast game update to all players in a room
 export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
-	if (dominoNamespace) {
-		dominoNamespace.to(roomId).emit(event, data);
+	if (!dominoNamespace) {
+		console.warn(
+			`DominoSocket namespace not initialized - cannot broadcast ${event} to room ${roomId}`
+		);
+		return;
 	}
+
+	console.log(`Broadcasting ${event} to room ${roomId}`);
+	console.log(data);
+	dominoNamespace.to(roomId).emit(event, data);
 };
 
 // Send message to specific user
 export const sendDominoGameUpdateToUser = (userId, roomId, event, data) => {
 	console.log(`Sending ${event} to user ${userId} in room ${roomId}`);
-	if (dominoNamespace) {
-		Array.from(dominoNamespace.sockets.values()).forEach(socket =>
-			console.log(
-				`Socket user ${socket.userId} && Socket room => ${socket.roomId}`
-			)
-		);
-		const userSockets = Array.from(dominoNamespace.sockets.values()).filter(
-			socket => socket.userId === userId && socket.roomId == roomId
-		);
 
-		userSockets.forEach(socket => {
-			socket.emit(event, data);
-		});
+	if (!dominoNamespace) {
+		console.warn(
+			`DominoSocket namespace not initialized - cannot send ${event} to user ${userId}`
+		);
+		return;
 	}
+
+	console.log(`DominoSocket ${dominoNamespace}`);
+	Array.from(dominoNamespace.sockets.values()).forEach(socket =>
+		console.log(
+			`Socket user ${socket.userId} && Socket room => ${socket.roomId}`
+		)
+	);
+	const userSockets = Array.from(dominoNamespace.sockets.values()).filter(
+		socket => socket.userId === userId && socket.roomId == roomId
+	);
+
+	userSockets.forEach(socket => {
+		socket.emit(event, data);
+	});
 };
 
 const validateUserInRoom = async (roomId, userId) => {

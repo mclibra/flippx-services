@@ -1,3 +1,6 @@
 require('@babel/register');
 
-exports = module.exports = require('../workers/lotteryWorker');
+const LotteryWorker = require('../workers/lotteryWorker').default;
+
+// Start the worker
+const lotteryWorker = new LotteryWorker();

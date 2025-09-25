@@ -20,6 +20,10 @@ class BaseWorker {
 				case 'shutdown':
 					await this.shutdown();
 					break;
+				case 'socket-broadcast-response':
+					// Handle socket broadcast responses - these are handled by SocketBroadcastService
+					// No action needed here as the service handles the response
+					break;
 				default:
 					this.log(`Unknown message type: ${message.type}`);
 			}

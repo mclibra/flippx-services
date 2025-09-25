@@ -24,8 +24,11 @@ export const list = async ({
 			params.type = type.toUpperCase();
 		}
 		if (stateId) {
-			// Filter by state if provided
-			params.state = stateId;
+			// For MEGAMILLION, don't filter by state since it's shared across all states
+			// For other lottery types, filter by state as usual
+			if (!type || type.toUpperCase() !== 'MEGAMILLION') {
+				params.state = stateId;
+			}
 		}
 		if (startDate || endDate) {
 			params['$and'] = [];
@@ -106,7 +109,11 @@ export const nextLottery = async ({
 		}
 
 		if (stateId) {
-			params.state = stateId;
+			// For MEGAMILLION, don't filter by state since it's shared across all states
+			// For other lottery types, filter by state as usual
+			if (type && type.toUpperCase() !== 'MEGAMILLION') {
+				params.state = stateId;
+			}
 		}
 
 		// Find all upcoming lotteries
@@ -187,76 +194,120 @@ export const closestUpcomingByState = async type => {
 		const matchConditions = {
 			status: 'SCHEDULED',
 			type: type,
-			state: { $in: stateIds },
 			scheduledTime: { $gt: currentTime },
 		};
 
-		let closestLotteries = await Lottery.aggregate([
-			{
-				$match: matchConditions,
-			},
-			{
-				$sort: { scheduledTime: 1 },
-			},
-			{
-				$group: {
-					_id: '$state',
-					closestLottery: { $first: '$$ROOT' },
-				},
-			},
-			{
-				$lookup: {
-					from: 'states',
-					let: { stateId: '$_id' },
-					pipeline: [
-						{
-							$match: {
-								$expr: {
-									$eq: ['$_id', { $toObjectId: '$$stateId' }],
-								},
-							},
-						},
-					],
-					as: 'stateInfo',
-				},
-			},
-			{
-				$unwind: '$stateInfo',
-			},
-			{
-				$project: {
+		// For BORLETTE, filter by state. For MEGAMILLION, don't filter by state since it's shared
+		if (type === 'BORLETTE') {
+			matchConditions.state = { $in: stateIds };
+		}
+
+		let closestLotteries;
+
+		if (type === 'MEGAMILLION') {
+			// For MEGAMILLION, find the single shared lottery and return it for all states
+			const sharedMegaMillionLottery = await Lottery.findOne(
+				matchConditions
+			)
+				.sort({ scheduledTime: 1 })
+				.populate('state', 'name code')
+				.lean();
+
+			if (sharedMegaMillionLottery) {
+				// Return the same lottery for all active states
+				closestLotteries = activeStates.map(state => ({
 					state: {
-						id: '$stateInfo._id',
-						name: '$stateInfo.name',
-						code: '$stateInfo.code',
+						id: state._id,
+						name: state.name,
+						code: state.code,
 					},
 					lottery: {
-						id: '$closestLottery._id',
-						title: '$closestLottery.title',
-						type: '$closestLottery.type',
-						scheduledTime: '$closestLottery.scheduledTime',
-						jackpotAmount: '$closestLottery.jackpotAmount',
-						metadata: '$closestLottery.metadata',
-						status: '$closestLottery.status',
-						countdown: {
-							$subtract: [
-								'$closestLottery.scheduledTime',
-								currentTime,
-							],
+						id: sharedMegaMillionLottery._id,
+						title: sharedMegaMillionLottery.title,
+						type: sharedMegaMillionLottery.type,
+						scheduledTime: sharedMegaMillionLottery.scheduledTime,
+						jackpotAmount: sharedMegaMillionLottery.jackpotAmount,
+						metadata: sharedMegaMillionLottery.metadata,
+						status: sharedMegaMillionLottery.status,
+						countdown:
+							sharedMegaMillionLottery.scheduledTime -
+							currentTime,
+					},
+				}));
+			} else {
+				closestLotteries = [];
+			}
+		} else {
+			// For BORLETTE, use the original aggregation logic
+			closestLotteries = await Lottery.aggregate([
+				{
+					$match: matchConditions,
+				},
+				{
+					$sort: { scheduledTime: 1 },
+				},
+				{
+					$group: {
+						_id: '$state',
+						closestLottery: { $first: '$$ROOT' },
+					},
+				},
+				{
+					$lookup: {
+						from: 'states',
+						let: { stateId: '$_id' },
+						pipeline: [
+							{
+								$match: {
+									$expr: {
+										$eq: [
+											'$_id',
+											{ $toObjectId: '$$stateId' },
+										],
+									},
+								},
+							},
+						],
+						as: 'stateInfo',
+					},
+				},
+				{
+					$unwind: '$stateInfo',
+				},
+				{
+					$project: {
+						state: {
+							id: '$stateInfo._id',
+							name: '$stateInfo.name',
+							code: '$stateInfo.code',
+						},
+						lottery: {
+							id: '$closestLottery._id',
+							title: '$closestLottery.title',
+							type: '$closestLottery.type',
+							scheduledTime: '$closestLottery.scheduledTime',
+							jackpotAmount: '$closestLottery.jackpotAmount',
+							metadata: '$closestLottery.metadata',
+							status: '$closestLottery.status',
+							countdown: {
+								$subtract: [
+									'$closestLottery.scheduledTime',
+									currentTime,
+								],
+							},
 						},
 					},
 				},
-			},
-			{
-				$sort: { 'lottery.countdown': 1 }, // Sort by countdown (closest first)
-			},
-		]);
+				{
+					$sort: { 'lottery.countdown': 1 }, // Sort by countdown (closest first)
+				},
+			]);
+		}
 
 		// Get the last winning numbers for each state
 		const lastWinningsPromises = stateIds.map(async stateId => {
 			// Build match conditions for last winning lottery
 			const lastWinningMatch = {
-				state: stateId,
 				status: 'COMPLETED',
 				results: { $ne: null }, // Only lotteries with results
 			};
@@ -264,6 +315,11 @@ export const closestUpcomingByState = async type => {
 			// Add type filter if provided
 			if (type) {
 				lastWinningMatch.type = type;
+			}
+
+			// For BORLETTE, filter by state. For MEGAMILLION, don't filter by state since it's shared
+			if (type === 'BORLETTE') {
+				lastWinningMatch.state = stateId;
 			}
 
 			const lastWinningLottery = await Lottery.findOne(lastWinningMatch)
@@ -754,8 +810,11 @@ export const lastLottery = async ({
 			params.metadata = metadata;
 		}
 		if (stateId) {
-			// Filter by state if provided
-			params.state = stateId;
+			// For MEGAMILLION, don't filter by state since it's shared across all states
+			// For other lottery types, filter by state as usual
+			if (type.toUpperCase() !== 'MEGAMILLION') {
+				params.state = stateId;
+			}
 		}
 
 		// If count > 1, return multiple lotteries
@@ -1656,22 +1715,22 @@ export const createLotteriesForState = async state => {
 
 		// Create for Mega Millions
 		if (megaMillions?.gameId && megaMillions?.drawDays?.[today]) {
-			// Check if there's already an active Mega Millions lottery
+			// Check if there's already an active Mega Millions lottery for ANY state
+			// Since MegaMillions is a multi-state lottery, there should only be one active at any time
 			const existingLottery = await Lottery.findOne({
-				state: state._id,
 				type: 'MEGAMILLION',
 				status: { $ne: 'COMPLETED' },
 			});
 
 			if (!existingLottery) {
-				// Create a new lottery
+				// Create a new lottery (use the first state that needs it)
 				const drawTime = moment.tz(
 					`${moment().format('YYYY-MM-DD')} ${megaMillions.drawTime}`,
 					megaMillions.drawTimezone
 				);
 
 				await Lottery.create({
-					title: `${state.name} Mega Millions`,
+					title: 'Mega Millions',
 					type: 'MEGAMILLION',
 					scheduledTime: drawTime.valueOf(),
 					jackpotAmount: 1000000, // Default jackpot amount
@@ -1684,9 +1743,13 @@ export const createLotteriesForState = async state => {
 				});
 
 				console.log(
-					`Created new MEGAMILLION lottery for ${state.name}`
+					`Created new MEGAMILLION lottery (shared across all states)`
 				);
 				lotteriesCreated++;
+			} else {
+				console.log(
+					`MEGAMILLION lottery already exists (shared across all states)`
+				);
 			}
 		}
 

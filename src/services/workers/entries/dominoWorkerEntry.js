@@ -1,3 +1,6 @@
 require('@babel/register');
 
-exports = module.exports = require('../workers/dominoWorker');
+const DominoWorker = require('../workers/dominoWorker').default;
+
+// Start the worker
+const dominoWorker = new DominoWorker();

@@ -237,7 +237,7 @@ export class DominoGameEngine {
 		};
 	}
 
-	static processMove(game, move) {
+	static processMove(game, move, isAutoMove = false) {
 		try {
 			console.log(`processMove => ${JSON.stringify(move)}`);
 			// Create a deep copy of the game state to avoid mutations
@@ -256,7 +256,7 @@ export class DominoGameEngine {
 				};
 			}
 
-			return this.processPlaceMove(gameState, move);
+			return this.processPlaceMove(gameState, move, isAutoMove);
 		} catch (error) {
 			console.error('Error processing move:', error);
 			return {
@@ -266,7 +266,7 @@ export class DominoGameEngine {
 		}
 	}
 
-	static processPlaceMove(gameState, move) {
+	static processPlaceMove(gameState, move, isAutoMove = false) {
 		const player = gameState.players[gameState.currentPlayer];
 
 		if (move.drawnTile.length > 0) {
@@ -343,7 +343,13 @@ export class DominoGameEngine {
 		} else {
 			player.consecutivePasses = (player.consecutivePasses || 0) + 1;
 		}
-		gameState.moves.push(move);
+		// Add isAutoMove and player fields to the move
+		const moveWithAutoFlag = {
+			...move,
+			isAutoMove: isAutoMove,
+			player: gameState.currentPlayer,
+		};
+		gameState.moves.push(moveWithAutoFlag);
 
 		// Update total moves
 		gameState.totalMoves = (gameState.totalMoves || 0) + 1;
@@ -413,30 +419,62 @@ export class DominoGameEngine {
 			};
 		}
 
-		// Check condition 2: All players have passed for last 2 rounds
-		// This means the last (players.length * 2) moves are all PASS actions
-		const requiredPassMoves = gameState.players.length * 2;
-		const recentMoves = gameState.moves.slice(-requiredPassMoves);
-
-		console.log(
-			`Checking last ${requiredPassMoves} moves for all PASS actions`
+		// Check condition 2: All human players have auto-moved for last 2 rounds
+		// This means the last (humanPlayersCount * 2) moves by human players all have isAutoMove: true
+		const humanPlayers = gameState.players.filter(
+			player => player.playerType === 'HUMAN'
 		);
+		const humanPlayersCount = humanPlayers.length;
 
-		const allRecentMovesArePass =
-			recentMoves.length === requiredPassMoves &&
-			recentMoves.every(
-				move =>
-					!move.tile && move.drawnTile && move.drawnTile.length === 0
+		// If there are no human players, skip this check
+		if (humanPlayersCount === 0) {
+			console.log(
+				'No human players found, skipping human auto-move check'
 			);
+			return { isBlocked: false };
+		}
 
-		console.log(
-			`All players have passed for last 2 rounds: ${allRecentMovesArePass}`
+		const requiredAutoMoves = humanPlayersCount * 2;
+
+		// Get moves by human players only using the player field
+		const humanPlayerPositions = humanPlayers.map(
+			player => player.position
+		);
+		const humanMoves = gameState.moves.filter(move =>
+			humanPlayerPositions.includes(move.player)
 		);
 
-		if (allRecentMovesArePass) {
+		const recentHumanMoves = humanMoves.slice(-requiredAutoMoves);
+
+		console.log(
+			`Checking last ${requiredAutoMoves} moves by human players for all AUTO moves`
+		);
+		console.log(
+			`Human player positions: ${humanPlayerPositions.join(', ')}`
+		);
+		console.log(
+			`Total moves: ${gameState.moves.length}, Human moves: ${humanMoves.length}`
+		);
+		console.log(
+			`Recent human moves (${recentHumanMoves.length}):`,
+			recentHumanMoves.map(move => ({
+				player: move.player,
+				isAutoMove: move.isAutoMove,
+			}))
+		);
+
+		const allRecentHumanMovesAreAuto =
+			recentHumanMoves.length === requiredAutoMoves &&
+			recentHumanMoves.every(move => move.isAutoMove === true);
+
+		console.log(
+			`All human players have auto-moved for last 2 rounds: ${allRecentHumanMovesAreAuto}`
+		);
+
+		if (allRecentHumanMovesAreAuto) {
 			return {
 				isBlocked: true,
-				reason: 'ALL_PASSED_TWO_ROUNDS',
+				reason: 'ALL_HUMAN_AUTO_MOVED_TWO_ROUNDS',
 			};
 		}
 
@@ -663,7 +701,6 @@ export class DominoGameEngine {
 		}));
 
 		// Generate new tile set and distribute
-		const tiles = this.generateDominoSet();
 		const { players: playersWithHands, drawPile } = this.dealTiles(
 			resetPlayers.length,
 			tilesPerPlayer

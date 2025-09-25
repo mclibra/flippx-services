@@ -1,5 +1,6 @@
 import { fork } from 'child_process';
 import path from 'path';
+import SocketBroadcastService from '../socket/socketBroadcastService';
 
 class WorkerManager {
 	constructor() {
@@ -97,7 +98,7 @@ class WorkerManager {
 		});
 
 		// Worker message handler (for inter-process communication)
-		worker.on('message', message => {
+		worker.on('message', async message => {
 			if (message.type === 'log') {
 				console.log(`[${config.name.toUpperCase()}] ${message.data}`);
 			} else if (message.type === 'error') {
@@ -107,6 +108,38 @@ class WorkerManager {
 				);
 			} else if (message.type === 'ready') {
 				console.log(`✅ ${config.name} is ready and running`);
+			} else if (message.type === 'socket-broadcast') {
+				// Handle socket broadcast requests from workers
+				try {
+					const { roomId, event, payload } = message.data;
+
+					// Use the socket broadcast service to handle the broadcast
+					await SocketBroadcastService.broadcastToDominoRoom(
+						roomId,
+						event,
+						payload
+					);
+
+					// Send success response back to worker
+					worker.send({
+						type: 'socket-broadcast-response',
+						success: true,
+						requestId: message.data.requestId,
+					});
+				} catch (error) {
+					console.error(
+						`Error handling socket broadcast from ${config.name}:`,
+						error
+					);
+
+					// Send error response back to worker
+					worker.send({
+						type: 'socket-broadcast-response',
+						success: false,
+						error: error.message,
+						requestId: message.data.requestId,
+					});
+				}
 			}
 		});
 
