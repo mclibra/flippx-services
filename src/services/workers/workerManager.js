@@ -111,7 +111,7 @@ class WorkerManager {
 			} else if (message.type === 'socket-broadcast') {
 				// Handle socket broadcast requests from workers
 				try {
-					const { roomId, event, payload } = message.data;
+					const { roomId, event, payload, requestId } = message.data;
 
 					// Use the socket broadcast service to handle the broadcast
 					await SocketBroadcastService.broadcastToDominoRoom(
@@ -120,25 +120,29 @@ class WorkerManager {
 						payload
 					);
 
-					// Send success response back to worker
-					worker.send({
-						type: 'socket-broadcast-response',
-						success: true,
-						requestId: message.data.requestId,
-					});
+					// Only send response if requestId exists (for synchronous calls)
+					if (requestId) {
+						worker.send({
+							type: 'socket-broadcast-response',
+							success: true,
+							requestId: requestId,
+						});
+					}
 				} catch (error) {
 					console.error(
 						`Error handling socket broadcast from ${config.name}:`,
 						error
 					);
 
-					// Send error response back to worker
-					worker.send({
-						type: 'socket-broadcast-response',
-						success: false,
-						error: error.message,
-						requestId: message.data.requestId,
-					});
+					// Only send error response if requestId exists (for synchronous calls)
+					if (message.data.requestId) {
+						worker.send({
+							type: 'socket-broadcast-response',
+							success: false,
+							error: error.message,
+							requestId: message.data.requestId,
+						});
+					}
 				}
 			}
 		});
