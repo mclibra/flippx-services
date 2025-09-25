@@ -77,11 +77,17 @@ setImmediate(async () => {
 
 		// Start worker processes for cron jobs AFTER server is running
 		// This prevents cron jobs from blocking the main server startup
-		console.log('🚀 Starting cron worker processes...');
-		await workerManager.start();
-		console.log(
-			'✅ All systems operational - Main server + Worker processes running'
-		);
+		// Skip workers during initial deployment to avoid startup issues
+		if (process.env.SKIP_WORKERS !== 'true') {
+			console.log('🚀 Starting cron worker processes...');
+			await workerManager.start();
+			console.log(
+				'✅ All systems operational - Main server + Worker processes running'
+			);
+		} else {
+			console.log('⏭️ Skipping worker processes (SKIP_WORKERS=true)');
+			console.log('✅ Main server running (workers disabled)');
+		}
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 
