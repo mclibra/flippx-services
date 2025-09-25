@@ -1,7 +1,6 @@
 import { jwtVerify } from '../jwt';
 import { DominoGameEngine } from '../domino/gameEngine';
 import { forceDisconnectFromChat } from './dominoChatSocket';
-import { User } from '../../api/user/model';
 import { Wallet } from '../../api/wallet/model';
 import { makeMove } from '../../api/domino/controller';
 import { LoyaltyService } from '../../api/loyalty/service';
