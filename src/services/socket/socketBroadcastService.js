@@ -8,6 +8,16 @@ class SocketBroadcastService {
 	constructor() {
 		this.isMainProcess =
 			process.env.NODE_ENV !== 'test' && process.send === undefined;
+
+		// Debug process detection
+		console.log(`[SOCKET-BROADCAST-SERVICE] Process detection:`, {
+			NODE_ENV: process.env.NODE_ENV,
+			'process.send': typeof process.send,
+			isMainProcess: this.isMainProcess,
+			pid: process.pid,
+			title: process.title
+		});
+
 		this.setupIPC();
 	}
 
@@ -52,6 +62,21 @@ class SocketBroadcastService {
 					);
 				}
 			} else {
+				// If process detection failed but we need to broadcast, try both approaches
+				console.log(
+					`[SOCKET-BROADCAST] Process detected as worker, but trying direct broadcast as fallback for ${event} to room ${roomId}`
+				);
+				try {
+					broadcastDominoGameUpdateToRoom(roomId, event, payload);
+					console.log(
+						`[SOCKET-BROADCAST] Fallback broadcast completed for ${event} to room ${roomId}`
+					);
+				} catch (broadcastError) {
+					console.error(
+						`[SOCKET-BROADCAST] Fallback broadcast failed for ${event} to room ${roomId}:`,
+						broadcastError
+					);
+				}
 				// In worker process, send IPC message to main process (fire and forget)
 				// This prevents timeout issues and unhandled promise rejections
 				console.log(
