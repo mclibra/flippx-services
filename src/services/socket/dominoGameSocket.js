@@ -597,7 +597,20 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 		return;
 	}
 
-	console.log(`Broadcasting ${event} to room ${roomId}`);
+	// Debug: Check how many sockets are in the room
+	const socketsInRoom = dominoNamespace.adapter.rooms.get(roomId);
+	const socketCount = socketsInRoom ? socketsInRoom.size : 0;
+
+	console.log(`Broadcasting ${event} to room ${roomId} - ${socketCount} sockets in room`);
+
+	// Debug: List all connected sockets and their rooms
+	const connectedSockets = Array.from(dominoNamespace.sockets.values());
+	console.log(`Total connected sockets: ${connectedSockets.length}`);
+	connectedSockets.forEach(socket => {
+		const rooms = Array.from(socket.rooms);
+		console.log(`Socket ${socket.userId} (${socket.userName}) in rooms: [${rooms.join(', ')}]`);
+	});
+
 	console.log(data);
 	dominoNamespace.to(roomId).emit(event, data);
 };
