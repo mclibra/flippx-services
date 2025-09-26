@@ -40,7 +40,17 @@ class SocketBroadcastService {
 				console.log(
 					`[SOCKET-BROADCAST] Main process broadcasting ${event} to room ${roomId}`
 				);
-				broadcastDominoGameUpdateToRoom(roomId, event, payload);
+				try {
+					broadcastDominoGameUpdateToRoom(roomId, event, payload);
+					console.log(
+						`[SOCKET-BROADCAST] Main process broadcast completed for ${event} to room ${roomId}`
+					);
+				} catch (broadcastError) {
+					console.error(
+						`[SOCKET-BROADCAST] Main process broadcast failed for ${event} to room ${roomId}:`,
+						broadcastError
+					);
+				}
 			} else {
 				// In worker process, send IPC message to main process (fire and forget)
 				// This prevents timeout issues and unhandled promise rejections
