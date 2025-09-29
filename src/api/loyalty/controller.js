@@ -1,4 +1,5 @@
 import moment from 'moment';
+import mongoose from 'mongoose';
 import {
 	LoyaltyProfile,
 	LoyaltyTransaction,
@@ -216,6 +217,11 @@ export const recordDeposit = async (userId, amount) => {
 // Evaluate if a user qualifies for a tier upgrade or needs a downgrade
 export const evaluateUserTier = async userId => {
 	try {
+		// Validate ObjectId format
+		if (!mongoose.Types.ObjectId.isValid(userId)) {
+			throw new Error(`Invalid user ID format: ${userId}`);
+		}
+
 		const loyalty = await LoyaltyProfile.findOne({ user: userId }).populate(
 			'user'
 		);
@@ -445,6 +451,46 @@ export const evaluateUserTier = async userId => {
 		return loyalty;
 	} catch (error) {
 		console.error('Error evaluating tier:', error);
+		throw error;
+	}
+};
+
+// Clean up loyalty profiles with invalid user references
+export const cleanupOrphanedLoyaltyProfiles = async () => {
+	try {
+		const loyaltyProfiles = await LoyaltyProfile.find({});
+		let cleanedCount = 0;
+		let invalidIdCount = 0;
+
+		console.log(`[LOYALTY-CLEANUP] Found ${loyaltyProfiles.length} loyalty profiles to check`);
+
+		for (const loyalty of loyaltyProfiles) {
+			try {
+				// Check if user ID is valid ObjectId format
+				if (!mongoose.Types.ObjectId.isValid(loyalty.user)) {
+					console.log(`[LOYALTY-CLEANUP] Removing loyalty profile with invalid user ID: ${loyalty.user}`);
+					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
+					invalidIdCount++;
+					cleanedCount++;
+					continue;
+				}
+
+				// Check if user exists
+				const user = await User.findById(loyalty.user);
+				if (!user) {
+					console.log(`[LOYALTY-CLEANUP] Removing loyalty profile for missing user: ${loyalty.user}`);
+					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
+					cleanedCount++;
+				}
+			} catch (error) {
+				console.error(`[LOYALTY-CLEANUP] Error checking loyalty profile ${loyalty._id}:`, error);
+			}
+		}
+
+		console.log(`[LOYALTY-CLEANUP] Cleanup completed. Removed ${cleanedCount} orphaned profiles (${invalidIdCount} had invalid ObjectIds)`);
+		return { cleanedCount, invalidIdCount };
+	} catch (error) {
+		console.error('Error in loyalty cleanup:', error);
 		throw error;
 	}
 };

@@ -1,9 +1,11 @@
 import BaseWorker from '../baseWorker';
 import moment from 'moment';
+import mongoose from 'mongoose';
 import {
 	processNoWinCashback,
 	cleanupDepositData,
 	evaluateUserTier,
+	cleanupOrphanedLoyaltyProfiles,
 } from '../../../api/loyalty/controller';
 import InfluencerCommissionService from '../../influencer/commissionService';
 import { LoyaltyProfile } from '../../../api/loyalty/model';
@@ -323,6 +325,11 @@ class LoyaltyWorker extends BaseWorker {
 			TierConfigService.clearCache();
 			this.log('Tier configuration cache cleared for fresh evaluation');
 
+			// Clean up orphaned loyalty profiles first
+			this.log('Running loyalty profile cleanup...');
+			const cleanupResult = await cleanupOrphanedLoyaltyProfiles();
+			this.log(`Cleanup completed: removed ${cleanupResult.cleanedCount} orphaned profiles`);
+
 			const users = await LoyaltyProfile.find({});
 			this.log(`Evaluating tiers for ${users.length} users`);
 
@@ -333,6 +340,13 @@ class LoyaltyWorker extends BaseWorker {
 
 			for (const loyalty of users) {
 				try {
+					// Skip loyalty profiles with invalid user IDs
+					if (!loyalty.user || !mongoose.Types.ObjectId.isValid(loyalty.user)) {
+						this.logError(`Skipping loyalty profile with invalid user ID: ${loyalty.user}`);
+						errors++;
+						continue;
+					}
+
 					const oldTier = loyalty.currentTier;
 					await evaluateUserTier(loyalty.user);
 
@@ -370,8 +384,16 @@ class LoyaltyWorker extends BaseWorker {
 					}
 				} catch (userError) {
 					errors++;
+					const errorType = userError.message.includes('User not found')
+						? 'MISSING_USER'
+						: userError.message.includes('Loyalty profile not found')
+						? 'MISSING_LOYALTY_PROFILE'
+						: userError.message.includes('Invalid user ID format')
+						? 'INVALID_OBJECTID'
+						: 'OTHER';
+
 					this.logError(
-						`Error evaluating tier for user ${loyalty.user}:`,
+						`[${errorType}] Error evaluating tier for user ${loyalty.user}:`,
 						userError
 					);
 				}
