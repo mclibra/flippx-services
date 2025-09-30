@@ -48,7 +48,7 @@ class LotteryWorker extends BaseWorker {
 					$in: ['SCHEDULED', 'ERROR'],
 				},
 				scheduledTime: {
-					$lt: now.subtract(5, 'minutes').valueOf(),
+					$lt: now.subtract(15, 'minutes').valueOf(),
 				},
 			});
 

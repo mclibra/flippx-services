@@ -889,6 +889,20 @@ export const create = async (body, user) => {
 			.populate('externalIds');
 
 		if (lottery && lottery.status === 'SCHEDULED') {
+			// Check if lottery is within 15 minutes of scheduled time
+			const currentTime = moment();
+			const scheduledTime = moment(lottery.scheduledTime);
+			const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
+
+			if (minutesUntilDraw <= 15) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format('MM/DD/YYYY h:mm A')}).`,
+					},
+				};
+			}
 			const walletData = await Wallet.findOne({ user: user._id });
 			const balanceField =
 				cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
@@ -1280,6 +1294,21 @@ export const createMultiState = async (body, user) => {
 					entity: {
 						success: false,
 						error: `Lottery ${purchase.lotteryId} is not available for play`,
+					},
+				};
+			}
+
+			// Check if lottery is within 15 minutes of scheduled time
+			const currentTime = moment();
+			const scheduledTime = moment(lottery.scheduledTime);
+			const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
+
+			if (minutesUntilDraw <= 15) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Lottery purchases are closed for ${lottery.state.name}. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format('MM/DD/YYYY h:mm A')}).`,
 					},
 				};
 			}

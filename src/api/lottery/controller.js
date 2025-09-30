@@ -1659,6 +1659,14 @@ export const createLotteriesForState = async state => {
 					continue;
 				}
 
+				// Calculate draw time first
+				const drawTime = moment.tz(
+					`${moment().format('YYYY-MM-DD')} ${
+						lotteryConfig.drawTime
+					}`,
+					lotteryConfig.drawTimezone
+				);
+
 				// Check if there's already an active lottery for this type and session
 				const existingLottery = await Lottery.findOne({
 					state: state._id,
@@ -1667,14 +1675,15 @@ export const createLotteriesForState = async state => {
 					metadata: lotteryConfig.name.toLowerCase(),
 				});
 
-				if (!existingLottery) {
+				// Additional check for unique index constraint to prevent duplicates
+				const duplicateCheck = await Lottery.findOne({
+					state: state._id,
+					'externalGameIds.pick3': lotteryConfig.pick3GameId,
+					scheduledTime: drawTime.valueOf(),
+				});
+
+				if (!existingLottery && !duplicateCheck) {
 					// Create a new lottery
-					const drawTime = moment.tz(
-						`${moment().format('YYYY-MM-DD')} ${
-							lotteryConfig.drawTime
-						}`,
-						lotteryConfig.drawTimezone
-					);
 
 					const externalGameIds = {
 						pick4: lotteryConfig.pick4GameId,
@@ -1685,30 +1694,52 @@ export const createLotteriesForState = async state => {
 						externalGameIds.pick3 = lotteryConfig.pick3GameId;
 					}
 
-					await Lottery.create({
-						title: lotteryConfig.name,
-						type: 'BORLETTE',
-						scheduledTime: drawTime.valueOf(),
-						metadata: lotteryConfig.name.toLowerCase(),
-						state: state._id,
-						status: 'SCHEDULED',
-						createdBy: null,
-						externalGameIds,
-						// Store whether this lottery supports marriage numbers
-						additionalData: {
-							hasMarriageNumbers:
-								lotteryConfig.hasMarriageNumbers,
-						},
-					});
+					try {
+						await Lottery.create({
+							title: lotteryConfig.name,
+							type: 'BORLETTE',
+							scheduledTime: drawTime.valueOf(),
+							metadata: lotteryConfig.name.toLowerCase(),
+							state: state._id,
+							status: 'SCHEDULED',
+							createdBy: null,
+							externalGameIds,
+							// Store whether this lottery supports marriage numbers
+							additionalData: {
+								hasMarriageNumbers:
+									lotteryConfig.hasMarriageNumbers,
+							},
+						});
 
-					console.log(
-						`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
-					);
-					lotteriesCreated++;
+						console.log(
+							`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
+						);
+						lotteriesCreated++;
+					} catch (createError) {
+						if (createError.code === 11000) {
+							console.log(
+								`Duplicate lottery creation prevented for ${state.name} ${lotteryConfig.name}:`,
+								createError.keyValue
+							);
+						} else {
+							console.error(
+								`Error creating lottery for ${state.name} ${lotteryConfig.name}:`,
+								createError
+							);
+							throw createError;
+						}
+					}
 				} else {
-					console.log(
-						`BORLETTE lottery for ${state.name} ${lotteryConfig.name} has already been created`
-					);
+					if (existingLottery) {
+						console.log(
+							`BORLETTE lottery for ${state.name} ${lotteryConfig.name} has already been created (existing lottery)`
+						);
+					}
+					if (duplicateCheck) {
+						console.log(
+							`BORLETTE lottery for ${state.name} ${lotteryConfig.name} would violate unique constraint (state: ${state._id}, pick3: ${lotteryConfig.pick3GameId}, time: ${drawTime.valueOf()})`
+						);
+					}
 				}
 			}
 		}
