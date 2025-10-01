@@ -1676,23 +1676,23 @@ export const createLotteriesForState = async state => {
 				});
 
 				// Additional check for unique index constraint to prevent duplicates
-				const duplicateCheck = await Lottery.findOne({
-					state: state._id,
-					'externalGameIds.pick3': lotteryConfig.pick3GameId,
-					scheduledTime: drawTime.valueOf(),
-				});
+				// Only check pick3 constraint if pick3GameId exists
+				let duplicateCheck = null;
+				if (lotteryConfig.pick3GameId) {
+					duplicateCheck = await Lottery.findOne({
+						state: state._id,
+						'externalGameIds.pick3': lotteryConfig.pick3GameId,
+						scheduledTime: drawTime.valueOf(),
+					});
+				}
 
 				if (!existingLottery && !duplicateCheck) {
 					// Create a new lottery
 
 					const externalGameIds = {
 						pick4: lotteryConfig.pick4GameId,
+						pick3: lotteryConfig.pick3GameId || null,
 					};
-
-					// Add pick3 ID if available
-					if (lotteryConfig.pick3GameId) {
-						externalGameIds.pick3 = lotteryConfig.pick3GameId;
-					}
 
 					try {
 						await Lottery.create({
@@ -1737,7 +1737,13 @@ export const createLotteriesForState = async state => {
 					}
 					if (duplicateCheck) {
 						console.log(
-							`BORLETTE lottery for ${state.name} ${lotteryConfig.name} would violate unique constraint (state: ${state._id}, pick3: ${lotteryConfig.pick3GameId}, time: ${drawTime.valueOf()})`
+							`BORLETTE lottery for ${state.name} ${
+								lotteryConfig.name
+							} would violate unique constraint (state: ${
+								state._id
+							}, pick3: ${
+								lotteryConfig.pick3GameId
+							}, time: ${drawTime.valueOf()})`
 						);
 					}
 				}

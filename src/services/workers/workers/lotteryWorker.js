@@ -190,6 +190,32 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
+				// Check if the draw is for today - only publish results for today's draws
+				const today = moment().format('YYYY-MM-DD');
+				const drawDate = pick4Result.data.drawDate;
+				if (drawDate !== today) {
+					this.log(
+						`Skipping result publishing for lottery ${lottery._id}: Draw date (${drawDate}) is not today (${today})`
+					);
+					return;
+				}
+
+				// Check if this drawNumber has already been processed to prevent duplicate results
+				const drawNumber = pick4Result.data.drawNumber;
+				const existingDrawNumber = await Lottery.findOne({
+					drawNumber: drawNumber,
+					state: lottery.state,
+					type: 'BORLETTE',
+					status: 'COMPLETED',
+				});
+
+				if (existingDrawNumber) {
+					this.log(
+						`Skipping result publishing for lottery ${lottery._id}: DrawNumber ${drawNumber} has already been processed for this state`
+					);
+					return;
+				}
+
 				let pick3Result = null;
 				let pick3Numbers = null;
 
@@ -222,6 +248,8 @@ class LotteryWorker extends BaseWorker {
 					numbers: [firstNumber, secondNumber, thirdNumber],
 					hasMarriageNumbers:
 						lottery.additionalData?.hasMarriageNumbers || false,
+					drawNumber: drawNumber,
+					drawDate: drawDate,
 				};
 
 				await this.processTicketsForLottery(lottery._id, results);
@@ -240,12 +268,39 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
+				// Check if the draw is for today - only publish results for today's draws
+				const megaToday = moment().format('YYYY-MM-DD');
+				const megaDrawDate = megaResult.data.drawDate;
+				if (megaDrawDate !== megaToday) {
+					this.log(
+						`Skipping MEGAMILLION result publishing for lottery ${lottery._id}: Draw date (${megaDrawDate}) is not today (${megaToday})`
+					);
+					return;
+				}
+
+				// Check if this drawNumber has already been processed to prevent duplicate results
+				const megaDrawNumber = megaResult.data.drawNumber;
+				const existingMegaDrawNumber = await Lottery.findOne({
+					drawNumber: megaDrawNumber,
+					type: 'MEGAMILLION',
+					status: 'COMPLETED',
+				});
+
+				if (existingMegaDrawNumber) {
+					this.log(
+						`Skipping MEGAMILLION result publishing for lottery ${lottery._id}: DrawNumber ${megaDrawNumber} has already been processed`
+					);
+					return;
+				}
+
 				const mainNumbers = megaResult.data.winningNumbers;
 				const megaBall = megaResult.data.additionalNumbers[0];
 
 				const results = {
 					numbers: mainNumbers,
 					megaBall: megaBall,
+					drawNumber: megaDrawNumber,
+					drawDate: megaDrawDate,
 				};
 
 				await this.processTicketsForLottery(lottery._id, results);
@@ -278,20 +333,8 @@ class LotteryWorker extends BaseWorker {
 				published
 			);
 
-			// After successfully publishing lottery results, create new lotteries for the state
-			if (published.status === 200) {
-				const lottery =
-					await Lottery.findById(lotteryId).populate('state');
-				if (lottery && lottery.state) {
-					this.log(
-						`Creating new lotteries for state: ${lottery.state.name} after publishing lottery: ${lotteryId}`
-					);
-					const lotteryCreationResult = await createLotteriesForState(
-						lottery.state
-					);
-					this.log(`Lottery creation result:`, lotteryCreationResult);
-				}
-			}
+			// Note: Lottery creation is handled separately by the analyzeAndCreateMissingLotteries cron job
+			// to prevent race conditions and duplicate lottery creation issues
 		} catch (error) {
 			this.logError(
 				`Error processing tickets for lottery ${lotteryId}:`,

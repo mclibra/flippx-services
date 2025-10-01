@@ -8,6 +8,7 @@ const LotterySchema = new Schema(
 		type: { type: String, required: true, trim: true },
 		scheduledTime: { type: Number, required: true },
 		drawTime: { type: Number, default: null },
+		drawNumber: { type: Number, default: null }, // Store the unique draw number from external lottery API
 		jackpotAmount: { type: Number, default: 0 },
 		metadata: { type: String, default: null }, // Store lottery session name (e.g., "morning", "afternoon", "evening")
 		results: { type: Object, default: null },

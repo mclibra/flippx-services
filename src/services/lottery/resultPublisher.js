@@ -69,8 +69,19 @@ const applyTierBasedPayout = async (baseAmount, ticket) => {
 
 async function processTicketsAndPublishResults(lotteryId, results) {
 	const lottery = await Lottery.findById(lotteryId);
-	if (!lottery || lottery.status !== 'WAITING') {
-		throw new Error('Invalid lottery or lottery not in scheduled state');
+	if (!lottery) {
+		throw new Error('Lottery not found');
+	}
+
+	// Check if lottery is already completed
+	if (lottery.status === 'COMPLETED') {
+		console.log(`Lottery ${lotteryId} already completed, skipping result processing`);
+		return { skipped: true, reason: 'Already completed' };
+	}
+
+	// Allow both WAITING and SCHEDULED status for processing
+	if (!['WAITING', 'SCHEDULED'].includes(lottery.status)) {
+		throw new Error(`Invalid lottery status: ${lottery.status}. Expected WAITING or SCHEDULED`);
 	}
 
 	const { _id, type, jackpotAmount } = lottery;
@@ -386,6 +397,12 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 	lottery.status = 'COMPLETED';
 	lottery.results = results;
 	lottery.drawTime = moment.now();
+
+	// Store the drawNumber if provided in results
+	if (results.drawNumber) {
+		lottery.drawNumber = results.drawNumber;
+	}
+
 	await lottery.save();
 
 	const tickets = await Promise.all(ticketsPromise);
