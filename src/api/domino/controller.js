@@ -404,6 +404,16 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 
 			await game.save();
 
+			// Send timeout notification to all players
+			broadcastSocketMessage(game.room.roomId, 'turn-timeout', {
+				gameId: game._id,
+				position: timedOutPlayerPosition,
+				playerName: timedOutPlayer.playerName,
+				playerType: timedOutPlayer.playerType,
+				currentPlayerPosition: game.currentPlayer,
+				message: `${timedOutPlayer.playerName} timed out`,
+			});
+
 			for (const player of game.players) {
 				if (player.user && player.playerType === 'HUMAN') {
 					sendSocketMessage(
@@ -1252,7 +1262,7 @@ const createNewDominoGame = async (room, gameNumber) => {
 			drawPile,
 			moves: [],
 			turnStartTime: new Date(),
-			turnTimeLimit: gameConfig?.turnTimeLimit || 60,
+			turnTimeLimit: gameConfig?.turnTimeLimit || 15,
 			totalPot: room.totalPot,
 			houseEdge,
 			houseAmount,

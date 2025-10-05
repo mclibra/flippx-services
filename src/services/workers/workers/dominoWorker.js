@@ -35,14 +35,14 @@ class DominoWorker extends BaseWorker {
 			this.fillVirtualRoomsWithBots.bind(this)
 		);
 
-		// Handle human timeouts - every 30 seconds
+		// Handle human timeouts - every 10 seconds
 		this.createSafeCronJob(
-			'*/30 * * * * *',
+			'*/10 * * * * *',
 			'handle-human-timeouts',
 			this.handleHumanTimeouts.bind(this)
 		);
 
-		// Process immediate bot turns - every 15 seconds
+		// Process immediate bot turns - every 5 seconds
 		this.createSafeCronJob(
 			'*/5 * * * * *',
 			'process-immediate-bot-turns',
@@ -56,9 +56,9 @@ class DominoWorker extends BaseWorker {
 			this.startFullRoomGames.bind(this)
 		);
 
-		// Send turn warnings via socket - every 10 seconds
+		// Send turn warnings via socket - every 13 seconds
 		this.createSafeCronJob(
-			'*/10 * * * * *',
+			'*/3 * * * * *',
 			'send-turn-warnings',
 			this.sendTurnWarningsJob.bind(this)
 		);

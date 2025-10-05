@@ -3,7 +3,7 @@ import mongoose, { Schema } from 'mongoose';
 // Game Configuration Model
 const DominoGameConfigSchema = new Schema(
 	{
-		turnTimeLimit: { type: Number, default: 60 }, // seconds
+		turnTimeLimit: { type: Number, default: 15 }, // seconds
 		houseEdge: { type: Number, default: 0 }, // percentage
 		entryFees: [{ type: Number, default: [5, 10, 20, 30, 50, 100] }],
 		maxPlayersPerRoom: { type: Number, default: 4 },
@@ -149,7 +149,7 @@ const DominoGameSchema = new Schema(
 			},
 		],
 		turnStartTime: { type: Date },
-		turnTimeLimit: { type: Number, default: 60 },
+		turnTimeLimit: { type: Number, default: 15 },
 		turnHistory: [
 			{
 				player: { type: Number },

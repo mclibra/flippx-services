@@ -61,7 +61,7 @@ const environments = {
 			isActive: true,
 		},
 		dominoConfigData: {
-			turnTimeLimit: 30,
+			turnTimeLimit: 15,
 			houseEdge: 10,
 			entryFees: [5, 10, 20, 30, 50, 100],
 			maxPlayersPerRoom: 4,
