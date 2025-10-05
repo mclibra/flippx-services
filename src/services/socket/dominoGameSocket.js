@@ -46,11 +46,34 @@ export const initializeDominoGameSocket = io => {
 
 		// Join or create room - NEW SOCKET EVENT
 		socket.on('join-or-create-room', async data => {
+			const { userId, userName } = socket;
+
+			console.log(
+				`[ROOM-REQUEST] User ${userName} (${userId}) requesting to join/create room:`,
+				data
+			);
+
 			// Prevent multiple simultaneous room join requests from same user
 			if (socket.joiningRoom) {
+				console.log(
+					`[ROOM-REQUEST] BLOCKED: User ${userName} has request already in progress`
+				);
 				socket.emit('room-join-error', {
 					success: false,
 					error: 'Room join request already in progress',
+				});
+				return;
+			}
+
+			// Check if user is already connected to any room via socket
+			const isAlreadyInRoom = socket.roomId != null;
+			if (isAlreadyInRoom) {
+				console.log(
+					`[ROOM-REQUEST] BLOCKED: User ${userName} is already in room ${socket.roomId}`
+				);
+				socket.emit('room-join-error', {
+					success: false,
+					error: 'You are already in a waiting room',
 				});
 				return;
 			}
@@ -67,12 +90,7 @@ export const initializeDominoGameSocket = io => {
 					targetPoints = 0,
 				} = data;
 
-				const { userId, userName, role } = socket;
-
-				console.log(
-					`[ROOM-REQUEST] User ${userName} (${userId}) requesting to join/create room:`,
-					data
-				);
+				const { role } = socket;
 
 				const result = await joinOrCreateRoomSocket(socket, {
 					playerCount,
