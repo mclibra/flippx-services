@@ -925,7 +925,7 @@ export const handleGameCompletion = async game => {
 	}
 };
 
-// Helper function to update player total scores in the room
+// Helper function to update player total scores in the room and track last tile player
 const updatePlayerTotalScores = async (game, room) => {
 	try {
 		// Get the final scores from the completed game
@@ -943,6 +943,19 @@ const updatePlayerTotalScores = async (game, room) => {
 				{
 					$inc: { 'players.$.totalScore': roundScore },
 				}
+			);
+		}
+
+		// Track the last tile player for next game's first turn
+		// For points-based games, the winner is typically the player who played the last tile
+		if (game.winner !== null && game.winner !== undefined) {
+			await DominoRoom.updateOne(
+				{ _id: room._id },
+				{ $set: { lastTilePlayerPosition: game.winner } }
+			);
+
+			console.log(
+				`[GAME-COMPLETION] Set lastTilePlayerPosition to ${game.winner} for room ${room.roomId}`
 			);
 		}
 
@@ -974,12 +987,14 @@ const handleStandardGameCompletion = async (game, room) => {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: game.winner,
-			winnerDetails: winnerPlayer ? {
-				position: winnerPlayer.position,
-				playerName: winnerPlayer.playerName,
-				playerType: winnerPlayer.playerType,
-				user: winnerPlayer.user
-			} : null,
+			winnerDetails: winnerPlayer
+				? {
+						position: winnerPlayer.position,
+						playerName: winnerPlayer.playerName,
+						playerType: winnerPlayer.playerType,
+						user: winnerPlayer.user,
+					}
+				: null,
 			endReason: game.endReason,
 			finalScores: game.finalScores,
 			gameType: 'STANDARD',
@@ -1084,12 +1099,14 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 			roundNumber: game.gameNumber,
 			finalScores: game.finalScores,
 			roundWinnerIndex: game.winner,
-			roundWinnerDetails: roundWinner ? {
-				position: roundWinner.position,
-				playerName: roundWinner.playerName,
-				playerType: roundWinner.playerType,
-				user: roundWinner.user
-			} : null,
+			roundWinnerDetails: roundWinner
+				? {
+						position: roundWinner.position,
+						playerName: roundWinner.playerName,
+						playerType: roundWinner.playerType,
+						user: roundWinner.user,
+					}
+				: null,
 			nextGameCountdown: delaySeconds,
 			targetPoints: room.gameSettings.targetPoints,
 			gameType: 'POINTS',
@@ -1252,10 +1269,24 @@ const createNewDominoGame = async (room, gameNumber) => {
 		}));
 
 		// Create game document
+		// For points-based games, start with the player who played the last tile in previous game
+		// For the first game (gameNumber === 1), start with position 0
+		let startingPlayer = 0;
+		if (gameNumber === 1) {
+			startingPlayer = 0; // First game always starts with position 0
+		} else {
+			// For subsequent games, use the last tile player, but validate the position
+			const lastTilePlayer = room.lastTilePlayerPosition || 0;
+			startingPlayer =
+				lastTilePlayer >= 0 && lastTilePlayer < room.players.length
+					? lastTilePlayer
+					: 0; // Fallback to 0 if invalid position
+		}
+
 		const newGame = await DominoGame.create({
 			room: room._id,
 			gameNumber,
-			currentPlayer: 0,
+			currentPlayer: startingPlayer,
 			gameState: 'ACTIVE',
 			board: [],
 			players: gamePlayers,
@@ -1269,6 +1300,10 @@ const createNewDominoGame = async (room, gameNumber) => {
 			winnerPayout,
 			startedAt: new Date(),
 		});
+
+		console.log(
+			`[GAME-COMPLETION] Created new game ${newGame._id} with starting player at position ${startingPlayer} (gameNumber: ${gameNumber}, lastTilePlayerPosition: ${room.lastTilePlayerPosition})`
+		);
 
 		return newGame.toJSON();
 	} catch (error) {

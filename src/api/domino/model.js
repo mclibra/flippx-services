@@ -68,6 +68,7 @@ const DominoRoomSchema = new Schema(
 		completedAt: { type: Date },
 		totalPot: { type: Number, default: 0 },
 		houseEdge: { type: Number, default: 0 },
+		lastTilePlayerPosition: { type: Number, default: 0 }, // Track who played last tile for next game's first turn
 	},
 	{
 		timestamps: true,
