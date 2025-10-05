@@ -88,6 +88,7 @@ export const startDominoGame = async room => {
 						isConnected: player.isConnected,
 						tileCount: player.hand.length,
 					})),
+					currentPlayerPosition: game.currentPlayer,
 					...player,
 				});
 			}
@@ -987,6 +988,7 @@ const handleStandardGameCompletion = async (game, room) => {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: game.winner,
+			winnerPayout: game.winnerPayout,
 			winnerDetails: winnerPlayer
 				? {
 						position: winnerPlayer.position,
@@ -1062,6 +1064,7 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
 				playerName: winnerPlayer.playerName,
 				totalScore: winnerPlayer.totalScore,
 			},
+			winnerPayout: game.winnerPayout,
 			endReason: 'TARGET_POINTS_REACHED',
 			allPlayersScore: room.players.map(p => ({
 				position: p.position,
@@ -1099,6 +1102,7 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 			roundNumber: game.gameNumber,
 			finalScores: game.finalScores,
 			roundWinnerIndex: game.winner,
+			winnerPayout: game.winnerPayout,
 			roundWinnerDetails: roundWinner
 				? {
 						position: roundWinner.position,
@@ -1220,6 +1224,7 @@ const startNewGameInRoom = async room => {
 						isConnected: player.isConnected,
 						tileCount: player.hand.length,
 					})),
+					currentPlayerPosition: game.currentPlayer,
 					...player,
 				});
 			}

@@ -44,7 +44,7 @@ class DominoWorker extends BaseWorker {
 
 		// Process immediate bot turns - every 5 seconds
 		this.createSafeCronJob(
-			'*/5 * * * * *',
+			'*/2 * * * * *',
 			'process-immediate-bot-turns',
 			this.processImmediateBotTurns.bind(this)
 		);
@@ -226,8 +226,8 @@ class DominoWorker extends BaseWorker {
 	 */
 	async processImmediateBotTurns() {
 		try {
-			// Find active games where it's a bot's turn (within 5 seconds)
-			const timeoutThreshold = new Date(Date.now() - 5 * 1000); // 5 seconds ago
+			// Find active games where it's a bot's turn (within 2 seconds)
+			const timeoutThreshold = new Date(Date.now() - 2 * 1000); // 5 seconds ago
 
 			const botTurnGames = await DominoGame.find({
 				gameState: 'ACTIVE',
