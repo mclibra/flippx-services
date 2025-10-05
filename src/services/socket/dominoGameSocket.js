@@ -46,6 +46,17 @@ export const initializeDominoGameSocket = io => {
 
 		// Join or create room - NEW SOCKET EVENT
 		socket.on('join-or-create-room', async data => {
+			// Prevent multiple simultaneous room join requests from same user
+			if (socket.joiningRoom) {
+				socket.emit('room-join-error', {
+					success: false,
+					error: 'Room join request already in progress',
+				});
+				return;
+			}
+
+			socket.joiningRoom = true;
+
 			try {
 				const {
 					playerCount,
@@ -161,6 +172,9 @@ export const initializeDominoGameSocket = io => {
 					success: false,
 					error: 'Failed to join or create room',
 				});
+			} finally {
+				// Clear the joining flag regardless of success or failure
+				socket.joiningRoom = false;
 			}
 		});
 
@@ -466,10 +480,18 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 				p => p.user.toString() === userId.toString()
 			);
 
-			if (userPlayer && !userPlayer.isConnected) {
-				// User is disconnected, remove them from the room to allow joining a new one
+			if (userPlayer) {
+				// If user is connected (or connection status is unclear), they're already in a room
+				if (userPlayer.isConnected === true) {
+					return {
+						success: false,
+						error: 'You are already in a waiting room',
+					};
+				}
+
+				// If user is explicitly disconnected or connection status is undefined/null, clean up
 				console.log(
-					`Removing disconnected user ${userId} from stale waiting room ${existingRoom.roomId}`
+					`Removing disconnected/stale user ${userId} from waiting room ${existingRoom.roomId}`
 				);
 
 				await DominoRoom.updateOne(
@@ -488,12 +510,6 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 				);
 
 				// Continue with room creation/joining since we've cleaned up the stale state
-			} else if (userPlayer && userPlayer.isConnected) {
-				// User is actually connected to a waiting room
-				return {
-					success: false,
-					error: 'You are already in a waiting room',
-				};
 			}
 		}
 
