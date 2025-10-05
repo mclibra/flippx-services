@@ -984,7 +984,7 @@ const handleStandardGameCompletion = async (game, room) => {
 		const winnerPlayer = game.players.find(p => p.position === game.winner);
 
 		// Broadcast final game completion
-		broadcastSocketMessage(room.roomId, 'game-completed', {
+		const gameCompletedData = {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: game.winner,
@@ -1000,7 +1000,12 @@ const handleStandardGameCompletion = async (game, room) => {
 			endReason: game.endReason,
 			finalScores: game.finalScores,
 			gameType: 'STANDARD',
-		});
+		};
+		broadcastSocketMessage(
+			room.roomId,
+			'game-completed',
+			gameCompletedData
+		);
 
 		console.log(
 			`[GAME-COMPLETION] STANDARD game completed for room ${room.roomId}`
@@ -1056,7 +1061,7 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
 		await distributePrizes(game, room, winnerPlayer);
 
 		// Broadcast challenge completion
-		broadcastSocketMessage(room.roomId, 'challenge-completed', {
+		const challengeCompletedData = {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: {
@@ -1072,7 +1077,12 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
 				totalScore: p.totalScore || 0,
 			})),
 			gameType: 'POINTS',
-		});
+		};
+		broadcastSocketMessage(
+			room.roomId,
+			'challenge-completed',
+			challengeCompletedData
+		);
 
 		console.log(
 			`[GAME-COMPLETION] POINTS challenge completed! Winner: ${winnerPlayer.playerName} with ${winnerPlayer.totalScore} points`
