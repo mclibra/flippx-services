@@ -1105,12 +1105,18 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 		// Get round winner details
 		const roundWinner = game.players.find(p => p.position === game.winner);
 
+		// Get updated room with current player scores for leaderboard
+		const updatedRoomForLeaderboard = await DominoRoom.findById(room._id);
+
 		// Broadcast round completion with countdown
 		broadcastSocketMessage(room.roomId, 'round-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
 			roundNumber: game.gameNumber,
-			finalScores: game.finalScores,
+			finalScores: game.finalScores.map(score => ({
+				...score,
+				totalScore: updatedRoomForLeaderboard.players.find(p => p.position === score.position)?.totalScore || 0
+			})),
 			roundWinnerIndex: game.winner,
 			winnerPayout: game.winnerPayout,
 			roundWinnerDetails: roundWinner
