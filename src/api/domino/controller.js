@@ -956,11 +956,20 @@ const handleStandardGameCompletion = async (game, room) => {
 		// Distribute prizes and handle transactions
 		await distributePrizes(game, room);
 
+		// Get winner player details
+		const winnerPlayer = game.players.find(p => p.position === game.winner);
+
 		// Broadcast final game completion
 		broadcastSocketMessage(room.roomId, 'game-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
 			winner: game.winner,
+			winnerDetails: winnerPlayer ? {
+				position: winnerPlayer.position,
+				playerName: winnerPlayer.playerName,
+				playerType: winnerPlayer.playerType,
+				user: winnerPlayer.user
+			} : null,
 			endReason: game.endReason,
 			finalScores: game.finalScores,
 			gameType: 'STANDARD',
@@ -1055,6 +1064,9 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 			`[GAME-COMPLETION] Starting ${delaySeconds}s countdown for new game in room ${room.roomId}`
 		);
 
+		// Get round winner details
+		const roundWinner = game.players.find(p => p.position === game.winner);
+
 		// Broadcast round completion with countdown
 		broadcastSocketMessage(room.roomId, 'round-completed', {
 			gameId: game._id,
@@ -1062,6 +1074,12 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 			roundNumber: game.gameNumber,
 			finalScores: game.finalScores,
 			roundWinnerIndex: game.winner,
+			roundWinnerDetails: roundWinner ? {
+				position: roundWinner.position,
+				playerName: roundWinner.playerName,
+				playerType: roundWinner.playerType,
+				user: roundWinner.user
+			} : null,
 			nextGameCountdown: delaySeconds,
 			targetPoints: room.gameSettings.targetPoints,
 			gameType: 'POINTS',
