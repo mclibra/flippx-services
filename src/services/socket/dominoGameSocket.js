@@ -481,15 +481,22 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			);
 
 			if (userPlayer) {
-				// If user is connected (or connection status is unclear), they're already in a room
-				if (userPlayer.isConnected === true) {
+				// Check if user is actually connected via socket (not just database field)
+				const isActuallyConnected = Array.from(
+					dominoNamespace.sockets.values()
+				).some(
+					s => s.userId === userId && s.roomId === existingRoom.roomId
+				);
+
+				// If user is connected via socket and marked as connected in DB, they're already in a room
+				if (userPlayer.isConnected === true && isActuallyConnected) {
 					return {
 						success: false,
 						error: 'You are already in a waiting room',
 					};
 				}
 
-				// If user is explicitly disconnected or connection status is undefined/null, clean up
+				// If user is not actually connected via socket or explicitly disconnected, clean up
 				console.log(
 					`Removing disconnected/stale user ${userId} from waiting room ${existingRoom.roomId}`
 				);
