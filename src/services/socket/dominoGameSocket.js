@@ -454,17 +454,47 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			};
 		}
 
-		// Check if user is already in any waiting room
+		// Check if user is already in any waiting room, but first clean up stale connections
 		const existingRoom = await DominoRoom.findOne({
 			'players.user': userId,
 			status: 'WAITING',
 		});
 
 		if (existingRoom) {
-			return {
-				success: false,
-				error: 'You are already in a waiting room',
-			};
+			// Check if the user is actually connected in this room
+			const userPlayer = existingRoom.players.find(
+				p => p.user.toString() === userId.toString()
+			);
+
+			if (userPlayer && !userPlayer.isConnected) {
+				// User is disconnected, remove them from the room to allow joining a new one
+				console.log(
+					`Removing disconnected user ${userId} from stale waiting room ${existingRoom.roomId}`
+				);
+
+				await DominoRoom.updateOne(
+					{
+						roomId: existingRoom.roomId,
+						status: 'WAITING',
+					},
+					{
+						$pull: {
+							players: { user: userId },
+						},
+						$inc: {
+							totalPot: -existingRoom.entryFee,
+						},
+					}
+				);
+
+				// Continue with room creation/joining since we've cleaned up the stale state
+			} else if (userPlayer && userPlayer.isConnected) {
+				// User is actually connected to a waiting room
+				return {
+					success: false,
+					error: 'You are already in a waiting room',
+				};
+			}
 		}
 
 		// First, try to find an existing room with vacancy that matches criteria
@@ -601,14 +631,20 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 	const socketsInRoom = dominoNamespace.adapter.rooms.get(roomId);
 	const socketCount = socketsInRoom ? socketsInRoom.size : 0;
 
-	console.log(`Broadcasting ${event} to room ${roomId} - ${socketCount} sockets in room`);
+	console.log(
+		`Broadcasting ${event} to room ${roomId} - ${socketCount} sockets in room`
+	);
 
 	// Debug: List all connected sockets and their rooms
 	const connectedSockets = Array.from(dominoNamespace.sockets.values());
 	console.log(`Total connected sockets: ${connectedSockets.length}`);
 	connectedSockets.forEach(socket => {
 		const rooms = Array.from(socket.rooms);
-		console.log(`Socket ${socket.userId} (${socket.userName}) in rooms: [${rooms.join(', ')}]`);
+		console.log(
+			`Socket ${socket.userId} (${
+				socket.userName
+			}) in rooms: [${rooms.join(', ')}]`
+		);
 	});
 
 	console.log(data);
