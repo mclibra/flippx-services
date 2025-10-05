@@ -70,7 +70,7 @@ export const initializeDominoGameSocket = io => {
 				const { userId, userName, role } = socket;
 
 				console.log(
-					`User ${userName} requesting to join/create room:`,
+					`[ROOM-REQUEST] User ${userName} (${userId}) requesting to join/create room:`,
 					data
 				);
 
@@ -161,6 +161,10 @@ export const initializeDominoGameSocket = io => {
 						// Don't fail room joining if XP awarding fails
 					}
 				} else {
+					console.log(
+						`[ROOM-ERROR] User ${userName} (${userId}) join/create failed:`,
+						result.error
+					);
 					socket.emit('room-join-error', {
 						success: false,
 						error: result.error,
@@ -474,11 +478,26 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			status: 'WAITING',
 		});
 
+		console.log(
+			`[ROOM-VALIDATION] User ${userName} (${userId}) validation check:`,
+			{
+				hasExistingRoom: !!existingRoom,
+				existingRoomId: existingRoom?.roomId,
+				existingRoomStatus: existingRoom?.status,
+			}
+		);
+
 		if (existingRoom) {
 			// Check if the user is actually connected in this room
 			const userPlayer = existingRoom.players.find(
 				p => p.user.toString() === userId.toString()
 			);
+
+			console.log(`[ROOM-VALIDATION] User player in existing room:`, {
+				found: !!userPlayer,
+				isConnected: userPlayer?.isConnected,
+				position: userPlayer?.position,
+			});
 
 			if (userPlayer) {
 				// Check if user is actually connected via socket to this specific room
@@ -493,8 +512,27 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 					dominoNamespace.sockets.values()
 				).some(s => s.userId === userId && s.roomId != null);
 
+				// Get all sockets for this user for debugging
+				const userSockets = Array.from(dominoNamespace.sockets.values())
+					.filter(s => s.userId === userId)
+					.map(s => ({
+						socketId: s.id,
+						roomId: s.roomId,
+						userName: s.userName,
+					}));
+
+				console.log(`[ROOM-VALIDATION] Socket connection check:`, {
+					isConnectedToThisRoom,
+					isConnectedToAnyRoom,
+					userSockets,
+					existingRoomId: existingRoom.roomId,
+				});
+
 				// If user is connected via socket and marked as connected in DB, they're already in a room
 				if (userPlayer.isConnected === true && isConnectedToThisRoom) {
+					console.log(
+						`[ROOM-VALIDATION] BLOCKING: User is connected to this specific room`
+					);
 					return {
 						success: false,
 						error: 'You are already in a waiting room',
@@ -503,6 +541,9 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 
 				// If user is connected to a different room, that's also an error
 				if (isConnectedToAnyRoom && !isConnectedToThisRoom) {
+					console.log(
+						`[ROOM-VALIDATION] BLOCKING: User is connected to a different room`
+					);
 					return {
 						success: false,
 						error: 'You are already in a waiting room',
@@ -511,7 +552,7 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 
 				// If user is not actually connected via socket or explicitly disconnected, clean up
 				console.log(
-					`Removing disconnected/stale user ${userId} from waiting room ${existingRoom.roomId}`
+					`[ROOM-VALIDATION] CLEANING UP: Removing disconnected/stale user ${userId} from waiting room ${existingRoom.roomId}`
 				);
 
 				await DominoRoom.updateOne(
