@@ -462,13 +462,17 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 		let cleanedCount = 0;
 		let invalidIdCount = 0;
 
-		console.log(`[LOYALTY-CLEANUP] Found ${loyaltyProfiles.length} loyalty profiles to check`);
+		console.log(
+			`[LOYALTY-CLEANUP] Found ${loyaltyProfiles.length} loyalty profiles to check`
+		);
 
 		for (const loyalty of loyaltyProfiles) {
 			try {
 				// Check if user ID is valid ObjectId format
 				if (!mongoose.Types.ObjectId.isValid(loyalty.user)) {
-					console.log(`[LOYALTY-CLEANUP] Removing loyalty profile with invalid user ID: ${loyalty.user}`);
+					console.log(
+						`[LOYALTY-CLEANUP] Removing loyalty profile with invalid user ID: ${loyalty.user}`
+					);
 					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
 					invalidIdCount++;
 					cleanedCount++;
@@ -478,16 +482,23 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 				// Check if user exists
 				const user = await User.findById(loyalty.user);
 				if (!user) {
-					console.log(`[LOYALTY-CLEANUP] Removing loyalty profile for missing user: ${loyalty.user}`);
+					console.log(
+						`[LOYALTY-CLEANUP] Removing loyalty profile for missing user: ${loyalty.user}`
+					);
 					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
 					cleanedCount++;
 				}
 			} catch (error) {
-				console.error(`[LOYALTY-CLEANUP] Error checking loyalty profile ${loyalty._id}:`, error);
+				console.error(
+					`[LOYALTY-CLEANUP] Error checking loyalty profile ${loyalty._id}:`,
+					error
+				);
 			}
 		}
 
-		console.log(`[LOYALTY-CLEANUP] Cleanup completed. Removed ${cleanedCount} orphaned profiles (${invalidIdCount} had invalid ObjectIds)`);
+		console.log(
+			`[LOYALTY-CLEANUP] Cleanup completed. Removed ${cleanedCount} orphaned profiles (${invalidIdCount} had invalid ObjectIds)`
+		);
 		return { cleanedCount, invalidIdCount };
 	} catch (error) {
 		console.error('Error in loyalty cleanup:', error);
@@ -1317,6 +1328,218 @@ export const checkNoWinCashbackEligibility = async userId => {
 		await loyalty.save();
 	} catch (error) {
 		console.error('Error checking no-win cashback eligibility:', error);
+	}
+};
+
+// Process no-win cashback for eligible users
+export const processNoWinCashback = async () => {
+	try {
+		// Get tier configurations
+		const tierConfigs = await TierConfigService.getTierRequirements();
+		const eligibleTiers = Object.keys(tierConfigs).filter(
+			tier =>
+				tierConfigs[tier].noWinCashbackPercentage > 0 &&
+				tierConfigs[tier].noWinCashbackDays > 0
+		);
+
+		if (eligibleTiers.length === 0) {
+			console.log('No tiers have no-win cashback configured');
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					message: 'No tiers have no-win cashback configured',
+					results: [],
+				},
+			};
+		}
+
+		// Find users eligible for no-win cashback
+		const eligibleLoyalties = await LoyaltyProfile.find({
+			currentTier: { $in: eligibleTiers },
+			'tierProgress.eligibleForNoWinCashback': true,
+		}).populate('user');
+
+		const results = [];
+
+		for (const loyalty of eligibleLoyalties) {
+			try {
+				const tierConfig = tierConfigs[loyalty.currentTier];
+				if (!tierConfig) continue;
+
+				// Calculate the period for cashback calculation
+				const endDate = moment();
+				let startDate;
+
+				if (!loyalty.tierProgress.lastWinDate) {
+					// Never won - calculate from first play
+					startDate = loyalty.tierProgress.lastPlayDate
+						? moment(loyalty.tierProgress.lastPlayDate)
+						: moment().subtract(
+								tierConfig.noWinCashbackDays,
+								'days'
+							);
+				} else {
+					// Has won before - calculate from last win
+					startDate = moment(loyalty.tierProgress.lastWinDate);
+				}
+
+				// Calculate total amounts played and won from transactions
+				const transactionResults = await Transaction.aggregate([
+					{
+						$match: {
+							user: loyalty.user._id.toString(),
+							createdAt: {
+								$gte: startDate.toDate(),
+								$lte: endDate.toDate(),
+							},
+							transactionIdentifier: {
+								$in: [
+									...GAME_TRANSACTION_IDENTIFIERS,
+									...WINNING_TRANSACTION_IDENTIFIERS,
+								],
+							},
+						},
+					},
+					{
+						$group: {
+							_id: {
+								type: '$transactionIdentifier',
+							},
+							total: { $sum: '$transactionAmount' },
+						},
+					},
+				]);
+
+				// Calculate total losses
+				let totalSpent = 0;
+				let totalWon = 0;
+
+				for (const result of transactionResults) {
+					if (
+						GAME_TRANSACTION_IDENTIFIERS.includes(result._id.type)
+					) {
+						totalSpent += result.total;
+					} else if (
+						WINNING_TRANSACTION_IDENTIFIERS.includes(
+							result._id.type
+						)
+					) {
+						totalWon += result.total;
+					}
+				}
+
+				const netLoss = totalSpent - totalWon;
+
+				if (netLoss > 0) {
+					const cashbackAmount =
+						netLoss * (tierConfig.noWinCashbackPercentage / 100);
+
+					if (cashbackAmount >= 1) {
+						// Minimum $1 cashback
+						// Check if cashback for this period was already processed
+						const periodKey = startDate.format('YYYY-MM-DD');
+						const existingCashback = loyalty.cashbackHistory?.find(
+							cb =>
+								cb.reference?.periodKey === periodKey &&
+								cb.type === 'NO_WIN'
+						);
+
+						if (!existingCashback) {
+							// Process cashback transaction
+							const transaction = await makeTransaction(
+								loyalty.user._id,
+								cashbackAmount,
+								'NO_WIN_CASHBACK',
+								`No-win cashback: ${
+									tierConfig.noWinCashbackPercentage
+								}% of $${netLoss.toFixed(
+									2
+								)} net loss over ${endDate.diff(
+									startDate,
+									'days'
+								)} days`
+							);
+
+							if (transaction.success) {
+								// Record cashback history
+								if (!loyalty.cashbackHistory) {
+									loyalty.cashbackHistory = [];
+								}
+
+								loyalty.cashbackHistory.push({
+									date: new Date(),
+									amount: cashbackAmount,
+									processed: true,
+									type: 'NO_WIN',
+									reference: { periodKey },
+								});
+
+								// Reset no-win tracking since cashback was processed
+								loyalty.tierProgress.eligibleForNoWinCashback = false;
+								loyalty.tierProgress.consecutiveDaysNoWin = 0;
+
+								await loyalty.save();
+
+								results.push({
+									userId: loyalty.user._id.toString(),
+									tier: loyalty.currentTier,
+									netLoss,
+									cashbackAmount,
+									daysNoWin: endDate.diff(startDate, 'days'),
+									transactionId: transaction.transaction.id,
+									success: true,
+								});
+							}
+						} else {
+							results.push({
+								userId: loyalty.user._id.toString(),
+								tier: loyalty.currentTier,
+								success: true,
+								message: `No-win cashback for period ${periodKey} already processed`,
+							});
+						}
+					}
+				} else {
+					results.push({
+						userId: loyalty.user._id.toString(),
+						tier: loyalty.currentTier,
+						netLoss: 0,
+						cashbackAmount: 0,
+						daysNoWin: endDate.diff(startDate, 'days'),
+						success: true,
+						message: 'No losses to process cashback for',
+					});
+				}
+			} catch (error) {
+				console.error(
+					`Error processing no-win cashback for user ${loyalty.user._id}:`,
+					error
+				);
+				results.push({
+					userId: loyalty.user._id.toString(),
+					success: false,
+					error: error.message,
+				});
+			}
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				results,
+			},
+		};
+	} catch (error) {
+		console.error('Error processing no-win cashback:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to process no-win cashback',
+			},
+		};
 	}
 };
 
