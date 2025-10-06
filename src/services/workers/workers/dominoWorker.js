@@ -26,8 +26,6 @@ class DominoWorker extends BaseWorker {
 	 * Initialize all domino-related cron jobs
 	 */
 	async initializeCronJobs() {
-		this.log('Initializing domino cron jobs...');
-
 		// Fill VIRTUAL waiting rooms with bots after 3 seconds - every 3 seconds
 		this.createSafeCronJob(
 			'*/3 * * * * *',
@@ -83,8 +81,6 @@ class DominoWorker extends BaseWorker {
 			'cleanup-orphaned-games',
 			this.cleanupOrphanedGames.bind(this)
 		);
-
-		this.log('Domino cron jobs initialized successfully');
 	}
 
 	/**
@@ -93,10 +89,8 @@ class DominoWorker extends BaseWorker {
 	 */
 	async fillVirtualRoomsWithBots() {
 		try {
-			this.log('[CRON] fillVirtualRoomsWithBots started');
 			const gameConfig = await DominoGameConfig.findOne();
 			if (!gameConfig) {
-				this.log('[CRON] No game config found, skipping bot filling');
 				return;
 			}
 
@@ -111,10 +105,6 @@ class DominoWorker extends BaseWorker {
 				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
 			});
 
-			this.log(
-				`[CRON] Found ${virtualRoomsNeedingBots.length} VIRTUAL rooms needing bots`
-			);
-
 			let roomsProcessed = 0;
 			let botsAdded = 0;
 
@@ -123,10 +113,6 @@ class DominoWorker extends BaseWorker {
 					const slotsNeeded = room.playerCount - room.players.length;
 
 					if (slotsNeeded > 0) {
-						this.log(
-							`[CRON] Filling ${slotsNeeded} bot slots in VIRTUAL room ${room.roomId}`
-						);
-
 						await this.fillRoomWithBots(
 							room,
 							slotsNeeded,
@@ -141,14 +127,6 @@ class DominoWorker extends BaseWorker {
 						error
 					);
 				}
-			}
-
-			if (roomsProcessed > 0) {
-				this.log(
-					`[CRON] ✅ Added ${botsAdded} bots to ${roomsProcessed} VIRTUAL rooms`
-				);
-			} else {
-				this.log('[CRON] No VIRTUAL rooms needed bot filling');
 			}
 		} catch (error) {
 			this.logError('[CRON] Error in bot room filling:', error);
@@ -182,17 +160,10 @@ class DominoWorker extends BaseWorker {
 
 					// Skip games without valid rooms
 					if (!game.room) {
-						this.log(
-							`[CRON] Skipping timeout processing for game ${game._id} - no room associated`
-						);
 						continue;
 					}
 
 					this.processingGames.add(game._id.toString());
-
-					this.log(
-						`[CRON] Processing timeout for human player in game ${game._id}`
-					);
 
 					const currentPlayer = game.players[game.currentPlayer];
 
@@ -201,9 +172,6 @@ class DominoWorker extends BaseWorker {
 						currentPlayer.playerType === 'HUMAN' &&
 						currentPlayer.user
 					) {
-						this.log(
-							`[CRON] Handling turn timeout for human user ${currentPlayer.user} in game ${game._id}`
-						);
 						await handleTurnTimeout(game._id, currentPlayer);
 					}
 				} catch (error) {
@@ -255,10 +223,6 @@ class DominoWorker extends BaseWorker {
 					// Add to processing set
 					this.processingGames.add(game._id.toString());
 
-					this.log(
-						`[CRON] Processing immediate bot turn for ${currentPlayer.playerName} in game ${game._id}`
-					);
-
 					// Process bot turn with enhanced concurrency control
 					await this.processBotTurn(game);
 				} catch (error) {
@@ -292,9 +256,6 @@ class DominoWorker extends BaseWorker {
 
 			for (const room of fullRooms) {
 				try {
-					this.log(
-						`[CRON] Starting game for full room ${room.roomId} with ${room.players.length}/${room.playerCount} players`
-					);
 					await startDominoGame(room);
 				} catch (error) {
 					this.logError(
@@ -323,11 +284,7 @@ class DominoWorker extends BaseWorker {
 				return;
 			}
 
-			this.log(
-				`[CRON] Found ${activeGamesCount} active games, checking for warnings needed`
-			);
 			await sendTurnWarnings();
-			this.log('[CRON] ✅ Socket-based turn warnings completed');
 		} catch (error) {
 			this.logError('[CRON] Error checking for turn warnings:', error);
 		}
@@ -351,8 +308,6 @@ class DominoWorker extends BaseWorker {
 	 */
 	async cleanupAbandonedRooms() {
 		try {
-			this.log('[CRON] Cleaning up abandoned domino rooms...');
-
 			// Find rooms that have been waiting for more than 2 hours
 			const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
@@ -360,8 +315,6 @@ class DominoWorker extends BaseWorker {
 				status: 'WAITING',
 				createdAt: { $lt: twoHoursAgo },
 			});
-
-			let cleanedCount = 0;
 
 			for (const room of abandonedRooms) {
 				try {
@@ -383,22 +336,12 @@ class DominoWorker extends BaseWorker {
 					room.status = 'CANCELLED';
 					room.completedAt = new Date();
 					await room.save();
-
-					cleanedCount++;
 				} catch (error) {
 					this.logError(
 						`[CRON] Error cleaning up room ${room.roomId}:`,
 						error
 					);
 				}
-			}
-
-			if (cleanedCount > 0) {
-				this.log(
-					`[CRON] ✅ Cleaned up ${cleanedCount} abandoned domino rooms`
-				);
-			} else {
-				this.log('[CRON] ✅ No abandoned rooms to clean up');
 			}
 		} catch (error) {
 			this.logError('[CRON] Error in domino room cleanup:', error);
@@ -410,8 +353,6 @@ class DominoWorker extends BaseWorker {
 	 */
 	async cleanupOrphanedGames() {
 		try {
-			this.log('[CRON] Cleaning up orphaned domino games...');
-
 			// Find games that are ACTIVE but have no room or invalid room
 			const activeGames = await DominoGame.find({
 				gameState: 'ACTIVE',
@@ -420,14 +361,8 @@ class DominoWorker extends BaseWorker {
 			// Filter games where room is null after population
 			const orphanedGames = activeGames.filter(game => !game.room);
 
-			let cleanedCount = 0;
-
 			for (const game of orphanedGames) {
 				try {
-					this.log(
-						`[CRON] Cleaning up orphaned game ${game._id} (no room associated)`
-					);
-
 					// Mark game as completed with a special end reason
 					game.gameState = 'COMPLETED';
 					game.endReason = 'BLOCKED_NO_MOVES';
@@ -436,21 +371,12 @@ class DominoWorker extends BaseWorker {
 					game.finalScores = [];
 
 					await game.save();
-					cleanedCount++;
 				} catch (error) {
 					this.logError(
 						`[CRON] Error cleaning up orphaned game ${game._id}:`,
 						error
 					);
 				}
-			}
-
-			if (cleanedCount > 0) {
-				this.log(
-					`[CRON] ✅ Cleaned up ${cleanedCount} orphaned domino games`
-				);
-			} else {
-				this.log('[CRON] ✅ No orphaned games to clean up');
 			}
 		} catch (error) {
 			this.logError('[CRON] Error in orphaned games cleanup:', error);
@@ -511,9 +437,6 @@ class DominoWorker extends BaseWorker {
 					}
 				);
 			}
-			this.log(
-				`[BOT-FILL] Added ${slotsNeeded} bots to room ${room.roomId}`
-			);
 		} catch (error) {
 			this.logError(
 				`[BOT-FILL] Error filling room ${room.roomId} with bots:`,
@@ -537,11 +460,6 @@ class DominoWorker extends BaseWorker {
 
 			// Use the existing autoPlay logic to determine bot's move
 			const move = DominoGameEngine.autoPlay(game);
-
-			this.log(
-				`[BOT-TURN] Bot ${currentPlayer.playerName} decided to:`,
-				move
-			);
 
 			// Process the bot's move using existing game engine
 			const moveResult = DominoGameEngine.processMove(game, move, true);
@@ -596,23 +514,13 @@ class DominoWorker extends BaseWorker {
 			);
 
 			if (!updatedGame) {
-				this.log(
-					`[BOT-TURN] Game ${game._id} was already updated by another process - skipping bot turn for ${currentPlayer.playerName}`
-				);
 				return;
 			}
 
 			// Check if room is properly populated
 			if (!updatedGame.room) {
-				this.logError(
-					`[BOT-TURN] Game ${game._id} room is not populated - skipping broadcast for ${currentPlayer.playerName}`
-				);
 				return;
 			}
-
-			this.log(
-				`[BOT-TURN] Successfully updated game ${game._id} for bot ${currentPlayer.playerName}`
-			);
 
 			await SocketBroadcastService.broadcastToDominoRoom(
 				updatedGame.room.roomId,
@@ -655,25 +563,11 @@ class DominoWorker extends BaseWorker {
 				await handleGameCompletion(updatedGame);
 			}
 
-			this.log(
-				`[BOT-TURN] ✅ Bot ${
-					currentPlayer.playerName
-				} completed ${JSON.stringify(moveResult.move)} in game ${
-					updatedGame._id
-				}`
-			);
 		} catch (error) {
-			// Enhanced error logging for debugging
-			if (error.name === 'VersionError') {
-				this.log(
-					`[BOT-TURN] Version conflict for game ${game._id} - another process updated the game concurrently`
-				);
-			} else {
-				this.logError(
-					`[BOT-TURN] Error processing bot turn for game ${game._id}:`,
-					error
-				);
-			}
+			this.logError(
+				`[BOT-TURN] Error processing bot turn for game ${game._id}:`,
+				error
+			);
 		}
 	}
 }

@@ -21,8 +21,6 @@ class LoyaltyWorker extends BaseWorker {
 	 * Initialize all loyalty-related cron jobs
 	 */
 	async initializeCronJobs() {
-		this.log('Initializing loyalty cron jobs...');
-
 		// Process no-win cashback daily at 1 AM
 		this.createSafeCronJob(
 			'0 1 * * *',
@@ -85,8 +83,6 @@ class LoyaltyWorker extends BaseWorker {
 			'check-vip-daily-login',
 			this.checkVipDailyLogin.bind(this)
 		);
-
-		this.log('Loyalty cron jobs initialized successfully');
 	}
 
 	/**
@@ -94,13 +90,8 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 1 * * *', ...)
 	 */
 	async processNoWinCashbackJob() {
-		this.log('Running no-win cashback processing job...');
-
 		try {
-			const result = await processNoWinCashback();
-			this.log(
-				`No-win cashback completed with ${result.entity.results.length} users processed`
-			);
+			await processNoWinCashback();
 		} catch (error) {
 			this.logError('Error in no-win cashback job:', error);
 		}
@@ -111,8 +102,6 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 0 1 * *', ...)
 	 */
 	async resetMonthlyReferralCaps() {
-		this.log('Resetting monthly referral commission caps...');
-
 		try {
 			const loyalties = await LoyaltyProfile.find({
 				currentTier: { $in: ['GOLD', 'VIP'] },
@@ -129,14 +118,8 @@ class LoyaltyWorker extends BaseWorker {
 				await loyalty.save();
 			}
 
-			this.log(
-				`Reset referral commission caps for ${loyalties.length} users`
-			);
-
 			// Reset influencer caps (tracked via monthKey, so no action needed)
 			await InfluencerCommissionService.resetMonthlyInfluencerCaps();
-
-			this.log('Influencer commission tracking reset for new month');
 		} catch (error) {
 			this.logError('Error resetting referral commission caps:', error);
 		}
@@ -147,10 +130,8 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 0 * * 1', ...)
 	 */
 	async resetWeeklySpending() {
-		this.log('Resetting weekly spending tracking...');
-
 		try {
-			const result = await LoyaltyProfile.updateMany(
+			await LoyaltyProfile.updateMany(
 				{},
 				{
 					$set: {
@@ -162,8 +143,6 @@ class LoyaltyWorker extends BaseWorker {
 					},
 				}
 			);
-
-			this.log(`Reset weekly spending for ${result.modifiedCount} users`);
 		} catch (error) {
 			this.logError('Error resetting weekly spending tracking:', error);
 		}
@@ -174,13 +153,9 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 2 * * *', ...)
 	 */
 	async checkVipDailyLogin() {
-		this.log('Checking VIP daily login requirements...');
 		try {
 			const vipConfig = await TierConfigService.getTierConfig('VIP');
 			if (!vipConfig || !vipConfig.requirements.dailyLoginRequired) {
-				this.log(
-					'VIP daily login requirement not configured, skipping check'
-				);
 				return;
 			}
 
@@ -208,20 +183,7 @@ class LoyaltyWorker extends BaseWorker {
 					user.sessionTracking.totalSessionTimeToday >=
 						requiredSessionMinutes * 60;
 
-				if (!loggedInYesterday || !metSessionRequirement) {
-					this.log(
-						`VIP user ${user._id} failed daily login/session requirement`
-					);
-					this.log(`  - Logged in yesterday: ${loggedInYesterday}`);
-					this.log(
-						`  - Met session requirement: ${metSessionRequirement}`
-					);
-				}
 			}
-
-			this.log(
-				`Checked daily login requirements for ${filteredVipUsers.length} VIP users`
-			);
 		} catch (error) {
 			this.logError(
 				'Error checking VIP daily login requirements:',
@@ -235,7 +197,6 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 3 * * *', ...)
 	 */
 	async updateNoWinTracking() {
-		this.log('Updating no-win tracking...');
 		try {
 			const tierConfigs = await TierConfigService.getTierRequirements();
 			const eligibleTiers = Object.keys(tierConfigs).filter(
@@ -245,9 +206,6 @@ class LoyaltyWorker extends BaseWorker {
 			);
 
 			if (eligibleTiers.length === 0) {
-				this.log(
-					'No tiers have no-win cashback configured, skipping update'
-				);
 				return;
 			}
 
@@ -288,11 +246,6 @@ class LoyaltyWorker extends BaseWorker {
 				await loyalty.save();
 			}
 
-			this.log(
-				`Updated no-win tracking for ${
-					loyalties.length
-				} users across tiers: ${eligibleTiers.join(', ')}`
-			);
 		} catch (error) {
 			this.logError('Error updating no-win tracking:', error);
 		}
@@ -303,11 +256,8 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 4 * * *', ...)
 	 */
 	async cleanupDepositDataJob() {
-		this.log('Running deposit data cleanup job...');
-
 		try {
-			const result = await cleanupDepositData();
-			this.log('Deposit data cleanup completed:', result.entity.message);
+			await cleanupDepositData();
 		} catch (error) {
 			this.logError('Error in deposit data cleanup job:', error);
 		}
@@ -318,22 +268,14 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 5 * * *', ...)
 	 */
 	async evaluateUserTiersJob() {
-		this.log('Running tier evaluation job...');
-
 		try {
 			// Clear tier configuration cache before daily evaluation
 			TierConfigService.clearCache();
-			this.log('Tier configuration cache cleared for fresh evaluation');
 
 			// Clean up orphaned loyalty profiles first
-			this.log('Running loyalty profile cleanup...');
-			const cleanupResult = await cleanupOrphanedLoyaltyProfiles();
-			this.log(
-				`Cleanup completed: removed ${cleanupResult.cleanedCount} orphaned profiles`
-			);
+			await cleanupOrphanedLoyaltyProfiles();
 
 			const users = await LoyaltyProfile.find({});
-			this.log(`Evaluating tiers for ${users.length} users`);
 
 			let upgrades = 0;
 			let downgrades = 0;
@@ -377,14 +319,8 @@ class LoyaltyWorker extends BaseWorker {
 							tierRank[oldTier]
 						) {
 							upgrades++;
-							this.log(
-								`User ${loyalty.user} upgraded from ${oldTier} to ${updatedLoyalty.currentTier}`
-							);
 						} else {
 							downgrades++;
-							this.log(
-								`User ${loyalty.user} downgraded from ${oldTier} to ${updatedLoyalty.currentTier}`
-							);
 						}
 					} else {
 						unchanged++;
@@ -412,20 +348,6 @@ class LoyaltyWorker extends BaseWorker {
 				}
 			}
 
-			this.log(
-				`Tier evaluation completed. Upgrades: ${upgrades}, Downgrades: ${downgrades}, Unchanged: ${unchanged}, Errors: ${errors}`
-			);
-
-			// Log summary statistics
-			if (upgrades > 0 || downgrades > 0) {
-				this.log(`📊 Tier changes summary:`);
-				this.log(`   ⬆️  Upgrades: ${upgrades}`);
-				this.log(`   ⬇️  Downgrades: ${downgrades}`);
-				this.log(`   ➡️  Unchanged: ${unchanged}`);
-				if (errors > 0) {
-					this.log(`   ❌ Errors: ${errors}`);
-				}
-			}
 		} catch (error) {
 			this.logError('Error in tier evaluation job:', error);
 		}
@@ -436,13 +358,10 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 *\/6 * * *', ...)
 	 */
 	async refreshTierConfigCache() {
-		this.log('Refreshing tier configuration cache...');
-
 		try {
 			TierConfigService.clearCache();
 			// Pre-load the cache
 			await TierConfigService.getTierRequirements();
-			this.log('Tier configuration cache refreshed successfully');
 		} catch (error) {
 			this.logError('Error refreshing tier configuration cache:', error);
 		}
@@ -453,8 +372,6 @@ class LoyaltyWorker extends BaseWorker {
 	 * Original: cron.schedule('0 1 * * *', ...)
 	 */
 	async validateTierConfigIntegrity() {
-		this.log('Validating tier configuration integrity...');
-
 		try {
 			const tierConfigs = await TierConfigService.getTierRequirements();
 			const issues = [];
@@ -503,12 +420,6 @@ class LoyaltyWorker extends BaseWorker {
 				}
 			}
 
-			if (issues.length > 0) {
-				this.log('⚠️  Tier configuration issues detected:');
-				issues.forEach(issue => this.log(`   - ${issue}`));
-			} else {
-				this.log('✅ Tier configuration integrity check passed');
-			}
 		} catch (error) {
 			this.logError(
 				'Error validating tier configuration integrity:',

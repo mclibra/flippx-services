@@ -36,7 +36,7 @@ class BaseWorker {
 		});
 
 		// Handle unhandled promise rejections
-		process.on('unhandledRejection', (reason, promise) => {
+		process.on('unhandledRejection', reason => {
 			this.logError('Unhandled promise rejection:', reason);
 			this.gracefulExit(1);
 		});
@@ -45,20 +45,16 @@ class BaseWorker {
 	/**
 	 * Start the worker
 	 */
-	async start(config) {
+	async start() {
 		try {
-			this.log(`Starting ${this.name} worker...`);
+		// Connect to database
+		await sharedDatabaseService.connect();
 
-			// Connect to database
-			await sharedDatabaseService.connect();
+		// Initialize cron jobs
+		await this.initializeCronJobs();
 
-			// Initialize cron jobs
-			await this.initializeCronJobs();
-
-			// Send ready message to parent
-			this.sendMessage('ready', { name: this.name });
-
-			this.log(`${this.name} worker started successfully`);
+		// Send ready message to parent
+		this.sendMessage('ready', { name: this.name });
 		} catch (error) {
 			this.logError('Failed to start worker:', error);
 			this.gracefulExit(1);
@@ -79,7 +75,6 @@ class BaseWorker {
 	 */
 	async shutdown() {
 		this.isShuttingDown = true;
-		this.log(`Shutting down ${this.name} worker...`);
 
 		try {
 			// Stop all active cron jobs
@@ -88,7 +83,6 @@ class BaseWorker {
 			// Disconnect from database
 			await sharedDatabaseService.disconnect();
 
-			this.log(`${this.name} worker shut down gracefully`);
 			process.exit(0);
 		} catch (error) {
 			this.logError('Error during shutdown:', error);
@@ -100,8 +94,6 @@ class BaseWorker {
 	 * Stop all cron jobs
 	 */
 	async stopAllCronJobs() {
-		this.log(`Stopping ${this.activeCronJobs.size} active cron jobs...`);
-
 		for (const cronJob of this.activeCronJobs) {
 			try {
 				if (cronJob && typeof cronJob.destroy === 'function') {
@@ -113,7 +105,6 @@ class BaseWorker {
 		}
 
 		this.activeCronJobs.clear();
-		this.log('All cron jobs stopped');
 	}
 
 	/**
@@ -214,7 +205,6 @@ class BaseWorker {
 		);
 
 		this.registerCronJob(cronJob);
-		this.log(`Registered cron job: ${jobName} (${schedule})`);
 
 		return cronJob;
 	}

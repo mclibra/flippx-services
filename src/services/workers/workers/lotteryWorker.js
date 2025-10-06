@@ -15,8 +15,6 @@ class LotteryWorker extends BaseWorker {
 	 * Initialize all lottery-related cron jobs
 	 */
 	async initializeCronJobs() {
-		this.log('Initializing lottery cron jobs...');
-
 		// Check and publish lottery results - every 5 minutes
 		this.createSafeCronJob(
 			'*/5 * * * *',
@@ -30,8 +28,6 @@ class LotteryWorker extends BaseWorker {
 			'analyze-and-create-missing-lotteries',
 			this.analyzeAndCreateMissingLotteries.bind(this)
 		);
-
-		this.log('Lottery cron jobs initialized successfully');
 	}
 
 	/**
@@ -39,8 +35,6 @@ class LotteryWorker extends BaseWorker {
 	 * Original: cron.schedule('*\/5 * * * *', ...)
 	 */
 	async checkAndPublishResults() {
-		this.log('Running cron job: Check and publish results');
-
 		try {
 			const now = moment();
 			const lotteries = await Lottery.find({
@@ -53,24 +47,11 @@ class LotteryWorker extends BaseWorker {
 			});
 
 			if (lotteries.length > 0) {
-				this.log(
-					`Found ${lotteries.length} lotteries ready to be published`
-				);
-
 				for (const lottery of lotteries) {
-					this.log(
-						`Setting lottery status of ${
-							lottery._id
-						} to WAITING at ${moment.now()}`
-					);
 					lottery.status = 'WAITING';
 					await lottery.save();
 					await this.fetchAndPublishResults(lottery);
 				}
-
-				this.log(
-					'[LOTTERY: CRON] Check and publish results completed successfully'
-				);
 			}
 		} catch (error) {
 			this.logError('Error in publishResults cron job:', error);
@@ -82,8 +63,6 @@ class LotteryWorker extends BaseWorker {
 	 * Original: cron.schedule('0 * * * *', ...)
 	 */
 	async analyzeAndCreateMissingLotteries() {
-		this.log('Running cron job: Analyze and create missing lotteries');
-
 		try {
 			// Get all active states
 			const activeStates = await State.find({ isActive: true });
@@ -139,13 +118,12 @@ class LotteryWorker extends BaseWorker {
 					// Call existing function to create lotteries for this state
 					const result = await createLotteriesForState(state);
 
-					// Only log when lotteries are actually created (not when they already exist)
+					// Only count when lotteries are actually created (not when they already exist)
 					if (
 						result.success &&
 						result.message &&
 						result.message.includes('created')
 					) {
-						this.log(`[LOTTERY: ANALYSIS] ${result.message}`);
 						totalLotteriesCreated++;
 					}
 				} catch (stateError) {
@@ -156,12 +134,6 @@ class LotteryWorker extends BaseWorker {
 				}
 			}
 
-			// Log summary only if lotteries were created
-			if (totalLotteriesCreated > 0) {
-				this.log(
-					`[LOTTERY: ANALYSIS] Completed - Processed ${totalStatesProcessed} states, created lotteries for ${totalLotteriesCreated} states`
-				);
-			}
 		} catch (error) {
 			this.logError('Error in lottery analysis cron job:', error);
 		}
@@ -173,9 +145,6 @@ class LotteryWorker extends BaseWorker {
 	 */
 	async fetchAndPublishResults(lottery) {
 		try {
-			this.log(
-				`Publishing ${lottery.type} - ${lottery.metadata} lottery`
-			);
 			if (lottery.type === 'BORLETTE') {
 				const pick4Id = lottery.externalGameIds.pick4;
 				const pick3Id = lottery.externalGameIds.pick3;
@@ -194,9 +163,6 @@ class LotteryWorker extends BaseWorker {
 				const today = moment().format('YYYY-MM-DD');
 				const drawDate = pick4Result.data.drawDate;
 				if (drawDate !== today) {
-					this.log(
-						`Skipping result publishing for lottery ${lottery._id}: Draw date (${drawDate}) is not today (${today})`
-					);
 					return;
 				}
 
@@ -210,9 +176,6 @@ class LotteryWorker extends BaseWorker {
 				});
 
 				if (existingDrawNumber) {
-					this.log(
-						`Skipping result publishing for lottery ${lottery._id}: DrawNumber ${drawNumber} has already been processed for this state`
-					);
 					return;
 				}
 
@@ -272,9 +235,6 @@ class LotteryWorker extends BaseWorker {
 				const megaToday = moment().format('YYYY-MM-DD');
 				const megaDrawDate = megaResult.data.drawDate;
 				if (megaDrawDate !== megaToday) {
-					this.log(
-						`Skipping MEGAMILLION result publishing for lottery ${lottery._id}: Draw date (${megaDrawDate}) is not today (${megaToday})`
-					);
 					return;
 				}
 
@@ -287,9 +247,6 @@ class LotteryWorker extends BaseWorker {
 				});
 
 				if (existingMegaDrawNumber) {
-					this.log(
-						`Skipping MEGAMILLION result publishing for lottery ${lottery._id}: DrawNumber ${megaDrawNumber} has already been processed`
-					);
 					return;
 				}
 
@@ -321,17 +278,7 @@ class LotteryWorker extends BaseWorker {
 	 */
 	async processTicketsForLottery(lotteryId, results) {
 		try {
-			this.log(
-				`Processing tickets for lottery ${lotteryId} with results:`,
-				results
-			);
-
-			const published = await publishResult(lotteryId, results);
-
-			this.log(
-				`Processed tickets for lottery ${lotteryId} with status:`,
-				published
-			);
+			await publishResult(lotteryId, results);
 
 			// Note: Lottery creation is handled separately by the analyzeAndCreateMissingLotteries cron job
 			// to prevent race conditions and duplicate lottery creation issues
