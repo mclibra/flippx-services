@@ -78,7 +78,6 @@ export const list = async ({
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 400,
 			entity: {
@@ -145,7 +144,6 @@ export const nextLottery = async ({
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 400,
 			entity: {
@@ -415,7 +413,6 @@ export const closestUpcomingByState = async type => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -783,7 +780,6 @@ export const getLotteryDashboard = async (_, { role }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -844,7 +840,6 @@ export const lastLottery = async ({
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 400,
 			entity: {
@@ -987,7 +982,6 @@ export const showUserTickets = async (
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1127,7 +1121,6 @@ export const showAllTickets = async (
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1200,7 +1193,6 @@ export const create = async (body, { _id }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 409,
 			entity: {
@@ -1266,7 +1258,6 @@ export const update = async ({ id }, body) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1394,7 +1385,6 @@ export const stateReport = async ({ stateId }, { role }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1512,7 +1502,6 @@ export const allStatesSummary = async (_, { role }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1568,7 +1557,6 @@ export const preview = async body => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 409,
 			entity: {
@@ -1622,7 +1610,6 @@ export const remove = async ({ id }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 409,
 			entity: {

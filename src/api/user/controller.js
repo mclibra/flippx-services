@@ -35,7 +35,6 @@ export const sendOtp = async body => {
 			: 1234;
 		const message = `${verificationCode} is your OTP to register on Megacash. The OTP is valid for 5 minutes. Please contact MegaPay support.`;
 
-		console.log('verificationCode => ', verificationCode);
 		const response = await sendVerificationCode({
 			phone: `${countryCode}${phone}`,
 			verificationCode,
@@ -64,13 +63,6 @@ export const verifyOtp = async body => {
 	try {
 		const { countryCode, phone, verificationCode, verificationToken } =
 			body;
-		console.log(
-			'countryCode, phone, verificationCode, verificationToken => ',
-			countryCode,
-			phone,
-			verificationCode,
-			verificationToken
-		);
 		const response = await verifyVerificationCode({
 			phone: `${countryCode}${phone}`,
 			verificationCode,
@@ -145,10 +137,6 @@ export const create = async body => {
 						loyaltyResult.error
 					);
 					// Don't fail user creation if loyalty initialization fails
-				} else {
-					console.log(
-						`Loyalty profile initialized for user ${user._id}`
-					);
 				}
 			} catch (loyaltyError) {
 				console.error(
@@ -170,12 +158,7 @@ export const create = async body => {
 							`Failed to process referral qualification for user ${user._id}:`,
 							referralResult.error
 						);
-					} else {
-						console.log(
-							`Referral qualification processed for user ${user._id}`,
-							referralResult
-						);
-					}
+				}
 				} catch (referralError) {
 					console.error(
 						`Error processing referral qualification for user ${user._id}:`,
@@ -206,7 +189,6 @@ export const create = async body => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
 				status: 500,
@@ -290,7 +272,6 @@ export const verifySecurePin = async (user, { securePin }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -309,7 +290,6 @@ export const resetPassword = async ({
 }) => {
 	try {
 		const decodedToken = jwtVerify(verificationToken);
-		console.log(decodedToken);
 		if (decodedToken.phone !== `${countryCode}${phone}`) {
 			return {
 				status: 500,
@@ -346,7 +326,6 @@ export const resetPassword = async ({
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
 				status: 500,
@@ -394,7 +373,6 @@ export const update = async (user, body) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 409,
 			entity: {
@@ -444,7 +422,6 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 			};
 		}
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -475,7 +452,6 @@ export const getSelfImage = async user => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -503,7 +479,6 @@ export const verifyReset = async body => {
 				: 1234;
 			const message = `${verificationCode} is your OTP to reset password on Megacash. The OTP is valid for 5 minutes. Please contact MegaPay support.`;
 
-			console.log('verificationCode => ', verificationCode);
 			const response = await sendVerificationCode({
 				phone: `${countryCode}${phone}`,
 				verificationCode,
@@ -559,7 +534,6 @@ export const getSignedUrl = async (user, { fileType }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -596,7 +570,6 @@ export const getSignedUrlForDocument = async (
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {

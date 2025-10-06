@@ -42,22 +42,12 @@ export const initializeDominoGameSocket = io => {
 	});
 
 	dominoNamespace.on('connection', socket => {
-		console.log(`User connected to domino: ${socket.userName}`);
-
 		// Join or create room - NEW SOCKET EVENT
 		socket.on('join-or-create-room', async data => {
-			const { userId, userName } = socket;
-
-			console.log(
-				`[ROOM-REQUEST] User ${userName} (${userId}) requesting to join/create room:`,
-				data
-			);
+			const { userId } = socket;
 
 			// Prevent multiple simultaneous room join requests from same user
 			if (socket.joiningRoom) {
-				console.log(
-					`[ROOM-REQUEST] BLOCKED: User ${userName} has request already in progress`
-				);
 				socket.emit('room-join-error', {
 					success: false,
 					error: 'Room join request already in progress',
@@ -68,9 +58,6 @@ export const initializeDominoGameSocket = io => {
 			// Check if user is already connected to any room via socket
 			const isAlreadyInRoom = socket.roomId != null;
 			if (isAlreadyInRoom) {
-				console.log(
-					`[ROOM-REQUEST] BLOCKED: User ${userName} is already in room ${socket.roomId}`
-				);
 				socket.emit('room-join-error', {
 					success: false,
 					error: 'You are already in a waiting room',
@@ -102,7 +89,7 @@ export const initializeDominoGameSocket = io => {
 				});
 
 				if (result.success) {
-					const { action, room } = result;
+					const { room } = result;
 					// Join socket room
 					socket.join(room.roomId);
 					socket.roomId = room.roomId;
@@ -119,10 +106,6 @@ export const initializeDominoGameSocket = io => {
 							playerName: joinedPlayer.playerName,
 							room: room,
 						}
-					);
-
-					console.log(
-						`User ${userName} ${action} room ${room.roomId}`
 					);
 
 					await makeTransaction(
@@ -166,10 +149,6 @@ export const initializeDominoGameSocket = io => {
 								`Failed to award XP for user ${userId}:`,
 								xpResult.error
 							);
-						} else {
-							console.log(
-								`Awarded ${totalXP} XP to user ${userId} for joining domino room`
-							);
 						}
 					} catch (xpError) {
 						console.error(
@@ -179,10 +158,6 @@ export const initializeDominoGameSocket = io => {
 						// Don't fail room joining if XP awarding fails
 					}
 				} else {
-					console.log(
-						`[ROOM-ERROR] User ${userName} (${userId}) join/create failed:`,
-						result.error
-					);
 					socket.emit('room-join-error', {
 						success: false,
 						error: result.error,

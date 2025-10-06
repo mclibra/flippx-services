@@ -501,7 +501,6 @@ class DominoWorker extends BaseWorker {
 			await room.save();
 
 			for (const bot of bots) {
-				console.log('Broadcasting player joined to room', room.roomId);
 				await SocketBroadcastService.broadcastToDominoRoom(
 					room.roomId,
 					'player-joined',

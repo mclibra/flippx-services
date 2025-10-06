@@ -16,7 +16,6 @@ class WorkerManager {
 	 * Initialize and start all worker processes
 	 */
 	async start() {
-		console.log('🚀 Starting cron worker processes...');
 
 		const workerConfigs = [
 			{
@@ -44,7 +43,6 @@ class WorkerManager {
 		// Setup graceful shutdown handlers
 		this.setupShutdownHandlers();
 
-		console.log('✅ All cron workers started successfully');
 	}
 
 	/**
@@ -52,7 +50,6 @@ class WorkerManager {
 	 */
 	async startWorker(config) {
 		try {
-			console.log(`🔄 Starting ${config.name}: ${config.description}`);
 
 			const worker = fork(config.script, [], {
 				silent: false, // Allow direct stdout/stderr for centralized logging
@@ -70,7 +67,6 @@ class WorkerManager {
 				restarts: this.restartAttempts.get(config.name) || 0,
 			});
 
-			console.log(`✅ ${config.name} started with PID: ${worker.pid}`);
 		} catch (error) {
 			console.error(`❌ Failed to start ${config.name}:`, error);
 			throw error;

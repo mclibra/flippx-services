@@ -64,10 +64,6 @@ export const startDominoGame = async room => {
 							`Failed to record play activity for user ${userId}:`,
 							loyaltyResult.error
 						);
-					} else {
-						console.log(
-							`Play activity recorded for user ${userId} - Domino game start`
-						);
 					}
 				} catch (error) {
 					console.error(
@@ -1223,10 +1219,6 @@ const startNewGameInRoom = async room => {
 						console.warn(
 							`Failed to record play activity for user ${userId}:`,
 							loyaltyResult.error
-						);
-					} else {
-						console.log(
-							`Play activity recorded for user ${userId} - Domino game start`
 						);
 					}
 				} catch (error) {

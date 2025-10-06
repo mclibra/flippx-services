@@ -32,38 +32,16 @@ const workerManager = new WorkerManager();
 setImmediate(async () => {
 	try {
 		// Create admin user
-		const admin = await createAdmin();
-		if (admin) {
-			console.log('');
-			console.log('Admin user => ', admin.phone);
-			console.log('');
-		} else {
-			console.log('Unable to create admin ');
-		}
+		await createAdmin();
 
 		// Create system account
-		const systemAccount = await createSystemAccount();
-		if (systemAccount) {
-			console.log('System account initialized');
-		} else {
-			console.log('Unable to create system account');
-		}
+		await createSystemAccount();
 
 		// Create domino game config
-		const dominoGameConfig = await createDominoConfig();
-		if (dominoGameConfig) {
-			console.log('Domino game config initialized');
-		} else {
-			console.log('Unable to create domino game config');
-		}
+		await createDominoConfig();
 
 		// Initialize tier requirements
-		const tierRequirements = await initializeTierRequirements();
-		if (tierRequirements) {
-			console.log('Tier requirements initialized');
-		} else {
-			console.log('Unable to initialize tier requirements');
-		}
+		await initializeTierRequirements();
 
 		// Start the HTTP server
 		server.listen(port, ip, () => {
@@ -77,11 +55,7 @@ setImmediate(async () => {
 
 		// Start worker processes for cron jobs AFTER server is running
 		// This prevents cron jobs from blocking the main server startup
-		console.log('🚀 Starting cron worker processes...');
 		await workerManager.start();
-		console.log(
-			'✅ All systems operational - Main server + Worker processes running'
-		);
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 

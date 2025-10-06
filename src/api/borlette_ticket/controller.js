@@ -157,7 +157,6 @@ export const listAllByLottery = async (
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -816,7 +815,6 @@ export const placeBet = async ({ id }, body, user) => {
 			};
 		}
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1174,7 +1172,6 @@ export const create = async (body, user) => {
 			};
 		}
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1558,7 +1555,6 @@ export const createMultiState = async (body, user) => {
 			};
 		}
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1740,7 +1736,6 @@ export const cashoutTicket = async ({ id }, user) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 500,
 			entity: {
@@ -1899,7 +1894,6 @@ export const remove = async ({ id }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		return {
 			status: 409,
 			entity: {

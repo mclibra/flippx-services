@@ -36,7 +36,6 @@ export const initializeDominoChatSocket = io => {
 	});
 
 	chatNamespace.on('connection', socket => {
-		console.log(`User connected to domino chat: ${socket.userName}`);
 
 		// Join chat room when user joins domino room
 		socket.on('join-chat-room', async data => {
@@ -44,9 +43,6 @@ export const initializeDominoChatSocket = io => {
 				const { roomId } = data;
 				const { userId, userName } = socket;
 
-				console.log(
-					`User ${userName} requesting to join chat room: ${roomId}`
-				);
 
 				// Validate room and user membership
 				const validation = await validateUserInRoom(roomId, userId);
@@ -77,9 +73,6 @@ export const initializeDominoChatSocket = io => {
 					timestamp: new Date(),
 				});
 
-				console.log(
-					`User ${userName} successfully joined chat room ${roomId}`
-				);
 			} catch (error) {
 				console.error('Error joining chat room:', error);
 				socket.emit('join-chat-room-error', {
@@ -95,10 +88,6 @@ export const initializeDominoChatSocket = io => {
 				const { roomId, message } = data;
 				const { userId, userName } = socket;
 
-				console.log(
-					`User ${userName} sending message in room ${roomId}:`,
-					message
-				);
 
 				// Validate message
 				if (!message || typeof message !== 'string') {
@@ -160,9 +149,6 @@ export const initializeDominoChatSocket = io => {
 				// Send to room including sender
 				chatNamespace.to(roomId).emit('new-message', messageData);
 
-				console.log(
-					`Message sent successfully by ${userName} in room ${roomId}`
-				);
 			} catch (error) {
 				console.error('Error sending message:', error);
 				socket.emit('message-error', {
@@ -227,7 +213,6 @@ export const initializeDominoChatSocket = io => {
 				const { roomId } = data;
 				const { userId, userName } = socket;
 
-				console.log(`User ${userName} leaving chat room: ${roomId}`);
 
 				// Leave socket room
 				socket.leave(roomId);
@@ -247,9 +232,6 @@ export const initializeDominoChatSocket = io => {
 					timestamp: new Date(),
 				});
 
-				console.log(
-					`User ${userName} successfully left chat room ${roomId}`
-				);
 			} catch (error) {
 				console.error('Error leaving chat room:', error);
 				socket.emit('leave-chat-room-error', {
@@ -263,7 +245,6 @@ export const initializeDominoChatSocket = io => {
 		socket.on('disconnect', async () => {
 			const { roomId, userId, userName } = socket;
 
-			console.log(`User disconnected from domino chat: ${userName}`);
 
 			if (roomId) {
 				// Broadcast to other players in the room
@@ -273,9 +254,6 @@ export const initializeDominoChatSocket = io => {
 					timestamp: new Date(),
 				});
 
-				console.log(
-					`User ${userName} disconnected from chat room ${roomId}`
-				);
 			}
 		});
 
@@ -298,7 +276,6 @@ export const broadcastChatToRoom = (roomId, event, data) => {
 
 // Send chat message to specific user
 export const sendChatToUser = (userId, event, data) => {
-	console.log(`Sending chat ${event} to user ${userId}`);
 	if (chatNamespace) {
 		const userSockets = Array.from(chatNamespace.sockets.values()).filter(
 			socket => socket.userId === userId
@@ -321,7 +298,6 @@ export const getChatRoomPlayerCount = roomId => {
 
 // Force disconnect user from chat when they leave domino room
 export const forceDisconnectFromChat = userId => {
-	console.log(`Force disconnecting user ${userId} from chat`);
 	if (chatNamespace) {
 		const userSockets = Array.from(chatNamespace.sockets.values()).filter(
 			socket => socket.userId === userId
@@ -333,7 +309,6 @@ export const forceDisconnectFromChat = userId => {
 				const roomId = socket.roomId;
 				socket.leave(socket.roomId);
 				socket.roomId = null;
-				console.log(`User ${userId} left chat room ${roomId}`);
 			}
 		});
 	}

@@ -462,17 +462,11 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 		let cleanedCount = 0;
 		let invalidIdCount = 0;
 
-		console.log(
-			`[LOYALTY-CLEANUP] Found ${loyaltyProfiles.length} loyalty profiles to check`
-		);
 
 		for (const loyalty of loyaltyProfiles) {
 			try {
 				// Check if user ID is valid ObjectId format
 				if (!mongoose.Types.ObjectId.isValid(loyalty.user)) {
-					console.log(
-						`[LOYALTY-CLEANUP] Removing loyalty profile with invalid user ID: ${loyalty.user}`
-					);
 					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
 					invalidIdCount++;
 					cleanedCount++;
@@ -482,9 +476,6 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 				// Check if user exists
 				const user = await User.findById(loyalty.user);
 				if (!user) {
-					console.log(
-						`[LOYALTY-CLEANUP] Removing loyalty profile for missing user: ${loyalty.user}`
-					);
 					await LoyaltyProfile.deleteOne({ _id: loyalty._id });
 					cleanedCount++;
 				}
@@ -496,9 +487,6 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 			}
 		}
 
-		console.log(
-			`[LOYALTY-CLEANUP] Cleanup completed. Removed ${cleanedCount} orphaned profiles (${invalidIdCount} had invalid ObjectIds)`
-		);
 		return { cleanedCount, invalidIdCount };
 	} catch (error) {
 		console.error('Error in loyalty cleanup:', error);
@@ -521,17 +509,10 @@ export const getLoyaltyProgress = async userId => {
 		// Use TierConfigService to calculate progress
 		let progress;
 		try {
-			console.log(
-				`[DEBUG] Calculating progress for tier: ${currentTier}`
-			);
 			progress = await TierConfigService.calculateTierProgress(
 				currentTier,
 				loyalty.tierProgress,
 				user
-			);
-			console.log(
-				`[DEBUG] Progress result:`,
-				JSON.stringify(progress, null, 2)
 			);
 		} catch (progressError) {
 			console.warn(
@@ -954,17 +935,10 @@ export const getUserLoyalty = async userId => {
 		// Calculate progress to next tier
 		let progress;
 		try {
-			console.log(
-				`[DEBUG] Calculating progress for user loyalty tier: ${loyalty.currentTier}`
-			);
 			progress = await TierConfigService.calculateTierProgress(
 				loyalty.currentTier,
 				loyalty.tierProgress,
 				user
-			);
-			console.log(
-				`[DEBUG] User loyalty progress result:`,
-				JSON.stringify(progress, null, 2)
 			);
 		} catch (progressError) {
 			console.warn(
@@ -1343,7 +1317,6 @@ export const processNoWinCashback = async () => {
 		);
 
 		if (eligibleTiers.length === 0) {
-			console.log('No tiers have no-win cashback configured');
 			return {
 				status: 200,
 				entity: {
