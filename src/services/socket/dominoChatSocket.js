@@ -328,7 +328,13 @@ export const forceDisconnectFromChat = userId => {
 		);
 
 		userSockets.forEach(socket => {
-			socket.disconnect(true);
+			// Only leave the room, don't disconnect the socket entirely
+			if (socket.roomId) {
+				const roomId = socket.roomId;
+				socket.leave(socket.roomId);
+				socket.roomId = null;
+				console.log(`User ${userId} left chat room ${roomId}`);
+			}
 		});
 	}
 };
