@@ -1113,10 +1113,14 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 			gameId: game._id,
 			roomId: room.roomId,
 			roundNumber: game.gameNumber,
-			finalScores: game.finalScores.map(score => ({
-				...score,
-				totalScore: updatedRoomForLeaderboard.players.find(p => p.position === score.position)?.totalScore || 0
-			})),
+			finalScores: game.finalScores.map(score => {
+				const roomPlayer = updatedRoomForLeaderboard.players.find(p => p.position === score.position);
+				return {
+					...score,
+					totalScore: roomPlayer?.totalScore || 0,
+					playerName: roomPlayer?.playerName || `Player ${score.position + 1}`
+				};
+			}),
 			roundWinnerIndex: game.winner,
 			winnerPayout: game.winnerPayout,
 			roundWinnerDetails: roundWinner
