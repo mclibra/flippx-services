@@ -899,7 +899,9 @@ export const create = async (body, user) => {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format('MM/DD/YYYY h:mm A')}).`,
+						error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
+							'MM/DD/YYYY h:mm A'
+						)}).`,
 					},
 				};
 			}
@@ -1308,7 +1310,11 @@ export const createMultiState = async (body, user) => {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Lottery purchases are closed for ${lottery.state.name}. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format('MM/DD/YYYY h:mm A')}).`,
+						error: `Lottery purchases are closed for ${
+							lottery.state.name
+						}. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
+							'MM/DD/YYYY h:mm A'
+						)}).`,
 					},
 				};
 			}

@@ -116,14 +116,19 @@ export const placeBet = async ({ id }, body, user) => {
 				// Check if lottery is within 15 minutes of scheduled time
 				const currentTime = moment();
 				const scheduledTime = moment(lottery.scheduledTime);
-				const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
+				const minutesUntilDraw = scheduledTime.diff(
+					currentTime,
+					'minutes'
+				);
 
 				if (minutesUntilDraw <= 15) {
 					return {
 						status: 400,
 						entity: {
 							success: false,
-							error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format('MM/DD/YYYY h:mm A')}).`,
+							error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
+								'MM/DD/YYYY h:mm A'
+							)}).`,
 						},
 					};
 				}

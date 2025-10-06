@@ -15,7 +15,7 @@ class SocketBroadcastService {
 			'process.send': typeof process.send,
 			isMainProcess: this.isMainProcess,
 			pid: process.pid,
-			title: process.title
+			title: process.title,
 		});
 
 		this.setupIPC();

@@ -22,18 +22,26 @@ class TierConfigService {
 				this.cacheExpiry &&
 				Date.now() < this.cacheExpiry
 			) {
-				console.log(`[TIER-SERVICE] Returning cached tiers:`, Object.keys(this.cachedTiers || {}));
+				console.log(
+					`[TIER-SERVICE] Returning cached tiers:`,
+					Object.keys(this.cachedTiers || {})
+				);
 				return this.cachedTiers;
 			}
 
 			// Fetch from database
 			console.log(`[TIER-SERVICE] Fetching from database...`);
 			const dbTiers = await TierRequirements.getAsConstants();
-			console.log(`[TIER-SERVICE] Database tiers:`, dbTiers ? Object.keys(dbTiers) : 'null');
+			console.log(
+				`[TIER-SERVICE] Database tiers:`,
+				dbTiers ? Object.keys(dbTiers) : 'null'
+			);
 
 			if (dbTiers && Object.keys(dbTiers).length > 0) {
 				// Cache the result
-				console.log(`[TIER-SERVICE] Using database tiers, caching result`);
+				console.log(
+					`[TIER-SERVICE] Using database tiers, caching result`
+				);
 				this.cachedTiers = dbTiers;
 				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return dbTiers;
@@ -42,7 +50,10 @@ class TierConfigService {
 				console.warn(
 					'No tier requirements found in database, using fallback constants'
 				);
-				console.log(`[TIER-SERVICE] Using fallback constants:`, Object.keys(FALLBACK_TIERS));
+				console.log(
+					`[TIER-SERVICE] Using fallback constants:`,
+					Object.keys(FALLBACK_TIERS)
+				);
 				this.cachedTiers = FALLBACK_TIERS;
 				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return FALLBACK_TIERS;
@@ -53,7 +64,10 @@ class TierConfigService {
 				error
 			);
 			// Fallback to constants on error
-			console.log(`[TIER-SERVICE] Error occurred, using fallback constants:`, Object.keys(FALLBACK_TIERS));
+			console.log(
+				`[TIER-SERVICE] Error occurred, using fallback constants:`,
+				Object.keys(FALLBACK_TIERS)
+			);
 			this.cachedTiers = FALLBACK_TIERS;
 			this.cacheExpiry = Date.now() + this.cacheTimeout;
 			return FALLBACK_TIERS;
@@ -185,9 +199,14 @@ class TierConfigService {
 
 	// Calculate tier progress for display
 	async calculateTierProgress(currentTier, userProgress, userData = null) {
-		console.log(`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`);
+		console.log(
+			`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`
+		);
 		const allTiers = await this.getTierRequirements();
-		console.log(`[TIER-SERVICE] Available tiers:`, Object.keys(allTiers || {}));
+		console.log(
+			`[TIER-SERVICE] Available tiers:`,
+			Object.keys(allTiers || {})
+		);
 		const nextTierName = this.getNextTierCaseInsensitive(currentTier);
 		console.log(`[TIER-SERVICE] Next tier: ${nextTierName}`);
 
@@ -199,23 +218,32 @@ class TierConfigService {
 		}
 
 		// Find the next tier configuration with case-insensitive matching
-		const nextTierConfig = allTiers[nextTierName] || allTiers[nextTierName.charAt(0).toUpperCase() + nextTierName.slice(1).toLowerCase()];
+		const nextTierConfig =
+			allTiers[nextTierName] ||
+			allTiers[
+				nextTierName.charAt(0).toUpperCase() +
+					nextTierName.slice(1).toLowerCase()
+			];
 		if (!nextTierConfig) {
-			console.warn(`[TIER-SERVICE] Next tier configuration not found for: ${nextTierName}`);
+			console.warn(
+				`[TIER-SERVICE] Next tier configuration not found for: ${nextTierName}`
+			);
 			return {
 				nextTier: null,
 				message: 'Tier configuration not found',
-				error: `Configuration for ${nextTierName} tier is not available`
+				error: `Configuration for ${nextTierName} tier is not available`,
 			};
 		}
 
 		const requirements = nextTierConfig.requirements;
 		if (!requirements) {
-			console.warn(`[TIER-SERVICE] No requirements found for tier: ${nextTierName}`);
+			console.warn(
+				`[TIER-SERVICE] No requirements found for tier: ${nextTierName}`
+			);
 			return {
 				nextTier: nextTierName,
 				message: 'Tier requirements not configured',
-				error: `Requirements for ${nextTierName} tier are not configured`
+				error: `Requirements for ${nextTierName} tier are not configured`,
 			};
 		}
 
@@ -316,8 +344,11 @@ class TierConfigService {
 		// Add ID verification requirement if needed
 		if (requirements.requireIDVerification) {
 			// Check if user has completed ID verification
-			const isIDVerified = userData && userData.idProof && userData.idProof.verificationStatus === 'VERIFIED';
-			
+			const isIDVerified =
+				userData &&
+				userData.idProof &&
+				userData.idProof.verificationStatus === 'VERIFIED';
+
 			progress.idVerificationRequired = {
 				required: true,
 				message: 'ID verification is required for this tier',
@@ -342,14 +373,14 @@ class TierConfigService {
 	getNextTierCaseInsensitive(currentTier) {
 		// Map the current tier to the expected format
 		const tierMapping = {
-			'NONE': 'NONE',
-			'None': 'NONE',
-			'SILVER': 'SILVER',
-			'Silver': 'SILVER',
-			'GOLD': 'GOLD',
-			'Gold': 'GOLD',
-			'VIP': 'VIP',
-			'Vip': 'VIP'
+			NONE: 'NONE',
+			None: 'NONE',
+			SILVER: 'SILVER',
+			Silver: 'SILVER',
+			GOLD: 'GOLD',
+			Gold: 'GOLD',
+			VIP: 'VIP',
+			Vip: 'VIP',
 		};
 
 		const normalizedTier = tierMapping[currentTier] || currentTier;

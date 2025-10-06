@@ -28,9 +28,9 @@ class DominoWorker extends BaseWorker {
 	async initializeCronJobs() {
 		this.log('Initializing domino cron jobs...');
 
-		// Fill VIRTUAL waiting rooms with bots after 10 seconds - every 10 seconds
+		// Fill VIRTUAL waiting rooms with bots after 3 seconds - every 3 seconds
 		this.createSafeCronJob(
-			'*/10 * * * * *',
+			'*/3 * * * * *',
 			'fill-virtual-rooms-with-bots',
 			this.fillVirtualRoomsWithBots.bind(this)
 		);
@@ -100,7 +100,7 @@ class DominoWorker extends BaseWorker {
 				return;
 			}
 
-			const maxWaitTime = new Date(Date.now() - 10 * 1000); // 10 seconds ago
+			const maxWaitTime = new Date(Date.now() - 3 * 1000);
 
 			const virtualRoomsNeedingBots = await DominoRoom.find({
 				status: 'WAITING',

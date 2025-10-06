@@ -328,7 +328,9 @@ class LoyaltyWorker extends BaseWorker {
 			// Clean up orphaned loyalty profiles first
 			this.log('Running loyalty profile cleanup...');
 			const cleanupResult = await cleanupOrphanedLoyaltyProfiles();
-			this.log(`Cleanup completed: removed ${cleanupResult.cleanedCount} orphaned profiles`);
+			this.log(
+				`Cleanup completed: removed ${cleanupResult.cleanedCount} orphaned profiles`
+			);
 
 			const users = await LoyaltyProfile.find({});
 			this.log(`Evaluating tiers for ${users.length} users`);
@@ -341,8 +343,13 @@ class LoyaltyWorker extends BaseWorker {
 			for (const loyalty of users) {
 				try {
 					// Skip loyalty profiles with invalid user IDs
-					if (!loyalty.user || !mongoose.Types.ObjectId.isValid(loyalty.user)) {
-						this.logError(`Skipping loyalty profile with invalid user ID: ${loyalty.user}`);
+					if (
+						!loyalty.user ||
+						!mongoose.Types.ObjectId.isValid(loyalty.user)
+					) {
+						this.logError(
+							`Skipping loyalty profile with invalid user ID: ${loyalty.user}`
+						);
 						errors++;
 						continue;
 					}
@@ -384,13 +391,19 @@ class LoyaltyWorker extends BaseWorker {
 					}
 				} catch (userError) {
 					errors++;
-					const errorType = userError.message.includes('User not found')
+					const errorType = userError.message.includes(
+						'User not found'
+					)
 						? 'MISSING_USER'
-						: userError.message.includes('Loyalty profile not found')
-						? 'MISSING_LOYALTY_PROFILE'
-						: userError.message.includes('Invalid user ID format')
-						? 'INVALID_OBJECTID'
-						: 'OTHER';
+						: userError.message.includes(
+									'Loyalty profile not found'
+							  )
+							? 'MISSING_LOYALTY_PROFILE'
+							: userError.message.includes(
+										'Invalid user ID format'
+								  )
+								? 'INVALID_OBJECTID'
+								: 'OTHER';
 
 					this.logError(
 						`[${errorType}] Error evaluating tier for user ${loyalty.user}:`,

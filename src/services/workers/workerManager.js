@@ -112,7 +112,9 @@ class WorkerManager {
 				// Handle socket broadcast requests from workers
 				try {
 					const { roomId, event, payload, requestId } = message.data;
-					console.log(`[WORKER-MANAGER] Received socket broadcast request: ${event} to room ${roomId}`);
+					console.log(
+						`[WORKER-MANAGER] Received socket broadcast request: ${event} to room ${roomId}`
+					);
 
 					// Use the socket broadcast service to handle the broadcast
 					await SocketBroadcastService.broadcastToDominoRoom(
@@ -121,7 +123,9 @@ class WorkerManager {
 						payload
 					);
 
-					console.log(`[WORKER-MANAGER] Successfully processed socket broadcast: ${event} to room ${roomId}`);
+					console.log(
+						`[WORKER-MANAGER] Successfully processed socket broadcast: ${event} to room ${roomId}`
+					);
 
 					// Only send response if requestId exists (for synchronous calls)
 					if (requestId) {

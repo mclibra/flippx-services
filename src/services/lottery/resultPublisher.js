@@ -75,13 +75,17 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 
 	// Check if lottery is already completed
 	if (lottery.status === 'COMPLETED') {
-		console.log(`Lottery ${lotteryId} already completed, skipping result processing`);
+		console.log(
+			`Lottery ${lotteryId} already completed, skipping result processing`
+		);
 		return { skipped: true, reason: 'Already completed' };
 	}
 
 	// Allow both WAITING and SCHEDULED status for processing
 	if (!['WAITING', 'SCHEDULED'].includes(lottery.status)) {
-		throw new Error(`Invalid lottery status: ${lottery.status}. Expected WAITING or SCHEDULED`);
+		throw new Error(
+			`Invalid lottery status: ${lottery.status}. Expected WAITING or SCHEDULED`
+		);
 	}
 
 	const { _id, type, jackpotAmount } = lottery;
