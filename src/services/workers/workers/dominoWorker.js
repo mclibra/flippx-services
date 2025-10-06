@@ -105,9 +105,6 @@ class DominoWorker extends BaseWorker {
 				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
 			});
 
-			let roomsProcessed = 0;
-			let botsAdded = 0;
-
 			for (const room of virtualRoomsNeedingBots) {
 				try {
 					const slotsNeeded = room.playerCount - room.players.length;
@@ -118,8 +115,6 @@ class DominoWorker extends BaseWorker {
 							slotsNeeded,
 							gameConfig
 						);
-						botsAdded += slotsNeeded;
-						roomsProcessed++;
 					}
 				} catch (error) {
 					this.logError(
@@ -562,7 +557,6 @@ class DominoWorker extends BaseWorker {
 			) {
 				await handleGameCompletion(updatedGame);
 			}
-
 		} catch (error) {
 			this.logError(
 				`[BOT-TURN] Error processing bot turn for game ${game._id}:`,

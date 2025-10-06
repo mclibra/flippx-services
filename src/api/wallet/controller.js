@@ -124,7 +124,7 @@ export const getWalletSummary = async req => {
 	}
 };
 
-export const initiateVirtualCashPurchase = async (req, res) => {
+export const initiateVirtualCashPurchase = async req => {
 	try {
 		const { user } = req;
 		const {
@@ -475,7 +475,7 @@ export const createManualPayment = async (user, body) => {
 				};
 			}
 
-			if (plan.status !== 'ACTIVE' || !plan.isAvailableForPurchase) {
+			if (plan.status !== 'ACTIVE') {
 				return {
 					status: 400,
 					entity: {
@@ -741,7 +741,7 @@ export const getUserPayments = async ({ _id, query }) => {
 	}
 };
 
-export const handlePurchaseSuccess = async (req, res) => {
+export const handlePurchaseSuccess = async req => {
 	try {
 		const { session_id } = req.query;
 
@@ -821,7 +821,7 @@ export const handlePurchaseSuccess = async (req, res) => {
 	}
 };
 
-export const handlePurchaseCancel = async (req, res) => {
+export const handlePurchaseCancel = async req => {
 	try {
 		const { session_id } = req.query;
 
@@ -878,7 +878,7 @@ export const handlePurchaseCancel = async (req, res) => {
 	}
 };
 
-export const handlePayoneerWebhook = async (req, res) => {
+export const handlePayoneerWebhook = async req => {
 	try {
 		const signature = req.get('X-Payoneer-Signature');
 		const payload = JSON.stringify(req.body);

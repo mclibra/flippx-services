@@ -182,7 +182,6 @@ class LoyaltyWorker extends BaseWorker {
 					user.sessionTracking?.totalSessionTimeToday &&
 					user.sessionTracking.totalSessionTimeToday >=
 						requiredSessionMinutes * 60;
-
 			}
 		} catch (error) {
 			this.logError(
@@ -245,7 +244,6 @@ class LoyaltyWorker extends BaseWorker {
 
 				await loyalty.save();
 			}
-
 		} catch (error) {
 			this.logError('Error updating no-win tracking:', error);
 		}
@@ -347,7 +345,6 @@ class LoyaltyWorker extends BaseWorker {
 					);
 				}
 			}
-
 		} catch (error) {
 			this.logError('Error in tier evaluation job:', error);
 		}
@@ -419,7 +416,6 @@ class LoyaltyWorker extends BaseWorker {
 					}
 				}
 			}
-
 		} catch (error) {
 			this.logError(
 				'Error validating tier configuration integrity:',
