@@ -159,15 +159,33 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
-				// Validate that the API result date matches the lottery's scheduled date
-				const lotteryDate = moment(lottery.scheduledTime).format(
-					'YYYY-MM-DD'
-				);
+				// Get the state to determine the correct timezone
+				const state = await State.findById(lottery.state);
+				if (!state) {
+					this.logError('State not found for lottery:', lottery._id);
+					return;
+				}
+
+				// Find the lottery configuration to get the timezone
+				let lotteryTimezone = 'America/New_York'; // Default fallback
+				if (state.externalLotteries && state.externalLotteries.length > 0) {
+					const lotteryConfig = state.externalLotteries.find(
+						config => config.pick4GameId === pick4Id
+					);
+					if (lotteryConfig?.drawTimezone) {
+						lotteryTimezone = lotteryConfig.drawTimezone;
+					}
+				}
+
+				// Validate that the API result date matches the lottery's scheduled date using correct timezone
+				const lotteryDate = moment(lottery.scheduledTime)
+					.tz(lotteryTimezone)
+					.format('YYYY-MM-DD');
 				const apiDrawDate = pick4Result.data.drawDate;
 
 				if (apiDrawDate !== lotteryDate) {
 					console.log(
-						`API draw date (${apiDrawDate}) does not match lottery date (${lotteryDate}) for lottery ${lottery._id}. Skipping for now.`
+						`API draw date (${apiDrawDate}) does not match lottery date (${lotteryDate}) for lottery ${lottery._id}. Timezone: ${lotteryTimezone}, ScheduledTime: ${lottery.scheduledTime}. Skipping for now.`
 					);
 					return;
 				}
@@ -237,15 +255,28 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
-				// Validate that the API result date matches the lottery's scheduled date
-				const megaLotteryDate = moment(lottery.scheduledTime).format(
-					'YYYY-MM-DD'
-				);
+				// Get the state to determine the correct timezone for MEGAMILLION
+				const state = await State.findById(lottery.state);
+				if (!state) {
+					this.logError('State not found for MEGAMILLION lottery:', lottery._id);
+					return;
+				}
+
+				// Get MEGAMILLION timezone configuration
+				let megaTimezone = 'America/Detroit'; // Default MEGAMILLION timezone
+				if (state.megaMillions?.drawTimezone) {
+					megaTimezone = state.megaMillions.drawTimezone;
+				}
+
+				// Validate that the API result date matches the lottery's scheduled date using correct timezone
+				const megaLotteryDate = moment(lottery.scheduledTime)
+					.tz(megaTimezone)
+					.format('YYYY-MM-DD');
 				const megaApiDrawDate = megaResult.data.drawDate;
 
 				if (megaApiDrawDate !== megaLotteryDate) {
 					console.log(
-						`API draw date (${megaApiDrawDate}) does not match lottery date (${megaLotteryDate}) for MEGAMILLION lottery ${lottery._id}. Skipping for now.`
+						`API draw date (${megaApiDrawDate}) does not match lottery date (${megaLotteryDate}) for MEGAMILLION lottery ${lottery._id}. Timezone: ${megaTimezone}, ScheduledTime: ${lottery.scheduledTime}. Skipping for now.`
 					);
 					return;
 				}
