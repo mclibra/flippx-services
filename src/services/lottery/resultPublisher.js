@@ -2,6 +2,8 @@ import { makeTransaction } from '../../api/transaction/controller';
 import { MegaMillionTicket } from '../../api/megamillion_ticket/model';
 import { BorletteTicket } from '../../api/borlette_ticket/model';
 import { Lottery } from '../../api/lottery/model';
+import { State } from '../../api/admin/state-management/model';
+import { createLotteriesForState } from '../../api/lottery/controller';
 import PayoutService from '../payout/payoutService';
 import moment from 'moment';
 
@@ -410,6 +412,25 @@ async function processTicketsAndPublishResults(lotteryId, results) {
 	await lottery.save();
 
 	const tickets = await Promise.all(ticketsPromise);
+
+	// After successfully completing the lottery, automatically create lotteries for the next draw day
+	try {
+		const state = await State.findById(lottery.state);
+		if (state) {
+			console.log(`Creating next day lotteries for state: ${state.name}`);
+			const createResult = await createLotteriesForState(state);
+			console.log(
+				`Lottery creation result for ${state.name}:`,
+				createResult
+			);
+		}
+	} catch (createError) {
+		console.error(
+			`Error creating next day lotteries for state ${lottery.state}:`,
+			createError
+		);
+		// Don't throw here - lottery publishing should succeed even if next day creation fails
+	}
 
 	return type === 'MEGAMILLION'
 		? { ...megamillionResult, tickets }

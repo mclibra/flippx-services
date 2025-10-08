@@ -6,6 +6,28 @@ import { State } from '../admin/state-management/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
 import PayoutService from '../../services/payout/payoutService';
 
+// Helper function to get the next draw date for a specific lottery configuration
+const getNextDrawDate = lotteryConfig => {
+	// Always create lotteries for the next day to avoid conflicts
+	// This ensures we create fresh lotteries for future draws
+	const nextDay = moment().add(1, 'day');
+
+	// Find the next valid draw day starting from tomorrow
+	let checkDate = nextDay.clone();
+	const maxDaysToCheck = 7; // Don't check more than a week ahead
+
+	for (let i = 0; i < maxDaysToCheck; i++) {
+		const dayName = checkDate.format('dddd');
+		if (lotteryConfig.drawDays?.[dayName]) {
+			return checkDate;
+		}
+		checkDate.add(1, 'day');
+	}
+
+	// If no valid draw day found, return tomorrow as fallback
+	return nextDay;
+};
+
 export const list = async ({
 	offset,
 	key,
@@ -1623,21 +1645,11 @@ export const remove = async ({ id }) => {
 export const createLotteriesForState = async state => {
 	try {
 		const { externalLotteries, megaMillions } = state;
-		const today = moment().format('dddd');
-
 		let lotteriesCreated = 0;
 
 		// Create BORLETTE lotteries based on flexible configuration
 		if (externalLotteries && externalLotteries.length > 0) {
 			for (const lotteryConfig of externalLotteries) {
-				// Skip if not scheduled to run today
-				if (!lotteryConfig.drawDays?.[today]) {
-					console.log(
-						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} does not run today`
-					);
-					continue;
-				}
-
 				// Skip if missing required game IDs
 				if (!lotteryConfig.pick4GameId) {
 					console.log(
@@ -1646,9 +1658,36 @@ export const createLotteriesForState = async state => {
 					continue;
 				}
 
-				// Calculate draw time first
+				// Check if there are any existing SCHEDULED BORLETTE lotteries for this state and config
+				const existingScheduledLottery = await Lottery.findOne({
+					state: state._id,
+					type: 'BORLETTE',
+					status: 'SCHEDULED',
+					metadata: lotteryConfig.name.toLowerCase(),
+				});
+
+				if (existingScheduledLottery) {
+					console.log(
+						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} already has a scheduled lottery`
+					);
+					continue;
+				}
+
+				// Get the next valid draw date for this specific lottery config
+				const nextDrawDate = getNextDrawDate(lotteryConfig);
+				const nextDrawDayName = nextDrawDate.format('dddd');
+
+				// Double check that this day is valid for draws
+				if (!lotteryConfig.drawDays?.[nextDrawDayName]) {
+					console.log(
+						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} does not run on ${nextDrawDayName}`
+					);
+					continue;
+				}
+
+				// Calculate draw time for next draw date
 				const drawTime = moment.tz(
-					`${moment().format('YYYY-MM-DD')} ${
+					`${nextDrawDate.format('YYYY-MM-DD')} ${
 						lotteryConfig.drawTime
 					}`,
 					lotteryConfig.drawTimezone
@@ -1738,38 +1777,51 @@ export const createLotteriesForState = async state => {
 		}
 
 		// Create for Mega Millions
-		if (megaMillions?.gameId && megaMillions?.drawDays?.[today]) {
-			// Check if there's already an active Mega Millions lottery for ANY state
-			// Since MegaMillions is a multi-state lottery, there should only be one active at any time
-			const existingLottery = await Lottery.findOne({
+		if (megaMillions?.gameId && megaMillions?.drawDays) {
+			// Check if there's already a SCHEDULED Mega Millions lottery for ANY state
+			// Since MegaMillions is a multi-state lottery, there should only be one SCHEDULED at any time
+			const existingScheduledMegaMillionLottery = await Lottery.findOne({
 				type: 'MEGAMILLION',
-				status: { $ne: 'COMPLETED' },
+				status: 'SCHEDULED',
 			});
 
-			if (!existingLottery) {
-				// Create a new lottery (use the first state that needs it)
-				const drawTime = moment.tz(
-					`${moment().format('YYYY-MM-DD')} ${megaMillions.drawTime}`,
-					megaMillions.drawTimezone
-				);
+			if (!existingScheduledMegaMillionLottery) {
+				// Get the next valid draw date for MegaMillions
+				const nextMegaDrawDate = getNextDrawDate(megaMillions);
+				const nextMegaDrawDayName = nextMegaDrawDate.format('dddd');
 
-				await Lottery.create({
-					title: 'Mega Millions',
-					type: 'MEGAMILLION',
-					scheduledTime: drawTime.valueOf(),
-					jackpotAmount: 1000000, // Default jackpot amount
-					state: state._id,
-					status: 'SCHEDULED',
-					createdBy: null,
-					externalGameIds: {
-						megaMillions: megaMillions.gameId,
-					},
-				});
+				// Check if MegaMillions runs on this day
+				if (megaMillions.drawDays[nextMegaDrawDayName]) {
+					// Create a new lottery for next draw date
+					const drawTime = moment.tz(
+						`${nextMegaDrawDate.format('YYYY-MM-DD')} ${
+							megaMillions.drawTime
+						}`,
+						megaMillions.drawTimezone
+					);
 
-				console.log(
-					`Created new MEGAMILLION lottery (shared across all states)`
-				);
-				lotteriesCreated++;
+					await Lottery.create({
+						title: 'Mega Millions',
+						type: 'MEGAMILLION',
+						scheduledTime: drawTime.valueOf(),
+						jackpotAmount: 1000000, // Default jackpot amount
+						state: state._id,
+						status: 'SCHEDULED',
+						createdBy: null,
+						externalGameIds: {
+							megaMillions: megaMillions.gameId,
+						},
+					});
+
+					console.log(
+						`Created new MEGAMILLION lottery (shared across all states)`
+					);
+					lotteriesCreated++;
+				} else {
+					console.log(
+						`MEGAMILLION lottery does not run on ${nextMegaDrawDayName}`
+					);
+				}
 			} else {
 				console.log(
 					`MEGAMILLION lottery already exists (shared across all states)`

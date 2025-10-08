@@ -3,10 +3,10 @@ import moment from 'moment';
 import mongoose from 'mongoose';
 import {
 	processNoWinCashback,
-	cleanupDepositData,
 	evaluateUserTier,
 	cleanupOrphanedLoyaltyProfiles,
 } from '../../../api/loyalty/controller';
+import { LoyaltyService } from '../../../api/loyalty/service';
 import InfluencerCommissionService from '../../influencer/commissionService';
 import { LoyaltyProfile } from '../../../api/loyalty/model';
 import { User } from '../../../api/user/model';
@@ -255,7 +255,7 @@ class LoyaltyWorker extends BaseWorker {
 	 */
 	async cleanupDepositDataJob() {
 		try {
-			await cleanupDepositData();
+			await LoyaltyService.cleanupDepositData();
 		} catch (error) {
 			this.logError('Error in deposit data cleanup job:', error);
 		}

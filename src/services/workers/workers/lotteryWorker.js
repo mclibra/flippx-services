@@ -159,10 +159,16 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
-				// Check if the draw is for today - only publish results for today's draws
-				const today = moment().format('YYYY-MM-DD');
-				const drawDate = pick4Result.data.drawDate;
-				if (drawDate !== today) {
+				// Validate that the API result date matches the lottery's scheduled date
+				const lotteryDate = moment(lottery.scheduledTime).format(
+					'YYYY-MM-DD'
+				);
+				const apiDrawDate = pick4Result.data.drawDate;
+
+				if (apiDrawDate !== lotteryDate) {
+					console.log(
+						`API draw date (${apiDrawDate}) does not match lottery date (${lotteryDate}) for lottery ${lottery._id}. Skipping for now.`
+					);
 					return;
 				}
 
@@ -212,7 +218,7 @@ class LotteryWorker extends BaseWorker {
 					hasMarriageNumbers:
 						lottery.additionalData?.hasMarriageNumbers || false,
 					drawNumber: drawNumber,
-					drawDate: drawDate,
+					drawDate: apiDrawDate,
 				};
 
 				await this.processTicketsForLottery(lottery._id, results);
@@ -231,10 +237,16 @@ class LotteryWorker extends BaseWorker {
 					return;
 				}
 
-				// Check if the draw is for today - only publish results for today's draws
-				const megaToday = moment().format('YYYY-MM-DD');
-				const megaDrawDate = megaResult.data.drawDate;
-				if (megaDrawDate !== megaToday) {
+				// Validate that the API result date matches the lottery's scheduled date
+				const megaLotteryDate = moment(lottery.scheduledTime).format(
+					'YYYY-MM-DD'
+				);
+				const megaApiDrawDate = megaResult.data.drawDate;
+
+				if (megaApiDrawDate !== megaLotteryDate) {
+					console.log(
+						`API draw date (${megaApiDrawDate}) does not match lottery date (${megaLotteryDate}) for MEGAMILLION lottery ${lottery._id}. Skipping for now.`
+					);
 					return;
 				}
 
@@ -257,7 +269,7 @@ class LotteryWorker extends BaseWorker {
 					numbers: mainNumbers,
 					megaBall: megaBall,
 					drawNumber: megaDrawNumber,
-					drawDate: megaDrawDate,
+					drawDate: megaApiDrawDate,
 				};
 
 				await this.processTicketsForLottery(lottery._id, results);

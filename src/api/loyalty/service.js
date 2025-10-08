@@ -12,7 +12,6 @@ import {
 	recordWithdrawalUsage,
 	processReferralQualification,
 	manualTierUpgrade,
-	cleanupDepositData,
 	getWithdrawalTime,
 	recordDailyLogin,
 	updateSessionTime,
