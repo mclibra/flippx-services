@@ -39,7 +39,7 @@ class LotteryWorker extends BaseWorker {
 			const now = moment();
 			const lotteries = await Lottery.find({
 				status: {
-					$in: ['SCHEDULED', 'ERROR'],
+					$in: ['SCHEDULED', 'ERROR', 'WAITING'],
 				},
 				scheduledTime: {
 					$lt: now.subtract(15, 'minutes').valueOf(),
@@ -73,9 +73,6 @@ class LotteryWorker extends BaseWorker {
 
 			const today = moment().format('dddd');
 			const tomorrow = moment().add(1, 'day').format('dddd');
-
-			let totalStatesProcessed = 0;
-			let totalLotteriesCreated = 0;
 
 			for (const state of activeStates) {
 				try {
@@ -113,19 +110,7 @@ class LotteryWorker extends BaseWorker {
 						continue;
 					}
 
-					totalStatesProcessed++;
-
-					// Call existing function to create lotteries for this state
-					const result = await createLotteriesForState(state);
-
-					// Only count when lotteries are actually created (not when they already exist)
-					if (
-						result.success &&
-						result.message &&
-						result.message.includes('created')
-					) {
-						totalLotteriesCreated++;
-					}
+					await createLotteriesForState(state);
 				} catch (stateError) {
 					this.logError(
 						`Error analyzing state ${state.name} (${state.code}):`,
@@ -133,7 +118,6 @@ class LotteryWorker extends BaseWorker {
 					);
 				}
 			}
-
 		} catch (error) {
 			this.logError('Error in lottery analysis cron job:', error);
 		}
@@ -168,7 +152,10 @@ class LotteryWorker extends BaseWorker {
 
 				// Find the lottery configuration to get the timezone
 				let lotteryTimezone = 'America/New_York'; // Default fallback
-				if (state.externalLotteries && state.externalLotteries.length > 0) {
+				if (
+					state.externalLotteries &&
+					state.externalLotteries.length > 0
+				) {
 					const lotteryConfig = state.externalLotteries.find(
 						config => config.pick4GameId === pick4Id
 					);
@@ -258,7 +245,10 @@ class LotteryWorker extends BaseWorker {
 				// Get the state to determine the correct timezone for MEGAMILLION
 				const state = await State.findById(lottery.state);
 				if (!state) {
-					this.logError('State not found for MEGAMILLION lottery:', lottery._id);
+					this.logError(
+						'State not found for MEGAMILLION lottery:',
+						lottery._id
+					);
 					return;
 				}
 
