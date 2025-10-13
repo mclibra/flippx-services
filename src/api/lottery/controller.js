@@ -1649,26 +1649,30 @@ export const createLotteriesForState = async state => {
 
 		// Create BORLETTE lotteries based on flexible configuration
 		if (externalLotteries && externalLotteries.length > 0) {
+			// Check if there are any non-completed lotteries for this state
+			// If any exist, wait for them to complete before creating new ones
+			const existingActiveLottery = await Lottery.findOne({
+				state: state._id,
+				type: 'BORLETTE',
+				status: { $ne: 'COMPLETED' },
+			});
+
+			if (existingActiveLottery) {
+				console.log(
+					`State ${state.name} has existing non-completed lottery (${existingActiveLottery.metadata}, status: ${existingActiveLottery.status}). Waiting for completion before creating new lotteries.`
+				);
+				return {
+					success: true,
+					message: `State ${state.name} has existing non-completed lotteries. Will create new lotteries in next cron run.`,
+				};
+			}
+
+			// All lotteries are completed, create new ones for all configs
 			for (const lotteryConfig of externalLotteries) {
 				// Skip if missing required game IDs
 				if (!lotteryConfig.pick4GameId) {
 					console.log(
 						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} missing pick4GameId`
-					);
-					continue;
-				}
-
-				// Check if there are any existing SCHEDULED BORLETTE lotteries for this state and config
-				const existingScheduledLottery = await Lottery.findOne({
-					state: state._id,
-					type: 'BORLETTE',
-					status: 'SCHEDULED',
-					metadata: lotteryConfig.name.toLowerCase(),
-				});
-
-				if (existingScheduledLottery) {
-					console.log(
-						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} already has a scheduled lottery`
 					);
 					continue;
 				}
@@ -1693,16 +1697,8 @@ export const createLotteriesForState = async state => {
 					lotteryConfig.drawTimezone
 				);
 
-				// Check if there's already an active lottery for this type and session
-				const existingLottery = await Lottery.findOne({
-					state: state._id,
-					type: 'BORLETTE',
-					status: { $ne: 'COMPLETED' },
-					metadata: lotteryConfig.name.toLowerCase(),
-				});
-
-				// Additional check for unique index constraint to prevent duplicates
-				// Only check pick3 constraint if pick3GameId exists
+				// Check for unique index constraint to prevent duplicates
+				// Only check if pick3GameId exists
 				let duplicateCheck = null;
 				if (lotteryConfig.pick3GameId) {
 					duplicateCheck = await Lottery.findOne({
@@ -1712,9 +1708,8 @@ export const createLotteriesForState = async state => {
 					});
 				}
 
-				if (!existingLottery && !duplicateCheck) {
+				if (!duplicateCheck) {
 					// Create a new lottery
-
 					const externalGameIds = {
 						pick4: lotteryConfig.pick4GameId,
 						pick3: lotteryConfig.pick3GameId || null,
@@ -1756,22 +1751,15 @@ export const createLotteriesForState = async state => {
 						}
 					}
 				} else {
-					if (existingLottery) {
-						console.log(
-							`BORLETTE lottery for ${state.name} ${lotteryConfig.name} has already been created (existing lottery)`
-						);
-					}
-					if (duplicateCheck) {
-						console.log(
-							`BORLETTE lottery for ${state.name} ${
-								lotteryConfig.name
-							} would violate unique constraint (state: ${
-								state._id
-							}, pick3: ${
-								lotteryConfig.pick3GameId
-							}, time: ${drawTime.valueOf()})`
-						);
-					}
+					console.log(
+						`BORLETTE lottery for ${state.name} ${
+							lotteryConfig.name
+						} would violate unique constraint (state: ${
+							state._id
+						}, pick3: ${
+							lotteryConfig.pick3GameId
+						}, time: ${drawTime.valueOf()})`
+					);
 				}
 			}
 		}
