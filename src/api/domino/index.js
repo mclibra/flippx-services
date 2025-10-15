@@ -6,6 +6,7 @@ import {
 	getChatHistory,
 	updateGameConfig,
 	getGameConfig,
+	getUserGameResults,
 } from './controller';
 
 const router = new Router();
@@ -48,4 +49,10 @@ router.get(
 	async (req, res) => done(res, await getGameConfig())
 );
 
+// ===================== USER GAME HISTORY =====================
+
+// Get user's completed domino games
+router.get('/user/games', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getUserGameResults(req.user))
+);
 export default router;

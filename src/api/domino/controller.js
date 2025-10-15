@@ -1443,3 +1443,64 @@ const distributePrizes = async (game, room, challengeWinner = null) => {
 		console.error(`[GAME-COMPLETION] Error distributing prizes:`, error);
 	}
 };
+// ===================== USER GAME HISTORY =====================
+
+/**
+ * Get user's completed domino games
+ * @param {Object} user - The authenticated user
+ * @returns {Array} Array of user's completed domino game results
+ */
+export const getUserGameResults = async user => {
+	try {
+		// Find all completed games where the user participated
+		const games = await DominoGame.find({
+			gameState: 'COMPLETED',
+			'players.user': user.id,
+		})
+			.populate({
+				path: 'room',
+				select: 'roomId entryFee cashType totalPot',
+			})
+			.sort({ updatedAt: -1 }) // Sort by completion date, newest first
+			.lean();
+
+		// Transform the data to match the mobile app's DominoGameResult model
+		const gameResults = games
+			.map(game => {
+				// Find the user's player data in this game
+				const userPlayer = game.players.find(
+					player => player.user && player.user.toString() === user.id
+				);
+
+				if (!userPlayer) {
+					return null; // Skip if user not found in players (shouldn't happen)
+				}
+
+				// Determine if user won this game
+				const isWinner = game.winner === userPlayer.position;
+
+				return {
+					id: game._id.toString(),
+					gameId: game._id.toString(),
+					roomId: game.room.roomId,
+					entryFee: game.room.entryFee,
+					winnerPayout: isWinner ? game.winnerPayout : 0,
+					cashType: game.room.cashType,
+					playerPosition: userPlayer.position,
+					finalScore: userPlayer.totalScore || 0,
+					isWinner: isWinner,
+					completedAt: game.updatedAt,
+					// Additional game details that might be useful
+					duration: game.duration,
+					totalMoves: game.totalMoves,
+					endReason: game.endReason,
+				};
+			})
+			.filter(result => result !== null); // Remove any null results
+
+		return gameResults;
+	} catch (error) {
+		console.error('Error fetching user domino game results:', error);
+		throw new Error('Failed to fetch domino game results');
+	}
+};
