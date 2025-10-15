@@ -7,6 +7,7 @@ import {
 	updateGameConfig,
 	getGameConfig,
 	getUserGameResults,
+	getGameDetails,
 } from './controller';
 
 const router = new Router();
@@ -55,4 +56,10 @@ router.get(
 router.get('/user/games', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await getUserGameResults(req.user))
 );
+
+// Get detailed information about a specific game
+router.get('/game/:id', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getGameDetails(req.params, req.user))
+);
+
 export default router;

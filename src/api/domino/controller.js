@@ -1517,3 +1517,152 @@ export const getUserGameResults = async user => {
 		};
 	}
 };
+
+/**
+ * Get detailed information about a specific domino game by game ID
+ * @param {Object} params - Contains the game ID
+ * @param {Object} user - The authenticated user
+ * @returns {Object} - Game details or error
+ */
+export const getGameDetails = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Validate game ID
+		if (!id) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Game ID is required.',
+				},
+			};
+		}
+
+		// Find the game
+		const game = await DominoGame.findById(id)
+			.populate({
+				path: 'room',
+				select: 'roomId entryFee cashType totalPot roomType playerCount',
+			})
+			.populate({
+				path: 'players.user',
+				select: 'name email phone',
+			})
+			.lean();
+
+		if (!game) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Game not found.',
+				},
+			};
+		}
+
+		// Check if user has access to this game (must be a player or admin)
+		const isPlayer = game.players.some(
+			player => player.user && player.user._id.toString() === userId
+		);
+		const isAdmin = role === 'ADMIN';
+
+		if (!isPlayer && !isAdmin) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Access denied. You are not a player in this game.',
+				},
+			};
+		}
+
+		// Find the requesting user's player data
+		const userPlayer = game.players.find(
+			player => player.user && player.user._id.toString() === userId
+		);
+
+		// Prepare detailed game response
+		const gameDetails = {
+			id: game._id.toString(),
+			roomId: game.room?.roomId || null,
+			roomType: game.room?.roomType || null,
+			playerCount: game.room?.playerCount || game.players.length,
+			gameNumber: game.gameNumber,
+			gameState: game.gameState,
+			currentPlayer: game.currentPlayer,
+			entryFee: game.room?.entryFee || 0,
+			cashType: game.room?.cashType || 'VIRTUAL',
+			totalPot: game.totalPot,
+			houseEdge: game.houseEdge,
+			houseAmount: game.houseAmount,
+			winnerPayout: game.winnerPayout,
+			winner: game.winner,
+			endReason: game.endReason,
+			duration: game.duration,
+			totalMoves: game.totalMoves,
+			turnTimeLimit: game.turnTimeLimit,
+			turnStartTime: game.turnStartTime,
+			// Board state
+			board: game.board,
+			// Players information (hide other players' hands if game is still active)
+			players: game.players.map(player => ({
+				position: player.position,
+				user: player.user
+					? {
+							id: player.user._id.toString(),
+							name: player.user.name,
+							email: isAdmin ? player.user.email : undefined,
+							phone: isAdmin ? player.user.phone : undefined,
+						}
+					: null,
+				playerType: player.playerType,
+				playerName: player.playerName,
+				handCount: player.hand?.length || 0,
+				// Only show hand if it's the requesting user and game is not completed
+				hand:
+					game.gameState === 'COMPLETED' ||
+					(userPlayer && player.position === userPlayer.position)
+						? player.hand
+						: undefined,
+				score: player.score,
+				totalScore: player.totalScore,
+				isConnected: player.isConnected,
+				lastAction: player.lastAction,
+				consecutivePasses: player.consecutivePasses,
+			})),
+			// Move history
+			moves: game.moves,
+			turnHistory: game.turnHistory,
+			finalScores: game.finalScores,
+			// User-specific data
+			myPosition: userPlayer?.position,
+			myScore: userPlayer?.score,
+			myTotalScore: userPlayer?.totalScore,
+			myHand: userPlayer?.hand,
+			isWinner: game.winner === userPlayer?.position,
+			payout:
+				game.winner === userPlayer?.position ? game.winnerPayout : 0,
+			// Timestamps
+			createdAt: game.createdAt,
+			updatedAt: game.updatedAt,
+		};
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				game: gameDetails,
+			},
+		};
+	} catch (error) {
+		console.error('Error getting game details:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch game details',
+			},
+		};
+	}
+};

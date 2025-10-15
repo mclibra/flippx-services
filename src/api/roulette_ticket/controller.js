@@ -28,7 +28,9 @@ export const list = async (query, user) => {
 		if (startDate || endDate) {
 			searchQuery.createdAt = {};
 			if (startDate) {
-				searchQuery.createdAt.$gte = moment(parseInt(startDate)).toDate();
+				searchQuery.createdAt.$gte = moment(
+					parseInt(startDate)
+				).toDate();
 			}
 			if (endDate) {
 				searchQuery.createdAt.$lte = moment(parseInt(endDate)).toDate();
@@ -104,10 +106,10 @@ export const getTicket = async ({ id }, { _id }) => {
 			};
 		} else {
 			return {
-				status: 500,
+				status: 404,
 				entity: {
 					success: false,
-					error: 'Invalid parameters passed.',
+					error: 'Ticket not found for this roulette game.',
 				},
 			};
 		}
@@ -118,6 +120,70 @@ export const getTicket = async ({ id }, { _id }) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
+			},
+		};
+	}
+};
+
+/**
+ * Get detailed information about a specific roulette ticket by ticket ID
+ * @param {Object} params - Contains the ticket ID
+ * @param {Object} user - The authenticated user
+ * @returns {Object} - Ticket details or error
+ */
+export const getTicketDetails = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Validate ticket ID
+		if (!id) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Ticket ID is required.',
+				},
+			};
+		}
+
+		// Build query with ownership check for non-admins
+		let query = { _id: id };
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const ticket = await RouletteTicket.findOne(query)
+			.populate('user', 'name email phone role')
+			.populate({
+				path: 'roulette',
+				select: 'name status result createdAt updatedAt',
+			})
+			.exec();
+
+		if (!ticket) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Ticket not found or access denied.',
+				},
+			};
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				ticket,
+			},
+		};
+	} catch (error) {
+		console.error('Error in getTicketDetails method:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch ticket details',
 			},
 		};
 	}
