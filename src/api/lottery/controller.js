@@ -8,12 +8,12 @@ import PayoutService from '../../services/payout/payoutService';
 
 // Helper function to get the next draw date for a specific lottery configuration
 const getNextDrawDate = lotteryConfig => {
-	// Always create lotteries for the next day to avoid conflicts
-	// This ensures we create fresh lotteries for future draws
-	const nextDay = moment().add(1, 'day');
+	// Start checking from today to handle lotteries published near midnight
+	// This prevents skipping today's lottery when published at 11:55 PM and runs at 00:00 AM
+	const today = moment();
 
-	// Find the next valid draw day starting from tomorrow
-	let checkDate = nextDay.clone();
+	// Find the next valid draw day starting from today
+	let checkDate = today.clone();
 	const maxDaysToCheck = 7; // Don't check more than a week ahead
 
 	for (let i = 0; i < maxDaysToCheck; i++) {
@@ -24,8 +24,8 @@ const getNextDrawDate = lotteryConfig => {
 		checkDate.add(1, 'day');
 	}
 
-	// If no valid draw day found, return tomorrow as fallback
-	return nextDay;
+	// If no valid draw day found, return today as fallback
+	return today;
 };
 
 export const list = async ({
