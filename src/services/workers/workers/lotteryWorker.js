@@ -67,10 +67,12 @@ class LotteryWorker extends BaseWorker {
 	 */
 	async analyzeAndCreateMissingLotteries() {
 		try {
+			console.log('Analyzing and creating missing lotteries');
 			// Get all active states
 			const activeStates = await State.find({ isActive: true });
 
 			if (activeStates.length === 0) {
+				console.log('No active states found');
 				return;
 			}
 
@@ -79,6 +81,7 @@ class LotteryWorker extends BaseWorker {
 
 			for (const state of activeStates) {
 				try {
+					console.log(`Analyzing state ${state.name}`);
 					// Check if state has upcoming draw days (today or tomorrow)
 					let hasUpcomingDrawDays = false;
 

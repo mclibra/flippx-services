@@ -6,7 +6,7 @@ import {
 	show,
 	ticketByLottery,
 	listAllByLottery,
-	create,
+	placeBet,
 	cancelTicket,
 	cashoutTicket,
 	commissionSummary,
@@ -55,7 +55,8 @@ router.post(
 	xApi(),
 	// token({ required: true, roles: ['USER'] }),
 	token({ required: true }),
-	async (req, res) => done(res, await create(req.params, req.body, req.user))
+	async (req, res) =>
+		done(res, await placeBet(req.params, req.body, req.user))
 );
 
 router.delete(
