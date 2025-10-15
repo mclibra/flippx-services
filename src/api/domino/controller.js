@@ -1498,9 +1498,22 @@ export const getUserGameResults = async user => {
 			})
 			.filter(result => result !== null); // Remove any null results
 
-		return gameResults;
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				gameResults,
+				total: gameResults.length,
+			},
+		};
 	} catch (error) {
 		console.error('Error fetching user domino game results:', error);
-		throw new Error('Failed to fetch domino game results');
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch domino game results',
+			},
+		};
 	}
 };
