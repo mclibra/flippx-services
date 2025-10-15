@@ -6,6 +6,88 @@ import { Wallet } from '../wallet/model';
 import { Roulette } from '../roulette/model';
 import { LoyaltyService } from '../loyalty/service';
 
+export const list = async (query, user) => {
+	try {
+		const { _id: userId, role } = user;
+		const {
+			offset = 0,
+			limit = 20,
+			startDate,
+			endDate,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+		} = query;
+
+		// Build query - users can only see their own tickets
+		let searchQuery = {};
+		if (role !== 'ADMIN') {
+			searchQuery.user = userId;
+		}
+
+		// Add date filters if provided
+		if (startDate || endDate) {
+			searchQuery.createdAt = {};
+			if (startDate) {
+				searchQuery.createdAt.$gte = moment(parseInt(startDate)).toDate();
+			}
+			if (endDate) {
+				searchQuery.createdAt.$lte = moment(parseInt(endDate)).toDate();
+			}
+		}
+
+		// Execute query with pagination
+		const tickets = await RouletteTicket.find(searchQuery)
+			.populate('user', 'name email phone')
+			.populate('roulette')
+			.limit(parseInt(limit))
+			.skip(parseInt(offset))
+			.sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+			.exec();
+
+		// Get total count for pagination
+		const total = await RouletteTicket.countDocuments(searchQuery);
+
+		// Calculate summary statistics
+		const totalAmountPlayed = tickets.reduce(
+			(sum, ticket) => sum + (ticket.totalAmountPlayed || 0),
+			0
+		);
+		const totalAmountWon = tickets.reduce(
+			(sum, ticket) => sum + (ticket.totalAmountWon || 0),
+			0
+		);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				tickets,
+				pagination: {
+					total,
+					offset: parseInt(offset),
+					limit: parseInt(limit),
+					hasMore: parseInt(offset) + tickets.length < total,
+				},
+				summary: {
+					totalTickets: tickets.length,
+					totalAmountPlayed,
+					totalAmountWon,
+					netResult: totalAmountWon - totalAmountPlayed,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Error in list method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error,
+			},
+		};
+	}
+};
+
 export const getTicket = async ({ id }, { _id }) => {
 	try {
 		const rouletteTicket = await RouletteTicket.findOne({

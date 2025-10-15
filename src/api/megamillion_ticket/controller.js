@@ -7,15 +7,36 @@ import { LoyaltyService } from '../loyalty/service';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
-export const list = async (_, user) => {
+export const list = async (queryParams, user) => {
 	try {
 		const { _id: userId, role } = user;
+		const {
+			offset = 0,
+			limit = 20,
+			startDate,
+			endDate,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+		} = queryParams;
 
+		// Build query - users can only see their own tickets
 		let query = {};
 		if (role !== 'ADMIN') {
 			query.user = userId;
 		}
 
+		// Add date filters if provided
+		if (startDate || endDate) {
+			query.createdAt = {};
+			if (startDate) {
+				query.createdAt.$gte = moment(parseInt(startDate)).toDate();
+			}
+			if (endDate) {
+				query.createdAt.$lte = moment(parseInt(endDate)).toDate();
+			}
+		}
+
+		// Execute query with pagination
 		const tickets = await MegaMillionTicket.find(query)
 			.populate('user', 'name email phone')
 			.populate({
@@ -25,15 +46,41 @@ export const list = async (_, user) => {
 					select: 'name code',
 				},
 			})
-			.sort({ createdAt: -1 })
+			.limit(parseInt(limit))
+			.skip(parseInt(offset))
+			.sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
 			.exec();
+
+		// Get total count for pagination
+		const total = await MegaMillionTicket.countDocuments(query);
+
+		// Calculate summary statistics
+		const totalAmountPlayed = tickets.reduce(
+			(sum, ticket) => sum + (ticket.amountPlayed || 0),
+			0
+		);
+		const totalAmountWon = tickets.reduce(
+			(sum, ticket) => sum + (ticket.amountWon || 0),
+			0
+		);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				tickets,
-				total: tickets.length,
+				pagination: {
+					total,
+					offset: parseInt(offset),
+					limit: parseInt(limit),
+					hasMore: parseInt(offset) + tickets.length < total,
+				},
+				summary: {
+					totalTickets: tickets.length,
+					totalAmountPlayed,
+					totalAmountWon,
+					netResult: totalAmountWon - totalAmountPlayed,
+				},
 			},
 		};
 	} catch (error) {

@@ -15,7 +15,7 @@ import {
 const router = new Router();
 
 router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await list(req.params, req.user))
+	done(res, await list(req.query, req.user))
 );
 
 router.put(
