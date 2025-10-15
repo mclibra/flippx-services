@@ -1647,119 +1647,112 @@ export const createLotteriesForState = async state => {
 		const { externalLotteries, megaMillions } = state;
 		let lotteriesCreated = 0;
 
-		// Create BORLETTE lotteries based on flexible configuration
-		if (externalLotteries && externalLotteries.length > 0) {
-			// Check if there are any non-completed lotteries for this state
-			// If any exist, wait for them to complete before creating new ones
-			const existingActiveLottery = await Lottery.findOne({
-				state: state._id,
-				type: 'BORLETTE',
-				status: { $ne: 'COMPLETED' },
-			});
+		const existingActiveLottery = await Lottery.findOne({
+			state: state._id,
+			type: 'BORLETTE',
+			status: { $ne: 'COMPLETED' },
+		});
 
-			if (existingActiveLottery) {
-				console.log(
-					`State ${state.name} has existing non-completed lottery (${existingActiveLottery.metadata}, status: ${existingActiveLottery.status}). Waiting for completion before creating new lotteries.`
-				);
-				return {
-					success: true,
-					message: `State ${state.name} has existing non-completed lotteries. Will create new lotteries in next cron run.`,
-				};
-			}
+		if (!existingActiveLottery) {
+			// Create BORLETTE lotteries based on flexible configuration
+			if (externalLotteries && externalLotteries.length > 0) {
+				// Check if there are any non-completed lotteries for this state
+				// If any exist, wait for them to complete before creating new ones
 
-			// All lotteries are completed, create new ones for all configs
-			for (const lotteryConfig of externalLotteries) {
-				// Skip if missing required game IDs
-				if (!lotteryConfig.pick4GameId) {
-					console.log(
-						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} missing pick4GameId`
-					);
-					continue;
-				}
-
-				// Get the next valid draw date for this specific lottery config
-				const nextDrawDate = getNextDrawDate(lotteryConfig);
-				const nextDrawDayName = nextDrawDate.format('dddd');
-
-				// Double check that this day is valid for draws
-				if (!lotteryConfig.drawDays?.[nextDrawDayName]) {
-					console.log(
-						`BORLETTE lottery ${lotteryConfig.name} for ${state.name} does not run on ${nextDrawDayName}`
-					);
-					continue;
-				}
-
-				// Calculate draw time for next draw date
-				const drawTime = moment.tz(
-					`${nextDrawDate.format('YYYY-MM-DD')} ${
-						lotteryConfig.drawTime
-					}`,
-					lotteryConfig.drawTimezone
-				);
-
-				// Check for unique index constraint to prevent duplicates
-				// Only check if pick3GameId exists
-				let duplicateCheck = null;
-				if (lotteryConfig.pick3GameId) {
-					duplicateCheck = await Lottery.findOne({
-						state: state._id,
-						'externalGameIds.pick3': lotteryConfig.pick3GameId,
-						scheduledTime: drawTime.valueOf(),
-					});
-				}
-
-				if (!duplicateCheck) {
-					// Create a new lottery
-					const externalGameIds = {
-						pick4: lotteryConfig.pick4GameId,
-						pick3: lotteryConfig.pick3GameId || null,
-					};
-
-					try {
-						await Lottery.create({
-							title: lotteryConfig.name,
-							type: 'BORLETTE',
-							scheduledTime: drawTime.valueOf(),
-							metadata: lotteryConfig.name.toLowerCase(),
-							state: state._id,
-							status: 'SCHEDULED',
-							createdBy: null,
-							externalGameIds,
-							// Store whether this lottery supports marriage numbers
-							additionalData: {
-								hasMarriageNumbers:
-									lotteryConfig.hasMarriageNumbers,
-							},
-						});
-
+				// All lotteries are completed, create new ones for all configs
+				for (const lotteryConfig of externalLotteries) {
+					// Skip if missing required game IDs
+					if (!lotteryConfig.pick4GameId) {
 						console.log(
-							`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
+							`BORLETTE lottery ${lotteryConfig.name} for ${state.name} missing pick4GameId`
 						);
-						lotteriesCreated++;
-					} catch (createError) {
-						if (createError.code === 11000) {
-							console.log(
-								`Duplicate lottery creation prevented for ${state.name} ${lotteryConfig.name}:`,
-								createError.keyValue
-							);
-						} else {
-							console.error(
-								`Error creating lottery for ${state.name} ${lotteryConfig.name}:`,
-								createError
-							);
-							throw createError;
-						}
+						continue;
 					}
-				} else {
-					console.log(
-						`BORLETTE lottery for ${state.name} ${
-							lotteryConfig.name
-						} would violate unique constraint (state: ${
-							state._id
-						}, pick3: ${
-							lotteryConfig.pick3GameId
-						}, time: ${drawTime.valueOf()})`
+
+					// Get the next valid draw date for this specific lottery config
+					const nextDrawDate = getNextDrawDate(lotteryConfig);
+					const nextDrawDayName = nextDrawDate.format('dddd');
+
+					// Double check that this day is valid for draws
+					if (!lotteryConfig.drawDays?.[nextDrawDayName]) {
+						console.log(
+							`BORLETTE lottery ${lotteryConfig.name} for ${state.name} does not run on ${nextDrawDayName}`
+						);
+						continue;
+					}
+
+					// Calculate draw time for next draw date
+					const drawTime = moment.tz(
+						`${nextDrawDate.format('YYYY-MM-DD')} ${
+							lotteryConfig.drawTime
+						}`,
+						lotteryConfig.drawTimezone
 					);
+
+					// Check for unique index constraint to prevent duplicates
+					// Only check if pick3GameId exists
+					let duplicateCheck = null;
+					if (lotteryConfig.pick3GameId) {
+						duplicateCheck = await Lottery.findOne({
+							state: state._id,
+							'externalGameIds.pick3': lotteryConfig.pick3GameId,
+							scheduledTime: drawTime.valueOf(),
+						});
+					}
+
+					if (!duplicateCheck) {
+						// Create a new lottery
+						const externalGameIds = {
+							pick4: lotteryConfig.pick4GameId,
+							pick3: lotteryConfig.pick3GameId || null,
+						};
+
+						try {
+							await Lottery.create({
+								title: lotteryConfig.name,
+								type: 'BORLETTE',
+								scheduledTime: drawTime.valueOf(),
+								metadata: lotteryConfig.name.toLowerCase(),
+								state: state._id,
+								status: 'SCHEDULED',
+								createdBy: null,
+								externalGameIds,
+								// Store whether this lottery supports marriage numbers
+								additionalData: {
+									hasMarriageNumbers:
+										lotteryConfig.hasMarriageNumbers,
+								},
+							});
+
+							console.log(
+								`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
+							);
+							lotteriesCreated++;
+						} catch (createError) {
+							if (createError.code === 11000) {
+								console.log(
+									`Duplicate lottery creation prevented for ${state.name} ${lotteryConfig.name}:`,
+									createError.keyValue
+								);
+							} else {
+								console.error(
+									`Error creating lottery for ${state.name} ${lotteryConfig.name}:`,
+									createError
+								);
+								throw createError;
+							}
+						}
+					} else {
+						console.log(
+							`BORLETTE lottery for ${state.name} ${
+								lotteryConfig.name
+							} would violate unique constraint (state: ${
+								state._id
+							}, pick3: ${
+								lotteryConfig.pick3GameId
+							}, time: ${drawTime.valueOf()})`
+						);
+					}
 				}
 			}
 		}
