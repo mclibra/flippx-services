@@ -7,7 +7,6 @@ import {
 	ticketByLottery,
 	listAllByLottery,
 	listByState,
-	create,
 	createMultiState,
 	cancelTicket,
 	cashoutTicket,

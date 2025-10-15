@@ -54,6 +54,17 @@ export const show = async ({ id }, user) => {
 	try {
 		const { _id: userId, role } = user;
 
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		// Build query with ownership check for non-admins
 		let query = { _id: id };
 		if (role !== 'ADMIN') {
@@ -1568,6 +1579,17 @@ export const createMultiState = async (body, user) => {
 
 export const cancelTicket = async ({ id }, user) => {
 	try {
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		const criteria = {
 			_id: id,
 		};
@@ -1635,6 +1657,17 @@ export const cancelTicket = async ({ id }, user) => {
 
 export const cashoutTicket = async ({ id }, user) => {
 	try {
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		if (!['ADMIN', 'DEALER'].includes(user.role)) {
 			throw new Error('You are not authorized to cashout ticket.');
 		}
@@ -1747,6 +1780,17 @@ export const cashoutTicket = async ({ id }, user) => {
 
 export const commissionSummary = async ({ id }, user) => {
 	try {
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		// Get the ticket with full details
 		const ticket = await BorletteTicket.findById(id)
 			.populate('user', 'name email phone role')

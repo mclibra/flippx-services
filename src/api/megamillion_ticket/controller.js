@@ -7,6 +7,181 @@ import { LoyaltyService } from '../loyalty/service';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
+export const list = async (_, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		let query = {};
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const tickets = await MegaMillionTicket.find(query)
+			.populate('user', 'name email phone')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code',
+				},
+			})
+			.sort({ createdAt: -1 })
+			.exec();
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				tickets,
+				total: tickets.length,
+			},
+		};
+	} catch (error) {
+		console.error('Error in list method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error,
+			},
+		};
+	}
+};
+
+export const show = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
+		// Build query with ownership check for non-admins
+		let query = { _id: id };
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const ticket = await MegaMillionTicket.findOne(query)
+			.populate('user', 'name email phone role')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code',
+				},
+			})
+			.exec();
+
+		if (!ticket) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Ticket not found or access denied.',
+				},
+			};
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				ticket,
+			},
+		};
+	} catch (error) {
+		console.error('Error in show method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error,
+			},
+		};
+	}
+};
+
+export const ticketByLottery = async ({ id }, user) => {
+	try {
+		const { _id: userId, role } = user;
+
+		// Build query - users can only see their own tickets for the lottery
+		let query = { lottery: id };
+		if (role !== 'ADMIN') {
+			query.user = userId;
+		}
+
+		const tickets = await MegaMillionTicket.find(query)
+			.populate('user', 'name email phone')
+			.populate({
+				path: 'lottery',
+				populate: {
+					path: 'state',
+					select: 'name code',
+				},
+			})
+			.sort({ purchasedOn: -1 })
+			.exec();
+
+		// Get lottery information
+		const lottery = await Lottery.findById(id)
+			.populate('state', 'name code')
+			.exec();
+
+		if (!lottery) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Lottery not found.',
+				},
+			};
+		}
+
+		// Calculate summary stats
+		const totalAmountPlayed = tickets.reduce(
+			(sum, ticket) => sum + ticket.amountPlayed,
+			0
+		);
+		const totalAmountWon = tickets.reduce(
+			(sum, ticket) => sum + (ticket.amountWon || 0),
+			0
+		);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				lottery,
+				tickets,
+				summary: {
+					totalTickets: tickets.length,
+					totalAmountPlayed,
+					totalAmountWon,
+					netResult: totalAmountWon - totalAmountPlayed,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Error in ticketByLottery method:', error);
+		return {
+			status: 409,
+			entity: {
+				success: false,
+				error: error.errors || error.message || error,
+			},
+		};
+	}
+};
+
 export const listAllByLottery = async (
 	{ id },
 	{
@@ -292,6 +467,17 @@ export const update = async ({ id }, body) => {
 
 export const cancelTicket = async ({ id }, user) => {
 	try {
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		const criteria = {
 			_id: id,
 		};
@@ -350,6 +536,17 @@ export const cancelTicket = async ({ id }, user) => {
 
 export const cashoutTicket = async ({ id }, user) => {
 	try {
+		// Validate that id is numeric
+		if (isNaN(id) || id === null || id === undefined) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid ticket ID. ID must be numeric.',
+				},
+			};
+		}
+
 		if (!['ADMIN', 'DEALER'].includes(user.role)) {
 			throw 'You are not authorized to cashout ticket.';
 		}
@@ -481,6 +678,7 @@ export const commissionSummary = async ({ id }, user) => {
 		if (!['ADMIN'].includes(user.role)) {
 			throw 'You are not authorized to view commission data.';
 		}
+		// Note: id here is a user ID, not a ticket ID, so no numeric validation needed
 		const megaMillionTickets = await MegaMillionTicket.find({
 			user: id,
 		}).populate('user');

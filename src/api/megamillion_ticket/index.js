@@ -36,14 +36,14 @@ router.get(
 	'/lottery/:id',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await ticketByLottery(req.params, req.query))
+	async (req, res) => done(res, await ticketByLottery(req.params, req.user))
 );
 
 router.get(
 	'/lottery/:id/list',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await listAllByLottery(req.params, req.user))
+	async (req, res) => done(res, await listAllByLottery(req.params, req.query))
 );
 
 router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
