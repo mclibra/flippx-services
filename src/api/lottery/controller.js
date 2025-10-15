@@ -10,22 +10,31 @@ import PayoutService from '../../services/payout/payoutService';
 const getNextDrawDate = lotteryConfig => {
 	// Start checking from today to handle lotteries published near midnight
 	// This prevents skipping today's lottery when published at 11:55 PM and runs at 00:00 AM
-	const today = moment();
+	const now = moment();
 
 	// Find the next valid draw day starting from today
-	let checkDate = today.clone();
+	let checkDate = now.clone().startOf('day');
 	const maxDaysToCheck = 7; // Don't check more than a week ahead
 
 	for (let i = 0; i < maxDaysToCheck; i++) {
 		const dayName = checkDate.format('dddd');
 		if (lotteryConfig.drawDays?.[dayName]) {
-			return checkDate;
+			// Calculate the actual draw time for this date
+			const drawDateTime = moment.tz(
+				`${checkDate.format('YYYY-MM-DD')} ${lotteryConfig.drawTime}`,
+				lotteryConfig.drawTimezone
+			);
+
+			// Only return this date if the draw time is in the future
+			if (drawDateTime.isAfter(now)) {
+				return checkDate;
+			}
 		}
 		checkDate.add(1, 'day');
 	}
 
-	// If no valid draw day found, return today as fallback
-	return today;
+	// If no valid draw day found, return tomorrow as fallback
+	return now.clone().add(1, 'day').startOf('day');
 };
 
 export const list = async ({
@@ -1644,6 +1653,7 @@ export const remove = async ({ id }) => {
 
 export const createLotteriesForState = async state => {
 	try {
+		console.log(`Creating lotteries for state ${state.name}`);
 		const { externalLotteries, megaMillions } = state;
 		let lotteriesCreated = 0;
 
