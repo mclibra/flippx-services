@@ -22,9 +22,9 @@ class LotteryWorker extends BaseWorker {
 			this.checkAndPublishResults.bind(this)
 		);
 
-		// Analyze lottery for each state and create missing lotteries - every hour
+		// Analyze lottery for each state and create missing lotteries - every 10 minutes
 		this.createSafeCronJob(
-			'0 * * * *',
+			'*/10 * * * *',
 			'analyze-and-create-missing-lotteries',
 			this.analyzeAndCreateMissingLotteries.bind(this)
 		);
@@ -36,6 +36,7 @@ class LotteryWorker extends BaseWorker {
 	 */
 	async checkAndPublishResults() {
 		try {
+			console.log('Checking and publishing lottery results');
 			const now = moment();
 			const lotteries = await Lottery.find({
 				status: {
@@ -47,10 +48,12 @@ class LotteryWorker extends BaseWorker {
 			});
 
 			if (lotteries.length > 0) {
+				console.log(`Found ${lotteries.length} lotteries to publish`);
 				for (const lottery of lotteries) {
 					lottery.status = 'WAITING';
 					await lottery.save();
 					await this.fetchAndPublishResults(lottery);
+					console.log(`Published lottery ${lottery.id}`);
 				}
 			}
 		} catch (error) {
