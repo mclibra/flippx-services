@@ -1,9 +1,9 @@
+import moment from 'moment';
 import {
 	initializeLoyalty,
 	awardXP,
 	recordPlayActivity,
 	recordDeposit,
-	checkIDVerification,
 	evaluateUserTier,
 	getUserLoyalty,
 	getUserXPHistory,
@@ -12,7 +12,6 @@ import {
 	recordWithdrawalUsage,
 	processReferralQualification,
 	manualTierUpgrade,
-	getWithdrawalTime,
 	recordDailyLogin,
 	updateSessionTime,
 	recordWinActivity,
@@ -20,6 +19,7 @@ import {
 	processReferralCommission,
 	processNoWinCashback,
 } from './controller';
+import { LoyaltyProfile } from './model';
 import TierConfigService from '../../services/tier/tierConfigService';
 
 // Export all functions wrapped with consistent error handling
@@ -45,7 +45,6 @@ export const LoyaltyService = {
 				message: 'Tier requirements initialized from constants',
 			};
 		} catch (error) {
-			console.error('Error initializing tier requirements:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -55,7 +54,6 @@ export const LoyaltyService = {
 		try {
 			return await TierConfigService.getTierRequirements();
 		} catch (error) {
-			console.error('Error getting tier requirements:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -72,7 +70,6 @@ export const LoyaltyService = {
 			}
 			return { success: true, config };
 		} catch (error) {
-			console.error('Error getting tier config:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -663,26 +660,6 @@ export const LoyaltyService = {
 			}
 		} catch (error) {
 			console.error('Error upgrading tier:', error);
-			return { success: false, error: error.message };
-		}
-	},
-
-	// Cleanup deposit data
-	cleanupDepositData: async () => {
-		try {
-			const result = await cleanupDepositData();
-			if (result.status === 200) {
-				return result.entity;
-			} else {
-				return {
-					success: false,
-					error:
-						result.entity?.error ||
-						'Failed to cleanup deposit data',
-				};
-			}
-		} catch (error) {
-			console.error('Error cleaning up deposit data:', error);
 			return { success: false, error: error.message };
 		}
 	},

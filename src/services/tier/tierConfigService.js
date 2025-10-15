@@ -15,59 +15,27 @@ class TierConfigService {
 	// Get tier requirements from database with fallback to constants
 	async getTierRequirements() {
 		try {
-			console.log(`[TIER-SERVICE] Getting tier requirements...`);
-			// Check cache first
 			if (
 				this.cachedTiers &&
 				this.cacheExpiry &&
 				Date.now() < this.cacheExpiry
 			) {
-				console.log(
-					`[TIER-SERVICE] Returning cached tiers:`,
-					Object.keys(this.cachedTiers || {})
-				);
 				return this.cachedTiers;
 			}
 
 			// Fetch from database
-			console.log(`[TIER-SERVICE] Fetching from database...`);
 			const dbTiers = await TierRequirements.getAsConstants();
-			console.log(
-				`[TIER-SERVICE] Database tiers:`,
-				dbTiers ? Object.keys(dbTiers) : 'null'
-			);
 
 			if (dbTiers && Object.keys(dbTiers).length > 0) {
-				// Cache the result
-				console.log(
-					`[TIER-SERVICE] Using database tiers, caching result`
-				);
 				this.cachedTiers = dbTiers;
 				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return dbTiers;
 			} else {
-				// Fallback to constants if no DB config found
-				console.warn(
-					'No tier requirements found in database, using fallback constants'
-				);
-				console.log(
-					`[TIER-SERVICE] Using fallback constants:`,
-					Object.keys(FALLBACK_TIERS)
-				);
 				this.cachedTiers = FALLBACK_TIERS;
 				this.cacheExpiry = Date.now() + this.cacheTimeout;
 				return FALLBACK_TIERS;
 			}
-		} catch (error) {
-			console.error(
-				'Error fetching tier requirements from database:',
-				error
-			);
-			// Fallback to constants on error
-			console.log(
-				`[TIER-SERVICE] Error occurred, using fallback constants:`,
-				Object.keys(FALLBACK_TIERS)
-			);
+		} catch {
 			this.cachedTiers = FALLBACK_TIERS;
 			this.cacheExpiry = Date.now() + this.cacheTimeout;
 			return FALLBACK_TIERS;
@@ -98,11 +66,7 @@ class TierConfigService {
 			return Object.keys(downgrades).length > 0
 				? downgrades
 				: FALLBACK_DOWNGRADES;
-		} catch (error) {
-			console.error(
-				'Error fetching tier downgrades from database:',
-				error
-			);
+		} catch {
 			return FALLBACK_DOWNGRADES;
 		}
 	}
@@ -199,16 +163,8 @@ class TierConfigService {
 
 	// Calculate tier progress for display
 	async calculateTierProgress(currentTier, userProgress, userData = null) {
-		console.log(
-			`[TIER-SERVICE] Calculating progress for tier: ${currentTier}`
-		);
 		const allTiers = await this.getTierRequirements();
-		console.log(
-			`[TIER-SERVICE] Available tiers:`,
-			Object.keys(allTiers || {})
-		);
 		const nextTierName = this.getNextTierCaseInsensitive(currentTier);
-		console.log(`[TIER-SERVICE] Next tier: ${nextTierName}`);
 
 		if (!nextTierName) {
 			return {
@@ -225,9 +181,6 @@ class TierConfigService {
 					nextTierName.slice(1).toLowerCase()
 			];
 		if (!nextTierConfig) {
-			console.warn(
-				`[TIER-SERVICE] Next tier configuration not found for: ${nextTierName}`
-			);
 			return {
 				nextTier: null,
 				message: 'Tier configuration not found',
@@ -237,9 +190,6 @@ class TierConfigService {
 
 		const requirements = nextTierConfig.requirements;
 		if (!requirements) {
-			console.warn(
-				`[TIER-SERVICE] No requirements found for tier: ${nextTierName}`
-			);
 			return {
 				nextTier: nextTierName,
 				message: 'Tier requirements not configured',
@@ -412,55 +362,42 @@ class TierConfigService {
 
 	// Initialize default tier requirements if none exist
 	async initializeDefaultTiers(adminUserId) {
-		try {
-			const existingCount = await TierRequirements.countDocuments();
-			if (existingCount === 0) {
-				// Convert current constants to database entries
-				const tierEntries = Object.entries(FALLBACK_TIERS).map(
-					([tier, config]) => ({
-						tier,
-						name: config.name,
-						benefits: {
-							weeklyWithdrawalLimit: config.weeklyWithdrawalLimit,
-							withdrawalTime: config.withdrawalTime,
-							weeklyCashbackPercentage:
-								config.weeklyCashbackPercentage || 0,
-							monthlyCashbackPercentage:
-								config.monthlyCashbackPercentage || 0,
-							referralXP: config.referralXP || 0,
-							noWinCashbackPercentage:
-								config.noWinCashbackPercentage || 0,
-							noWinCashbackDays: config.noWinCashbackDays || 0,
-						},
-						requirements: config.requirements || {},
-						referralCommissions: config.referralCommissions || {
-							borlette: { perPlay: 0, monthlyCap: 0 },
-							roulette: { per100Spins: 0, monthlyCap: 0 },
-							dominoes: { per100Wagered: 0, monthlyCap: 0 },
-						},
-						downgrades: {
-							inactivityDaysMin:
-								FALLBACK_DOWNGRADES[tier]?.min || 30,
-							inactivityDaysMax:
-								FALLBACK_DOWNGRADES[tier]?.max || 60,
-						},
-						createdBy: adminUserId,
-						isActive: true,
-					})
-				);
-
-				await TierRequirements.insertMany(tierEntries);
-				this.clearCache(); // Clear cache after initialization
-				console.log(
-					'Default tier requirements initialized successfully'
-				);
-			}
-		} catch (error) {
-			console.error(
-				'Error initializing default tier requirements:',
-				error
+		const existingCount = await TierRequirements.countDocuments();
+		if (existingCount === 0) {
+			// Convert current constants to database entries
+			const tierEntries = Object.entries(FALLBACK_TIERS).map(
+				([tier, config]) => ({
+					tier,
+					name: config.name,
+					benefits: {
+						weeklyWithdrawalLimit: config.weeklyWithdrawalLimit,
+						withdrawalTime: config.withdrawalTime,
+						weeklyCashbackPercentage:
+							config.weeklyCashbackPercentage || 0,
+						monthlyCashbackPercentage:
+							config.monthlyCashbackPercentage || 0,
+						referralXP: config.referralXP || 0,
+						noWinCashbackPercentage:
+							config.noWinCashbackPercentage || 0,
+						noWinCashbackDays: config.noWinCashbackDays || 0,
+					},
+					requirements: config.requirements || {},
+					referralCommissions: config.referralCommissions || {
+						borlette: { perPlay: 0, monthlyCap: 0 },
+						roulette: { per100Spins: 0, monthlyCap: 0 },
+						dominoes: { per100Wagered: 0, monthlyCap: 0 },
+					},
+					downgrades: {
+						inactivityDaysMin: FALLBACK_DOWNGRADES[tier]?.min || 30,
+						inactivityDaysMax: FALLBACK_DOWNGRADES[tier]?.max || 60,
+					},
+					createdBy: adminUserId,
+					isActive: true,
+				})
 			);
-			throw error;
+
+			await TierRequirements.insertMany(tierEntries);
+			this.clearCache(); // Clear cache after initialization
 		}
 	}
 }

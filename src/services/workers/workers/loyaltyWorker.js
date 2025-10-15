@@ -49,13 +49,6 @@ class LoyaltyWorker extends BaseWorker {
 			this.updateNoWinTracking.bind(this)
 		);
 
-		// Cleanup deposit data - Run daily at 4 AM
-		this.createSafeCronJob(
-			'0 4 * * *',
-			'cleanup-deposit-data',
-			this.cleanupDepositDataJob.bind(this)
-		);
-
 		// Evaluate all user tiers - Run daily at 5 AM
 		this.createSafeCronJob(
 			'0 5 * * *',
@@ -246,18 +239,6 @@ class LoyaltyWorker extends BaseWorker {
 			}
 		} catch (error) {
 			this.logError('Error updating no-win tracking:', error);
-		}
-	}
-
-	/**
-	 * Cleanup deposit data job
-	 * Original: cron.schedule('0 4 * * *', ...)
-	 */
-	async cleanupDepositDataJob() {
-		try {
-			await LoyaltyService.cleanupDepositData();
-		} catch (error) {
-			this.logError('Error in deposit data cleanup job:', error);
 		}
 	}
 

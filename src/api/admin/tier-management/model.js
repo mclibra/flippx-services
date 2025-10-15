@@ -214,14 +214,8 @@ TierRequirementsSchema.statics.getAsConstants = async function () {
 				referralCommissions: tier.referralCommissions,
 			};
 		});
-
-		console.log(
-			`[TIER-MODEL] Found ${Object.keys(constants).length} active tiers:`,
-			Object.keys(constants)
-		);
 		return constants;
-	} catch (error) {
-		console.error('[TIER-MODEL] Error getting tier constants:', error);
+	} catch {
 		return {};
 	}
 };
