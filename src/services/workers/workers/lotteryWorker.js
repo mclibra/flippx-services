@@ -38,15 +38,17 @@ class LotteryWorker extends BaseWorker {
 		try {
 			console.log('Checking and publishing lottery results');
 			const now = moment();
-			const lotteries = await Lottery.find({
+			const query = {
 				status: {
 					$in: ['SCHEDULED', 'ERROR', 'WAITING'],
 				},
 				scheduledTime: {
 					$lt: now.subtract(15, 'minutes').valueOf(),
 				},
-			});
-
+			};
+			console.log('Query:', query);
+			const lotteries = await Lottery.find(query);
+			console.log('Lotteries:', lotteries);
 			if (lotteries.length > 0) {
 				console.log(`Found ${lotteries.length} lotteries to publish`);
 				for (const lottery of lotteries) {
