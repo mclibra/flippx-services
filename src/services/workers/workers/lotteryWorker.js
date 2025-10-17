@@ -47,15 +47,27 @@ class LotteryWorker extends BaseWorker {
 				},
 			};
 			console.log('Query:', query);
-			const lotteries = await Lottery.find(query);
-			console.log('Lotteries:', lotteries);
+			const lotteries = await Lottery.find(query).limit(100).lean(); // Added limit and lean for memory efficiency
+			console.log('Lotteries:', lotteries.length);
 			if (lotteries.length > 0) {
 				console.log(`Found ${lotteries.length} lotteries to publish`);
-				for (const lottery of lotteries) {
-					lottery.status = 'WAITING';
-					await lottery.save();
-					await this.fetchAndPublishResults(lottery);
-					console.log(`Published lottery ${lottery.id}`);
+				for (const lotteryData of lotteries) {
+					try {
+						// Fetch fresh document for update
+						const lottery = await Lottery.findById(lotteryData._id);
+						if (!lottery) continue;
+
+						lottery.status = 'WAITING';
+						await lottery.save();
+						await this.fetchAndPublishResults(lottery);
+						console.log(`Published lottery ${lottery.id}`);
+					} catch (lotteryError) {
+						this.logError(
+							`Error processing lottery ${lotteryData._id}:`,
+							lotteryError
+						);
+						// Continue with next lottery instead of failing entire batch
+					}
 				}
 			}
 		} catch (error) {
@@ -70,8 +82,10 @@ class LotteryWorker extends BaseWorker {
 	async analyzeAndCreateMissingLotteries() {
 		try {
 			console.log('Analyzing and creating missing lotteries');
-			// Get all active states
-			const activeStates = await State.find({ isActive: true });
+			// Get all active states (use lean() for memory efficiency)
+			const activeStates = await State.find({ isActive: true })
+				.select('name code externalLotteries megaMillions')
+				.lean();
 
 			if (activeStates.length === 0) {
 				console.log('No active states found');
@@ -331,9 +345,6 @@ class LotteryWorker extends BaseWorker {
 		}
 	}
 }
-
-// Start the worker
-new LotteryWorker();
 
 // Export for testing purposes
 export default LotteryWorker;

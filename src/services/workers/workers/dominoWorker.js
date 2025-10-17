@@ -89,7 +89,7 @@ class DominoWorker extends BaseWorker {
 	 */
 	async fillVirtualRoomsWithBots() {
 		try {
-			const gameConfig = await DominoGameConfig.findOne();
+			const gameConfig = await DominoGameConfig.findOne().lean();
 			if (!gameConfig) {
 				return;
 			}
@@ -103,7 +103,7 @@ class DominoWorker extends BaseWorker {
 					$lte: maxWaitTime,
 				},
 				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
-			});
+			}).limit(10); // Limit rooms processed per cycle
 
 			for (const room of virtualRoomsNeedingBots) {
 				try {
@@ -134,17 +134,19 @@ class DominoWorker extends BaseWorker {
 	 */
 	async handleHumanTimeouts() {
 		try {
-			const config = await DominoGameConfig.findOne();
+			const config = await DominoGameConfig.findOne().lean();
 			const timeoutSeconds = config?.turnTimeLimit || 30;
 			const timeoutThreshold = new Date(
 				Date.now() - timeoutSeconds * 1000
 			);
 
-			// Find games where human players have timed out
+			// Find games where human players have timed out (limit for memory efficiency)
 			const timedOutGames = await DominoGame.find({
 				gameState: 'ACTIVE',
 				turnStartTime: { $lt: timeoutThreshold },
-			}).populate('room');
+			})
+				.limit(50)
+				.populate('room');
 
 			for (const game of timedOutGames) {
 				try {
@@ -190,14 +192,16 @@ class DominoWorker extends BaseWorker {
 	async processImmediateBotTurns() {
 		try {
 			// Find active games where it's a bot's turn (within 2 seconds)
-			const timeoutThreshold = new Date(Date.now() - 2 * 1000); // 5 seconds ago
+			const timeoutThreshold = new Date(Date.now() - 2 * 1000); // 2 seconds ago
 
 			const botTurnGames = await DominoGame.find({
 				gameState: 'ACTIVE',
 				turnStartTime: { $lt: timeoutThreshold },
 				'players.playerType': 'COMPUTER',
 				_id: { $nin: Array.from(this.processingGames) },
-			}).populate('room');
+			})
+				.limit(20) // Process max 20 bot turns per cycle
+				.populate('room');
 
 			for (const game of botTurnGames) {
 				try {

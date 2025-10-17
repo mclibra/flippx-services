@@ -47,18 +47,54 @@ class BaseWorker {
 	 */
 	async start() {
 		try {
-		// Connect to database
-		await sharedDatabaseService.connect();
+			// Connect to database
+			await sharedDatabaseService.connect();
 
-		// Initialize cron jobs
-		await this.initializeCronJobs();
+			// Initialize cron jobs
+			await this.initializeCronJobs();
 
-		// Send ready message to parent
-		this.sendMessage('ready', { name: this.name });
+			// Setup memory monitoring (every 5 minutes)
+			this.setupMemoryMonitoring();
+
+			// Send ready message to parent
+			this.sendMessage('ready', { name: this.name });
 		} catch (error) {
 			this.logError('Failed to start worker:', error);
 			this.gracefulExit(1);
 		}
+	}
+
+	/**
+	 * Setup memory monitoring to detect leaks early
+	 */
+	setupMemoryMonitoring() {
+		setInterval(() => {
+			const memUsage = process.memoryUsage();
+			const memoryMB = {
+				rss: Math.round(memUsage.rss / 1024 / 1024),
+				heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+				heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+				external: Math.round(memUsage.external / 1024 / 1024),
+			};
+
+			// Log memory usage
+			this.log(
+				`Memory: RSS=${memoryMB.rss}MB, Heap=${memoryMB.heapUsed}/${memoryMB.heapTotal}MB`
+			);
+
+			// Alert if memory usage is too high (>400MB heap for worker process)
+			if (memoryMB.heapUsed > 400) {
+				this.logError(
+					`⚠️  HIGH MEMORY USAGE: ${memoryMB.heapUsed}MB heap used. Consider investigating memory leaks.`
+				);
+
+				// Force garbage collection if available (requires --expose-gc flag)
+				if (global.gc) {
+					this.log('Running garbage collection...');
+					global.gc();
+				}
+			}
+		}, 300000); // Every 5 minutes
 	}
 
 	/**
@@ -159,22 +195,77 @@ class BaseWorker {
 	}
 
 	/**
-	 * Safe cron job execution wrapper
+	 * Safe cron job execution wrapper with enhanced error recovery
 	 */
 	async executeCronJob(jobName, jobFunction) {
 		if (this.isShuttingDown) {
 			return;
 		}
 
-		try {
-			// Ensure database connection
-			await sharedDatabaseService.ensureConnection();
+		const maxRetries = 3;
+		let lastError = null;
 
-			// Execute the cron job
-			await jobFunction();
-		} catch (error) {
-			this.logError(`Error in cron job ${jobName}:`, error);
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				// Ensure database connection
+				await sharedDatabaseService.ensureConnection();
+
+				// Execute the cron job
+				await jobFunction();
+
+				// Success - clear any previous errors
+				return;
+			} catch (error) {
+				lastError = error;
+
+				// Check if it's a database connection error
+				const isDbError =
+					error.name === 'MongoNetworkError' ||
+					error.name === 'MongoTimeoutError' ||
+					error.message?.includes('connection') ||
+					error.message?.includes('timeout');
+
+				if (isDbError && attempt < maxRetries) {
+					this.logError(
+						`Database error in cron job ${jobName} (attempt ${attempt}/${maxRetries}), retrying...`,
+						error
+					);
+
+					// Wait before retrying (exponential backoff)
+					await this.delay(1000 * attempt);
+
+					// Force reconnection
+					try {
+						await sharedDatabaseService.disconnect();
+						await sharedDatabaseService.connect();
+					} catch (reconnectError) {
+						this.logError(
+							'Failed to reconnect during retry:',
+							reconnectError
+						);
+					}
+				} else {
+					// Non-DB error or max retries reached
+					this.logError(`Error in cron job ${jobName}:`, error);
+					break;
+				}
+			}
 		}
+
+		// If we got here with an error after all retries, log it
+		if (lastError) {
+			this.logError(
+				`Cron job ${jobName} failed after ${maxRetries} attempts:`,
+				lastError
+			);
+		}
+	}
+
+	/**
+	 * Utility delay function
+	 */
+	delay(ms) {
+		return new Promise(resolve => setTimeout(resolve, ms));
 	}
 
 	/**

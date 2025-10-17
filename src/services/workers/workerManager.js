@@ -7,16 +7,17 @@ class WorkerManager {
 		this.workers = new Map();
 		this.isShuttingDown = false;
 		this.restartAttempts = new Map();
-		this.maxRestartAttempts = 5;
-		this.baseRestartDelay = 1000;
-		this.maxRestartDelay = 30000;
+		this.maxRestartAttempts = 50; // Increased from 5 to prevent permanent worker death
+		this.baseRestartDelay = 2000; // Increased initial delay
+		this.maxRestartDelay = 60000; // Increased max delay to 1 minute
+		this.consecutiveFailureWindow = 300000; // 5 minutes - reset count after this period
+		this.lastRestartTime = new Map();
 	}
 
 	/**
 	 * Initialize and start all worker processes
 	 */
 	async start() {
-
 		const workerConfigs = [
 			{
 				name: 'lottery-worker',
@@ -42,7 +43,6 @@ class WorkerManager {
 
 		// Setup graceful shutdown handlers
 		this.setupShutdownHandlers();
-
 	}
 
 	/**
@@ -50,7 +50,6 @@ class WorkerManager {
 	 */
 	async startWorker(config) {
 		try {
-
 			const worker = fork(config.script, [], {
 				silent: false, // Allow direct stdout/stderr for centralized logging
 				env: process.env,
@@ -66,7 +65,6 @@ class WorkerManager {
 				startTime: Date.now(),
 				restarts: this.restartAttempts.get(config.name) || 0,
 			});
-
 		} catch (error) {
 			console.error(`❌ Failed to start ${config.name}:`, error);
 			throw error;
@@ -155,10 +153,24 @@ class WorkerManager {
 	}
 
 	/**
-	 * Handle worker restart with exponential backoff
+	 * Handle worker restart with exponential backoff and smart reset
 	 */
 	async handleWorkerRestart(config) {
 		if (this.isShuttingDown) return;
+
+		const now = Date.now();
+		const lastRestart = this.lastRestartTime.get(config.name) || 0;
+		const timeSinceLastRestart = now - lastRestart;
+
+		// Reset restart counter if enough time has passed since last failure
+		if (timeSinceLastRestart > this.consecutiveFailureWindow) {
+			console.log(
+				`🔄 Resetting restart counter for ${config.name} (${Math.round(
+					timeSinceLastRestart / 1000
+				)}s since last failure)`
+			);
+			this.restartAttempts.set(config.name, 0);
+		}
 
 		const currentAttempts = this.restartAttempts.get(config.name) || 0;
 
@@ -169,23 +181,27 @@ class WorkerManager {
 			console.error(
 				`❌ ${config.name} will not be restarted automatically`
 			);
+			console.error(
+				`💡 Consider checking logs and restarting the application`
+			);
 			return;
 		}
 
 		// Calculate exponential backoff delay
 		const delay = Math.min(
-			this.baseRestartDelay * Math.pow(2, currentAttempts),
+			this.baseRestartDelay * Math.pow(2, Math.min(currentAttempts, 10)),
 			this.maxRestartDelay
 		);
 
 		console.log(
-			`🔄 Restarting ${config.name} in ${delay}ms (attempt ${
-				currentAttempts + 1
-			}/${this.maxRestartAttempts})`
+			`🔄 Restarting ${config.name} in ${Math.round(
+				delay / 1000
+			)}s (attempt ${currentAttempts + 1}/${this.maxRestartAttempts})`
 		);
 
-		// Increment restart attempts
+		// Increment restart attempts and update last restart time
 		this.restartAttempts.set(config.name, currentAttempts + 1);
+		this.lastRestartTime.set(config.name, now);
 
 		// Remove old worker reference
 		this.workers.delete(config.name);
@@ -195,10 +211,17 @@ class WorkerManager {
 			try {
 				await this.startWorker(config);
 
-				// Reset restart attempts on successful start
+				// Reset restart attempts on successful start after stability period
 				setTimeout(() => {
-					this.restartAttempts.set(config.name, 0);
-				}, 60000); // Reset after 1 minute of successful operation
+					const currentAttempts =
+						this.restartAttempts.get(config.name) || 0;
+					if (currentAttempts > 0) {
+						console.log(
+							`✅ ${config.name} stable for 2 minutes, resetting restart counter`
+						);
+						this.restartAttempts.set(config.name, 0);
+					}
+				}, 120000); // Reset after 2 minutes of successful operation
 			} catch (error) {
 				console.error(`❌ Failed to restart ${config.name}:`, error);
 				this.handleWorkerRestart(config); // Try again

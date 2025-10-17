@@ -406,8 +406,5 @@ class LoyaltyWorker extends BaseWorker {
 	}
 }
 
-// Start the worker
-const loyaltyWorker = new LoyaltyWorker();
-
 // Export for testing purposes
 export default LoyaltyWorker;

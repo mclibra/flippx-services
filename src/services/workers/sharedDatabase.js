@@ -42,11 +42,12 @@ class SharedDatabaseService {
 
 				await mongoose.connect(mongo.uri, {
 					useNewUrlParser: true,
-					useCreateIndex: true,
 					useUnifiedTopology: true,
-					maxPoolSize: 10, // Maintain up to 10 socket connections
-					serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+					maxPoolSize: 5, // Reduced pool size for t2.large instance (was 10)
+					minPoolSize: 2, // Maintain minimum connections
+					serverSelectionTimeoutMS: 10000, // Increased timeout for stability
 					socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+					heartbeatFrequencyMS: 10000, // Check connection health every 10 seconds
 					bufferMaxEntries: 0, // Disable mongoose buffering
 					bufferCommands: false, // Disable mongoose buffering
 				});
@@ -85,6 +86,12 @@ class SharedDatabaseService {
 	 * Setup MongoDB connection event handlers
 	 */
 	setupConnectionHandlers() {
+		// Prevent duplicate event listeners (memory leak prevention)
+		mongoose.connection.removeAllListeners('error');
+		mongoose.connection.removeAllListeners('disconnected');
+		mongoose.connection.removeAllListeners('reconnected');
+		mongoose.connection.removeAllListeners('connected');
+
 		// Connection error handler
 		mongoose.connection.on('error', error => {
 			console.error('❌ MongoDB connection error:', error);
