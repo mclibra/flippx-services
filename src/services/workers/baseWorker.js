@@ -283,19 +283,33 @@ class BaseWorker {
 		// Import cron here to avoid issues
 		const cron = require('node-cron');
 
+		// Track if this job is currently running to prevent overlaps
+		let isRunning = false;
+
 		const cronJob = cron.schedule(
 			schedule,
 			async () => {
-				await this.executeCronJob(jobName, jobFunction);
+				// Prevent overlap - skip if previous execution still running
+				if (isRunning) {
+					this.log(`Skipping ${jobName} - previous execution still running`);
+					return;
+				}
+
+				isRunning = true;
+				try {
+					await this.executeCronJob(jobName, jobFunction);
+				} finally {
+					isRunning = false;
+				}
 			},
 			{
 				scheduled: true,
-				noOverlap: true,
 				...options,
 			}
 		);
 
 		this.registerCronJob(cronJob);
+		this.log(`Cron job registered: ${jobName} with schedule ${schedule}`);
 
 		return cronJob;
 	}
