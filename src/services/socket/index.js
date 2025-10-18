@@ -1,5 +1,6 @@
 import { initializeDominoGameSocket } from './dominoGameSocket';
 import { initializeDominoChatSocket } from './dominoChatSocket';
+import { initializeGlobalChatSocket } from './globalChatSocket';
 import { jwtVerify } from '../jwt';
 
 export const initializeSocket = server => {
@@ -48,6 +49,9 @@ export const initializeSocket = server => {
 
 	// Initialize domino chat namespace
 	initializeDominoChatSocket(io);
+
+	// Initialize global chat namespace
+	initializeGlobalChatSocket(io);
 
 	return io;
 };

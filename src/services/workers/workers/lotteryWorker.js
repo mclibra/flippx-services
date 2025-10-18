@@ -15,16 +15,16 @@ class LotteryWorker extends BaseWorker {
 	 * Initialize all lottery-related cron jobs
 	 */
 	async initializeCronJobs() {
-		// Check and publish lottery results - every 5 minutes
+		// Check and publish lottery results - every 20 minutes
 		this.createSafeCronJob(
-			'*/5 * * * *',
+			'*/20 * * * *',
 			'check-and-publish-results',
 			this.checkAndPublishResults.bind(this)
 		);
 
-		// Analyze lottery for each state and create missing lotteries - every 10 minutes
+		// Analyze lottery for each state and create missing lotteries - every 40 minutes
 		this.createSafeCronJob(
-			'*/10 * * * *',
+			'*/40 * * * *',
 			'analyze-and-create-missing-lotteries',
 			this.analyzeAndCreateMissingLotteries.bind(this)
 		);
