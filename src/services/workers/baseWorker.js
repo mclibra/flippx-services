@@ -1,3 +1,4 @@
+import cron from 'node-cron';
 import sharedDatabaseService from './sharedDatabase';
 
 class BaseWorker {
@@ -32,13 +33,13 @@ class BaseWorker {
 		// Handle uncaught exceptions
 		process.on('uncaughtException', error => {
 			this.logError('Uncaught exception:', error);
-			this.gracefulExit(1);
+			// Continue execution - do not exit
 		});
 
 		// Handle unhandled promise rejections
 		process.on('unhandledRejection', reason => {
 			this.logError('Unhandled promise rejection:', reason);
-			this.gracefulExit(1);
+			// Continue execution - do not exit
 		});
 	}
 
@@ -60,7 +61,7 @@ class BaseWorker {
 			this.sendMessage('ready', { name: this.name });
 		} catch (error) {
 			this.logError('Failed to start worker:', error);
-			this.gracefulExit(1);
+			// Continue execution - do not exit
 		}
 	}
 
@@ -280,26 +281,24 @@ class BaseWorker {
 	 * Create a safe cron job wrapper
 	 */
 	createSafeCronJob(schedule, jobName, jobFunction, options = {}) {
-		// Import cron here to avoid issues
-		const cron = require('node-cron');
-
-		// Track if this job is currently running to prevent overlaps
-		let isRunning = false;
+		let executionCount = 0;
 
 		const cronJob = cron.schedule(
 			schedule,
 			async () => {
-				// Prevent overlap - skip if previous execution still running
-				if (isRunning) {
-					this.log(`Skipping ${jobName} - previous execution still running`);
-					return;
-				}
+				executionCount++;
+				const executionId = executionCount;
 
-				isRunning = true;
+				this.log(`Starting ${jobName} execution #${executionId}`);
+
 				try {
 					await this.executeCronJob(jobName, jobFunction);
-				} finally {
-					isRunning = false;
+					this.log(`Completed ${jobName} execution #${executionId}`);
+				} catch (error) {
+					this.logError(
+						`${jobName} execution #${executionId} failed:`,
+						error
+					);
 				}
 			},
 			{
