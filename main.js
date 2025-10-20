@@ -59,14 +59,19 @@ setImmediate(async () => {
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 
-		// Attempt to shutdown workers gracefully on startup failure
+		// Continue with worker processes even if main startup fails
+		// This ensures cron jobs keep running even if HTTP server has issues
+		console.log('🔄 Starting worker processes despite startup error...');
+
 		try {
-			await workerManager.shutdown();
-		} catch (shutdownError) {
-			console.error('❌ Error during graceful shutdown:', shutdownError);
+			await workerManager.start();
+			console.log('✅ Worker processes started successfully despite main startup failure');
+		} catch (workerError) {
+			console.error('❌ Failed to start workers after main startup failure:', workerError);
 		}
 
-		process.exit(1);
+		// Do not exit - keep the process alive for worker processes
+		console.log('⚠️  Main process continuing to keep worker processes alive');
 	}
 });
 

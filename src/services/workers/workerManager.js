@@ -7,7 +7,7 @@ class WorkerManager {
 		this.workers = new Map();
 		this.isShuttingDown = false;
 		this.restartAttempts = new Map();
-		this.maxRestartAttempts = 50; // Increased from 5 to prevent permanent worker death
+		this.maxRestartAttempts = Infinity; // Never stop trying to restart workers
 		this.baseRestartDelay = 2000; // Increased initial delay
 		this.maxRestartDelay = 60000; // Increased max delay to 1 minute
 		this.consecutiveFailureWindow = 300000; // 5 minutes - reset count after this period
@@ -174,18 +174,8 @@ class WorkerManager {
 
 		const currentAttempts = this.restartAttempts.get(config.name) || 0;
 
-		if (currentAttempts >= this.maxRestartAttempts) {
-			console.error(
-				`❌ Worker ${config.name} exceeded max restart attempts (${this.maxRestartAttempts})`
-			);
-			console.error(
-				`❌ ${config.name} will not be restarted automatically`
-			);
-			console.error(
-				`💡 Consider checking logs and restarting the application`
-			);
-			return;
-		}
+		// Always restart workers - no limit on restart attempts
+		// This ensures lottery workers never permanently stop
 
 		// Calculate exponential backoff delay
 		const delay = Math.min(
