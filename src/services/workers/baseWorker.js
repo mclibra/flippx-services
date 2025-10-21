@@ -288,15 +288,6 @@ class BaseWorker {
 				`✅ Cron job registered: ${jobName} with schedule ${schedule}`
 			);
 
-			// Verify the cron job is scheduled
-			if (cronJob.running) {
-				this.log(`✅ Cron job ${jobName} is running and scheduled`);
-			} else {
-				this.logError(
-					`❌ Cron job ${jobName} is NOT running after registration`
-				);
-			}
-
 			return cronJob;
 		} catch (error) {
 			this.logError(`❌ Failed to create cron job ${jobName}:`, error);
