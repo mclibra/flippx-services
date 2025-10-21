@@ -15,19 +15,41 @@ class LotteryWorker extends BaseWorker {
 	 * Initialize all lottery-related cron jobs
 	 */
 	async initializeCronJobs() {
-		// Check and publish lottery results - every 20 minutes
-		this.createSafeCronJob(
-			'*/20 * * * *',
-			'check-and-publish-results',
-			this.checkAndPublishResults.bind(this)
-		);
+		this.log('Starting lottery worker cron job initialization...');
 
-		// Analyze lottery for each state and create missing lotteries - every 40 minutes
-		this.createSafeCronJob(
-			'*/40 * * * *',
-			'analyze-and-create-missing-lotteries',
-			this.analyzeAndCreateMissingLotteries.bind(this)
-		);
+		try {
+			// Check and publish lottery results - every 20 minutes
+			this.log('Creating check-and-publish-results cron job...');
+			this.createSafeCronJob(
+				'*/20 * * * *',
+				'check-and-publish-results',
+				this.checkAndPublishResults.bind(this)
+			);
+
+			// Analyze lottery for each state and create missing lotteries - every 40 minutes
+			this.log('Creating analyze-and-create-missing-lotteries cron job...');
+			this.createSafeCronJob(
+				'*/40 * * * *',
+				'analyze-and-create-missing-lotteries',
+				this.analyzeAndCreateMissingLotteries.bind(this)
+			);
+
+			// Add a test cron job that runs every minute to verify node-cron is working
+			this.log('Creating test cron job (runs every minute)...');
+			this.createSafeCronJob(
+				'* * * * *',
+				'test-cron-heartbeat',
+				() => {
+					this.log('🔥 TEST CRON JOB EXECUTED - node-cron is working!');
+					return Promise.resolve();
+				}
+			);
+
+			this.log('✅ All lottery cron jobs initialized successfully');
+		} catch (error) {
+			this.logError('❌ Failed to initialize lottery cron jobs:', error);
+			throw error;
+		}
 	}
 
 	/**

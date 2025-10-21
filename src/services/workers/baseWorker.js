@@ -22,8 +22,6 @@ class BaseWorker {
 					await this.shutdown();
 					break;
 				case 'socket-broadcast-response':
-					// Handle socket broadcast responses - these are handled by SocketBroadcastService
-					// No action needed here as the service handles the response
 					break;
 				default:
 					this.log(`Unknown message type: ${message.type}`);
@@ -48,17 +46,25 @@ class BaseWorker {
 	 */
 	async start() {
 		try {
+			this.log(`Starting ${this.name} worker...`);
+
 			// Connect to database
+			this.log('Connecting to database...');
 			await sharedDatabaseService.connect();
+			this.log('Database connected successfully');
 
 			// Initialize cron jobs
+			this.log('Initializing cron jobs...');
 			await this.initializeCronJobs();
+			this.log(`Cron jobs initialized. Active jobs: ${this.activeCronJobs.size}`);
 
 			// Setup memory monitoring (every 5 minutes)
+			this.log('Setting up memory monitoring...');
 			this.setupMemoryMonitoring();
 
 			// Send ready message to parent
 			this.sendMessage('ready', { name: this.name });
+			this.log(`${this.name} worker started successfully`);
 		} catch (error) {
 			this.logError('Failed to start worker:', error);
 			// Continue execution - do not exit
@@ -281,36 +287,50 @@ class BaseWorker {
 	 * Create a safe cron job wrapper
 	 */
 	createSafeCronJob(schedule, jobName, jobFunction, options = {}) {
+		this.log(`Creating cron job: ${jobName} with schedule: ${schedule}`);
+
 		let executionCount = 0;
 
-		const cronJob = cron.schedule(
-			schedule,
-			async () => {
-				executionCount++;
-				const executionId = executionCount;
+		try {
+			const cronJob = cron.schedule(
+				schedule,
+				async () => {
+					executionCount++;
+					const executionId = executionCount;
 
-				this.log(`Starting ${jobName} execution #${executionId}`);
+					this.log(`Starting ${jobName} execution #${executionId}`);
 
-				try {
-					await this.executeCronJob(jobName, jobFunction);
-					this.log(`Completed ${jobName} execution #${executionId}`);
-				} catch (error) {
-					this.logError(
-						`${jobName} execution #${executionId} failed:`,
-						error
-					);
+					try {
+						await this.executeCronJob(jobName, jobFunction);
+						this.log(`Completed ${jobName} execution #${executionId}`);
+					} catch (error) {
+						this.logError(
+							`${jobName} execution #${executionId} failed:`,
+							error
+						);
+					}
+				},
+				{
+					scheduled: true,
+					...options,
 				}
-			},
-			{
-				scheduled: true,
-				...options,
+			);
+
+			this.registerCronJob(cronJob);
+			this.log(`✅ Cron job registered: ${jobName} with schedule ${schedule}`);
+
+			// Verify the cron job is scheduled
+			if (cronJob.running) {
+				this.log(`✅ Cron job ${jobName} is running and scheduled`);
+			} else {
+				this.logError(`❌ Cron job ${jobName} is NOT running after registration`);
 			}
-		);
 
-		this.registerCronJob(cronJob);
-		this.log(`Cron job registered: ${jobName} with schedule ${schedule}`);
-
-		return cronJob;
+			return cronJob;
+		} catch (error) {
+			this.logError(`❌ Failed to create cron job ${jobName}:`, error);
+			throw error;
+		}
 	}
 }
 
