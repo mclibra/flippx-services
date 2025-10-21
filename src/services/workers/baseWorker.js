@@ -60,10 +60,6 @@ class BaseWorker {
 				`Cron jobs initialized. Active jobs: ${this.activeCronJobs.size}`
 			);
 
-			// Setup memory monitoring (every 5 minutes)
-			this.log('Setting up memory monitoring...');
-			this.setupMemoryMonitoring();
-
 			// Send ready message to parent
 			this.sendMessage('ready', { name: this.name });
 			this.log(`${this.name} worker started successfully`);
@@ -71,39 +67,6 @@ class BaseWorker {
 			this.logError('Failed to start worker:', error);
 			// Continue execution - do not exit
 		}
-	}
-
-	/**
-	 * Setup memory monitoring to detect leaks early
-	 */
-	setupMemoryMonitoring() {
-		setInterval(() => {
-			const memUsage = process.memoryUsage();
-			const memoryMB = {
-				rss: Math.round(memUsage.rss / 1024 / 1024),
-				heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-				heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
-				external: Math.round(memUsage.external / 1024 / 1024),
-			};
-
-			// Log memory usage
-			this.log(
-				`Memory: RSS=${memoryMB.rss}MB, Heap=${memoryMB.heapUsed}/${memoryMB.heapTotal}MB`
-			);
-
-			// Alert if memory usage is too high (>400MB heap for worker process)
-			if (memoryMB.heapUsed > 400) {
-				this.logError(
-					`⚠️  HIGH MEMORY USAGE: ${memoryMB.heapUsed}MB heap used. Consider investigating memory leaks.`
-				);
-
-				// Force garbage collection if available (requires --expose-gc flag)
-				if (global.gc) {
-					this.log('Running garbage collection...');
-					global.gc();
-				}
-			}
-		}, 300000); // Every 5 minutes
 	}
 
 	/**
