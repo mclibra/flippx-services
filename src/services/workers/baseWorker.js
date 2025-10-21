@@ -56,7 +56,9 @@ class BaseWorker {
 			// Initialize cron jobs
 			this.log('Initializing cron jobs...');
 			await this.initializeCronJobs();
-			this.log(`Cron jobs initialized. Active jobs: ${this.activeCronJobs.size}`);
+			this.log(
+				`Cron jobs initialized. Active jobs: ${this.activeCronJobs.size}`
+			);
 
 			// Setup memory monitoring (every 5 minutes)
 			this.log('Setting up memory monitoring...');
@@ -302,7 +304,9 @@ class BaseWorker {
 
 					try {
 						await this.executeCronJob(jobName, jobFunction);
-						this.log(`Completed ${jobName} execution #${executionId}`);
+						this.log(
+							`Completed ${jobName} execution #${executionId}`
+						);
 					} catch (error) {
 						this.logError(
 							`${jobName} execution #${executionId} failed:`,
@@ -317,13 +321,17 @@ class BaseWorker {
 			);
 
 			this.registerCronJob(cronJob);
-			this.log(`✅ Cron job registered: ${jobName} with schedule ${schedule}`);
+			this.log(
+				`✅ Cron job registered: ${jobName} with schedule ${schedule}`
+			);
 
 			// Verify the cron job is scheduled
 			if (cronJob.running) {
 				this.log(`✅ Cron job ${jobName} is running and scheduled`);
 			} else {
-				this.logError(`❌ Cron job ${jobName} is NOT running after registration`);
+				this.logError(
+					`❌ Cron job ${jobName} is NOT running after registration`
+				);
 			}
 
 			return cronJob;

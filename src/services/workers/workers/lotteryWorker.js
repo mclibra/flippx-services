@@ -27,7 +27,9 @@ class LotteryWorker extends BaseWorker {
 			);
 
 			// Analyze lottery for each state and create missing lotteries - every 40 minutes
-			this.log('Creating analyze-and-create-missing-lotteries cron job...');
+			this.log(
+				'Creating analyze-and-create-missing-lotteries cron job...'
+			);
 			this.createSafeCronJob(
 				'*/40 * * * *',
 				'analyze-and-create-missing-lotteries',
@@ -36,14 +38,10 @@ class LotteryWorker extends BaseWorker {
 
 			// Add a test cron job that runs every minute to verify node-cron is working
 			this.log('Creating test cron job (runs every minute)...');
-			this.createSafeCronJob(
-				'* * * * *',
-				'test-cron-heartbeat',
-				() => {
-					this.log('🔥 TEST CRON JOB EXECUTED - node-cron is working!');
-					return Promise.resolve();
-				}
-			);
+			this.createSafeCronJob('* * * * *', 'test-cron-heartbeat', () => {
+				this.log('🔥 TEST CRON JOB EXECUTED - node-cron is working!');
+				return Promise.resolve();
+			});
 
 			this.log('✅ All lottery cron jobs initialized successfully');
 		} catch (error) {
