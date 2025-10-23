@@ -7,6 +7,7 @@ const api = axios.create({
 		'X-RapidAPI-Host': rapidAPI.apiHost,
 		'X-RapidAPI-Key': rapidAPI.apiKey,
 	},
+	timeout: 30000, // 30 second timeout to prevent hanging
 });
 
 export const fetchGameListByState = async stateCode => {
