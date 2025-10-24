@@ -11,8 +11,8 @@ import {
 } from './src/seedDb';
 import api from './src/api';
 
-// Import WorkerManager for multi-core cron processing
-import WorkerManager from './src/services/workers/workerManager';
+// Import CronScheduler for cron job processing
+import CronScheduler from './src/services/scheduler/cronScheduler';
 
 const app = express(apiRoot, api);
 
@@ -25,8 +25,8 @@ const server = http.createServer(app);
 
 initializeSocket(server);
 
-// Initialize Worker Manager for cron jobs
-const workerManager = new WorkerManager();
+// Initialize Cron Scheduler for cron jobs
+const cronScheduler = new CronScheduler();
 
 // eslint-disable-next-line no-undef
 setImmediate(async () => {
@@ -53,25 +53,25 @@ setImmediate(async () => {
 			);
 		});
 
-		// Start worker processes for cron jobs AFTER server is running
+		// Start cron scheduler for cron jobs AFTER server is running
 		// This prevents cron jobs from blocking the main server startup
-		await workerManager.start();
+		await cronScheduler.initialize();
 	} catch (error) {
 		console.error('❌ Application startup failed:', error);
 
-		// Continue with worker processes even if main startup fails
+		// Continue with cron scheduler even if main startup fails
 		// This ensures cron jobs keep running even if HTTP server has issues
-		console.log('🔄 Starting worker processes despite startup error...');
+		console.log('🔄 Starting cron scheduler despite startup error...');
 
 		try {
-			await workerManager.start();
-			console.log('✅ Worker processes started successfully despite main startup failure');
-		} catch (workerError) {
-			console.error('❌ Failed to start workers after main startup failure:', workerError);
+			await cronScheduler.initialize();
+			console.log('✅ Cron scheduler started successfully despite main startup failure');
+		} catch (schedulerError) {
+			console.error('❌ Failed to start cron scheduler after main startup failure:', schedulerError);
 		}
 
-		// Do not exit - keep the process alive for worker processes
-		console.log('⚠️  Main process continuing to keep worker processes alive');
+		// Do not exit - keep the process alive for cron jobs
+		console.log('⚠️  Main process continuing to keep cron scheduler alive');
 	}
 });
 
@@ -86,9 +86,9 @@ const gracefulShutdown = async signal => {
 			console.log('✅ HTTP server closed');
 		});
 
-		// Shutdown worker processes
-		console.log('🛑 Shutting down worker processes...');
-		await workerManager.shutdown();
+		// Shutdown cron scheduler
+		console.log('🛑 Shutting down cron scheduler...');
+		await cronScheduler.shutdown();
 
 		// Close database connection
 		console.log('🔌 Closing database connection...');

@@ -27,8 +27,8 @@ class SocketBroadcastService {
 	setupIPC() {
 		// Setup IPC listeners based on process type
 		if (this.isMainProcess) {
-			// In main process, listen for socket broadcast requests from workers
-			// This will be handled by WorkerManager, so no setup needed here
+			// In main process, socket broadcasts are handled directly
+			// No special setup needed for cron scheduler
 		} else if (process.send) {
 			// In worker process, listen for socket broadcast responses from main process
 			process.on('message', message => {
