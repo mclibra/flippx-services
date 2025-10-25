@@ -65,9 +65,14 @@ setImmediate(async () => {
 
 		try {
 			await cronScheduler.initialize();
-			console.log('✅ Cron scheduler started successfully despite main startup failure');
+			console.log(
+				'✅ Cron scheduler started successfully despite main startup failure'
+			);
 		} catch (schedulerError) {
-			console.error('❌ Failed to start cron scheduler after main startup failure:', schedulerError);
+			console.error(
+				'❌ Failed to start cron scheduler after main startup failure:',
+				schedulerError
+			);
 		}
 
 		// Do not exit - keep the process alive for cron jobs
@@ -104,13 +109,16 @@ const gracefulShutdown = async signal => {
 };
 
 // Setup global error handlers to prevent process crashes
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
 	console.error('❌ Uncaught Exception - Process will continue:', error);
 	// Do not exit - keep cron jobs running
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-	console.error('❌ Unhandled Promise Rejection - Process will continue:', reason);
+	console.error(
+		'❌ Unhandled Promise Rejection - Process will continue:',
+		reason
+	);
 	console.error('Promise:', promise);
 	// Do not exit - keep cron jobs running
 });

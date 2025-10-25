@@ -36,7 +36,6 @@ import {
 } from '../../api/loyalty/controller';
 import InfluencerCommissionService from '../influencer/commissionService';
 import { LoyaltyProfile } from '../../api/loyalty/model';
-import { User } from '../../api/user/model';
 import TierConfigService from '../tier/tierConfigService';
 
 class CronScheduler {
@@ -247,7 +246,10 @@ class CronScheduler {
 					try {
 						await this.executeCronJob(jobName, jobFunction);
 					} catch (error) {
-						console.error(`❌ Error in cron job ${jobName}:`, error);
+						console.error(
+							`❌ Error in cron job ${jobName}:`,
+							error
+						);
 					}
 				},
 				{
@@ -431,7 +433,10 @@ class CronScheduler {
 				}
 
 				let lotteryTimezone = 'America/New_York';
-				if (state.externalLotteries && state.externalLotteries.length > 0) {
+				if (
+					state.externalLotteries &&
+					state.externalLotteries.length > 0
+				) {
 					const lotteryConfig = state.externalLotteries.find(
 						config => config.pick4GameId === pick4Id
 					);
@@ -1100,35 +1105,37 @@ class CronScheduler {
 	 */
 	async checkVipDailyLogin() {
 		try {
-			const vipConfig = await TierConfigService.getTierConfig('VIP');
-			if (!vipConfig || !vipConfig.requirements.dailyLoginRequired) {
-				return;
-			}
-
-			const vipUsers = await User.find({}).populate({
-				path: 'loyaltyProfile',
-				match: { currentTier: 'VIP' },
-			});
-			const filteredVipUsers = vipUsers.filter(user => user.loyaltyProfile);
-
-			for (const user of filteredVipUsers) {
-				const yesterday = moment().subtract(1, 'day').startOf('day');
-				const loggedInYesterday =
-					user.sessionTracking?.lastLoginDate &&
-					moment(user.sessionTracking.lastLoginDate).isBetween(
-						yesterday,
-						moment().startOf('day')
-					);
-
-				const requiredSessionMinutes =
-					vipConfig.requirements.dailySessionMinutes || 5;
-				const metSessionRequirement =
-					user.sessionTracking?.totalSessionTimeToday &&
-					user.sessionTracking.totalSessionTimeToday >=
-						requiredSessionMinutes * 60;
-			}
+			// const vipConfig = await TierConfigService.getTierConfig('VIP');
+			// if (!vipConfig || !vipConfig.requirements.dailyLoginRequired) {
+			// 	return;
+			// }
+			// const vipUsers = await User.find({}).populate({
+			// 	path: 'loyaltyProfile',
+			// 	match: { currentTier: 'VIP' },
+			// });
+			// const filteredVipUsers = vipUsers.filter(
+			// 	user => user.loyaltyProfile
+			// );
+			// for (const user of filteredVipUsers) {
+			// 	const yesterday = moment().subtract(1, 'day').startOf('day');
+			// 	const loggedInYesterday =
+			// 		user.sessionTracking?.lastLoginDate &&
+			// 		moment(user.sessionTracking.lastLoginDate).isBetween(
+			// 			yesterday,
+			// 			moment().startOf('day')
+			// 		);
+			// 	const requiredSessionMinutes =
+			// 		vipConfig.requirements.dailySessionMinutes || 5;
+			// 	const metSessionRequirement =
+			// 		user.sessionTracking?.totalSessionTimeToday &&
+			// 		user.sessionTracking.totalSessionTimeToday >=
+			// 			requiredSessionMinutes * 60;
+			// }
 		} catch (error) {
-			console.error('Error checking VIP daily login requirements:', error);
+			console.error(
+				'Error checking VIP daily login requirements:',
+				error
+			);
 		}
 	}
 
@@ -1199,11 +1206,6 @@ class CronScheduler {
 
 			const users = await LoyaltyProfile.find({});
 
-			let upgrades = 0;
-			let downgrades = 0;
-			let errors = 0;
-			let unchanged = 0;
-
 			for (const loyalty of users) {
 				try {
 					if (
@@ -1213,40 +1215,11 @@ class CronScheduler {
 						console.error(
 							`Skipping loyalty profile with invalid user ID: ${loyalty.user}`
 						);
-						errors++;
 						continue;
 					}
 
-					const oldTier = loyalty.currentTier;
 					await evaluateUserTier(loyalty.user);
-
-					const updatedLoyalty = await LoyaltyProfile.findOne({
-						user: loyalty.user,
-					});
-
-					if (
-						updatedLoyalty &&
-						updatedLoyalty.currentTier !== oldTier
-					) {
-						const tierRank = {
-							NONE: 0,
-							SILVER: 1,
-							GOLD: 2,
-							VIP: 3,
-						};
-						if (
-							tierRank[updatedLoyalty.currentTier] >
-							tierRank[oldTier]
-						) {
-							upgrades++;
-						} else {
-							downgrades++;
-						}
-					} else {
-						unchanged++;
-					}
 				} catch (userError) {
-					errors++;
 					console.error(
 						`Error evaluating tier for user ${loyalty.user}:`,
 						userError
@@ -1304,7 +1277,9 @@ class CronScheduler {
 						);
 					}
 
-					if (currentTier.withdrawalTime > previousTier.withdrawalTime) {
+					if (
+						currentTier.withdrawalTime > previousTier.withdrawalTime
+					) {
 						issues.push(
 							`${tierOrder[i]} withdrawal time (${
 								currentTier.withdrawalTime
@@ -1316,10 +1291,12 @@ class CronScheduler {
 				}
 			}
 		} catch (error) {
-			console.error('Error validating tier configuration integrity:', error);
+			console.error(
+				'Error validating tier configuration integrity:',
+				error
+			);
 		}
 	}
 }
 
 export default CronScheduler;
-
