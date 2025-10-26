@@ -153,16 +153,16 @@ class CronScheduler {
 			this.removeDisconnectedPlayersJob.bind(this)
 		);
 
-		// Clean up abandoned rooms - every hour
+		// Clean up abandoned rooms - every hour at 5 minutes past (avoid midnight collision)
 		this.createCronJob(
-			'0 * * * *',
+			'5 * * * *',
 			'domino-cleanup-abandoned-rooms',
 			this.cleanupAbandonedRooms.bind(this)
 		);
 
-		// Clean up orphaned games - every 5 minutes
+		// Clean up orphaned games - every 5 minutes at 2 minutes past (avoid collision)
 		this.createCronJob(
-			'*/5 * * * *',
+			'2,7,12,17,22,27,32,37,42,47,52,57 * * * *',
 			'domino-cleanup-orphaned-games',
 			this.cleanupOrphanedGames.bind(this)
 		);

@@ -367,8 +367,7 @@ class TierConfigService {
 			// Convert current constants to database entries
 			const tierEntries = Object.entries(FALLBACK_TIERS).map(
 				([tier, config]) => ({
-					tier,
-					name: config.name,
+					name: tier,
 					benefits: {
 						weeklyWithdrawalLimit: config.weeklyWithdrawalLimit,
 						withdrawalTime: config.withdrawalTime,
