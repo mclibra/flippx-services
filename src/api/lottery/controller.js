@@ -1822,6 +1822,7 @@ export const createLotteriesForState = async state => {
 
 		return {
 			success: true,
+			lotteriesCreated,
 			message:
 				lotteriesCreated > 0
 					? `Lotteries created for state: ${state.name} (${lotteriesCreated} new lotteries)`

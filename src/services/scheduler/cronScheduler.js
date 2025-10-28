@@ -92,14 +92,14 @@ class CronScheduler {
 
 		// Check and publish lottery results - every 20 minutes
 		this.createCronJob(
-			'*/20 * * * *',
+			'*/12 * * * *',
 			'lottery-check-and-publish-results',
 			this.checkAndPublishResults.bind(this)
 		);
 
 		// Analyze lottery for each state and create missing lotteries - every 40 minutes
 		this.createCronJob(
-			'*/40 * * * *',
+			'*/18 * * * *',
 			'lottery-analyze-and-create-missing-lotteries',
 			this.analyzeAndCreateMissingLotteries.bind(this)
 		);
@@ -306,13 +306,20 @@ class CronScheduler {
 	async checkAndPublishResults() {
 		try {
 			console.log('Checking and publishing lottery results');
-			const now = moment();
+
+			// Check database connection
+			await this.ensureDatabaseConnection();
+
+			const fifteenMinutesAgo = moment()
+				.subtract(15, 'minutes')
+				.valueOf();
+
 			const query = {
 				status: {
 					$in: ['SCHEDULED', 'ERROR', 'WAITING'],
 				},
 				scheduledTime: {
-					$lt: now.subtract(15, 'minutes').valueOf(),
+					$lt: fifteenMinutesAgo,
 				},
 			};
 			const lotteries = await Lottery.find(query).limit(100).lean();
@@ -334,11 +341,17 @@ class CronScheduler {
 							`Error processing lottery ${lotteryData._id}:`,
 							lotteryError
 						);
+						console.error('Stack trace:', lotteryError.stack);
 					}
 				}
+			} else {
+				console.log('No lotteries found to publish');
 			}
+
+			console.log('Completed checking and publishing lottery results');
 		} catch (error) {
 			console.error('Error in publishResults cron job:', error);
+			console.error('Stack trace:', error.stack);
 		}
 	}
 
@@ -348,9 +361,17 @@ class CronScheduler {
 	async analyzeAndCreateMissingLotteries() {
 		try {
 			console.log('Analyzing and creating missing lotteries');
+
+			// Check database connection
+			await this.ensureDatabaseConnection();
+
 			const activeStates = await State.find({ isActive: true })
 				.select('name code externalLotteries megaMillions')
 				.lean();
+
+			console.log(
+				`Found ${activeStates.length} active states to analyze`
+			);
 
 			if (activeStates.length === 0) {
 				console.log('No active states found');
@@ -358,7 +379,8 @@ class CronScheduler {
 			}
 
 			const today = moment().format('dddd');
-			const tomorrow = moment().add(1, 'day').format('dddd');
+			const tomorrow = moment().clone().add(1, 'day').format('dddd');
+			console.log(`Today: ${today}, Tomorrow: ${tomorrow}`);
 
 			for (const state of activeStates) {
 				try {
@@ -391,10 +413,43 @@ class CronScheduler {
 					}
 
 					if (!hasUpcomingDrawDays) {
+						console.log(
+							`No upcoming draw days for state ${state.name}`
+						);
 						continue;
 					}
 
-					await createLotteriesForState(state);
+					console.log(`Creating lotteries for state ${state.name}`);
+
+					// Add timeout to prevent hanging
+					const timeoutPromise = new Promise((_, reject) =>
+						setTimeout(
+							() => reject(new Error('Timeout after 60 seconds')),
+							60000
+						)
+					);
+
+					const result = await Promise.race([
+						createLotteriesForState(state),
+						timeoutPromise,
+					]);
+
+					console.log(
+						`Created lotteries for state ${state.name}:`,
+						result
+					);
+					if (result && result.success) {
+						console.log(
+							`Created ${
+								result.lotteriesCreated || 0
+							} lotteries for state ${state.name}`
+						);
+					} else if (result) {
+						console.error(
+							`Error creating lotteries for state ${state.name}:`,
+							result.message || result.error
+						);
+					}
 				} catch (stateError) {
 					console.error(
 						`Error analyzing state ${state.name} (${state.code}):`,
@@ -402,8 +457,11 @@ class CronScheduler {
 					);
 				}
 			}
+
+			console.log('Completed analyzing and creating missing lotteries');
 		} catch (error) {
 			console.error('Error in lottery analysis cron job:', error);
+			console.error('Stack trace:', error.stack);
 		}
 	}
 
