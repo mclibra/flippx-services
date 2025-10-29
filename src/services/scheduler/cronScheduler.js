@@ -43,6 +43,8 @@ class CronScheduler {
 		this.activeCronJobs = new Set();
 		this.processingGames = new Set();
 		this.isShuttingDown = false;
+		this.jobLastRun = new Map(); // Track when each job last ran
+		this.jobDefinitions = new Map(); // Store job definitions for restart
 	}
 
 	/**
@@ -58,6 +60,13 @@ class CronScheduler {
 		this.initializeLotteryCronJobs();
 		this.initializeDominoCronJobs();
 		this.initializeLoyaltyCronJobs();
+
+		// Add a job restart schedule at 00:05 daily to recover from midnight issues
+		this.createCronJob(
+			'5 0 * * *',
+			'cron-restart-all-jobs',
+			this.restartAllJobs.bind(this)
+		);
 
 		console.log(
 			`✅ Cron scheduler initialized with ${this.activeCronJobs.size} jobs`
@@ -236,6 +245,12 @@ class CronScheduler {
 	 */
 	createCronJob(schedule, jobName, jobFunction) {
 		try {
+			// Store job definition for potential restart
+			this.jobDefinitions.set(jobName, {
+				schedule,
+				jobFunction,
+			});
+
 			const cronJob = cron.schedule(
 				schedule,
 				async () => {
@@ -244,6 +259,7 @@ class CronScheduler {
 					}
 
 					try {
+						this.jobLastRun.set(jobName, new Date());
 						await this.executeCronJob(jobName, jobFunction);
 					} catch (error) {
 						console.error(
@@ -254,13 +270,22 @@ class CronScheduler {
 				},
 				{
 					scheduled: true,
+					timezone: 'America/New_York', // Set explicit timezone to avoid midnight issues
 				}
 			);
 
 			this.activeCronJobs.add(cronJob);
+			this.jobLastRun.set(jobName, new Date());
 			console.log(`✅ Cron job registered: ${jobName} (${schedule})`);
 		} catch (error) {
 			console.error(`❌ Failed to create cron job ${jobName}:`, error);
+			console.error('Stack trace:', error.stack);
+
+			// Retry after a delay if initial creation failed
+			setTimeout(() => {
+				console.log(`🔄 Retrying to create cron job ${jobName}...`);
+				this.createCronJob(schedule, jobName, jobFunction);
+			}, 60000);
 		}
 	}
 
@@ -293,7 +318,43 @@ class CronScheduler {
 		}
 
 		this.activeCronJobs.clear();
+		this.jobDefinitions.clear();
+		this.jobLastRun.clear();
 		console.log('✅ Cron scheduler shut down successfully');
+	}
+
+	/**
+	 * Restart all cron jobs
+	 */
+	async restartAllJobs() {
+		console.log('🔄 Restarting all cron jobs...');
+
+		// Destroy existing jobs
+		for (const cronJob of this.activeCronJobs) {
+			try {
+				if (cronJob && typeof cronJob.destroy === 'function') {
+					cronJob.destroy();
+				}
+			} catch (error) {
+				console.error('Error stopping cron job:', error);
+			}
+		}
+
+		// Clear active jobs
+		this.activeCronJobs.clear();
+
+		// Recreate all jobs from stored definitions
+		let restartedCount = 0;
+		for (const [jobName, definition] of this.jobDefinitions) {
+			this.createCronJob(
+				definition.schedule,
+				jobName,
+				definition.jobFunction
+			);
+			restartedCount++;
+		}
+
+		console.log(`✅ Restarted ${restartedCount} cron jobs`);
 	}
 
 	// ============================================================================
