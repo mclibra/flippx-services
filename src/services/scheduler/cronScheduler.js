@@ -68,6 +68,13 @@ class CronScheduler {
 			this.restartAllJobs.bind(this)
 		);
 
+		// Add a health check job every 5 minutes to monitor if jobs are still running
+		this.createCronJob(
+			'*/5 * * * *',
+			'cron-health-check',
+			this.runHealthCheck.bind(this)
+		);
+
 		console.log(
 			`✅ Cron scheduler initialized with ${this.activeCronJobs.size} jobs`
 		);
@@ -324,6 +331,66 @@ class CronScheduler {
 	}
 
 	/**
+	 * Run health check to detect stuck jobs
+	 */
+	async runHealthCheck() {
+		try {
+			const now = Date.now();
+			const fiveMinutesAgo = now - 5 * 60 * 1000;
+			const stuckJobs = [];
+
+			// Check if any job should have run but didn't
+			for (const [jobName, lastRun] of this.jobLastRun) {
+				// Skip health check and restart jobs themselves
+				if (
+					jobName === 'cron-health-check' ||
+					jobName === 'cron-restart-all-jobs'
+				) {
+					continue;
+				}
+
+				// If a job hasn't run in the expected interval, it might be stuck
+				if (!lastRun || lastRun.getTime() < fiveMinutesAgo) {
+					const definition = this.jobDefinitions.get(jobName);
+					if (definition) {
+						// Parse schedule to determine expected frequency
+						const schedule = definition.schedule;
+
+						// Check if this is a frequent job that should run often
+						if (
+							schedule.includes('*/') &&
+							schedule.includes('* * * * *')
+						) {
+							const minutes = parseInt(
+								schedule.match(/\*\/(\d+)/)?.[1]
+							);
+							if (minutes && minutes <= 20) {
+								// This is a frequent job and hasn't run
+								stuckJobs.push(jobName);
+							}
+						}
+					}
+				}
+			}
+
+			if (stuckJobs.length > 0) {
+				console.warn(
+					`⚠️  Detected potentially stuck jobs: ${stuckJobs.join(
+						', '
+					)}`
+				);
+				console.warn('🔄 Triggering emergency restart...');
+				await this.restartAllJobs();
+			}
+
+			// Update health check's own last run time
+			this.jobLastRun.set('cron-health-check', new Date());
+		} catch (error) {
+			console.error('Error in health check:', error);
+		}
+	}
+
+	/**
 	 * Restart all cron jobs
 	 */
 	async restartAllJobs() {
@@ -354,6 +421,8 @@ class CronScheduler {
 			restartedCount++;
 		}
 
+		// Update restart job's own last run time
+		this.jobLastRun.set('cron-restart-all-jobs', new Date());
 		console.log(`✅ Restarted ${restartedCount} cron jobs`);
 	}
 
