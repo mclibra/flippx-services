@@ -114,12 +114,42 @@ process.on('uncaughtException', error => {
 	// Do not exit - keep cron jobs running
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', async (reason, promise) => {
 	console.error(
 		'❌ Unhandled Promise Rejection - Process will continue:',
 		reason
 	);
 	console.error('Promise:', promise);
+
+	// Check if this is a node-cron RangeError that breaks the scheduler
+	// This error occurs in node-cron's internal scheduler when calculating next execution time
+	const isNodeCronError =
+		reason instanceof Error &&
+		reason.name === 'RangeError' &&
+		reason.message === 'Invalid time value' &&
+		reason.stack &&
+		(reason.stack.includes('node-cron') ||
+			reason.stack.includes('localized-time.ts') ||
+			reason.stack.includes('time-matcher.ts') ||
+			reason.stack.includes('scheduler/runner.ts'));
+
+	if (isNodeCronError) {
+		console.error(
+			'⚠️  Detected node-cron internal error - triggering emergency restart...'
+		);
+		console.error('Error details:', {
+			name: reason.name,
+			message: reason.message,
+			stack: reason.stack?.substring(0, 500),
+		});
+		try {
+			await cronScheduler.restartAllJobs();
+			console.log('✅ Successfully restarted cron jobs after node-cron error');
+		} catch (restartError) {
+			console.error('❌ Failed to restart cron jobs:', restartError);
+		}
+	}
+
 	// Do not exit - keep cron jobs running
 });
 
