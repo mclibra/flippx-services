@@ -250,12 +250,26 @@ class CronScheduler {
 	/**
 	 * Create a cron job with error handling
 	 */
-	createCronJob(schedule, jobName, jobFunction) {
+	createCronJob(schedule, jobName, jobFunction, retryCount = 0, preferredTimezone = 'America/New_York') {
+		// Prevent infinite retry loops
+		if (retryCount > 3) {
+			console.error(
+				`❌ Max retries reached for cron job ${jobName}. Giving up.`
+			);
+			return;
+		}
+
 		try {
-			// Store job definition for potential restart
+			// Validate schedule format before attempting to create cron job
+			if (!schedule || typeof schedule !== 'string') {
+				throw new Error(`Invalid schedule format for ${jobName}: ${schedule}`);
+			}
+
+			// Store job definition for potential restart (with timezone info)
 			this.jobDefinitions.set(jobName, {
 				schedule,
 				jobFunction,
+				timezone: preferredTimezone,
 			});
 
 			const cronJob = cron.schedule(
@@ -277,22 +291,39 @@ class CronScheduler {
 				},
 				{
 					scheduled: true,
-					timezone: 'America/New_York', // Set explicit timezone to avoid midnight issues
+					timezone: preferredTimezone,
 				}
 			);
 
 			this.activeCronJobs.add(cronJob);
 			this.jobLastRun.set(jobName, new Date());
-			console.log(`✅ Cron job registered: ${jobName} (${schedule})`);
+			console.log(`✅ Cron job registered: ${jobName} (${schedule}) with timezone ${preferredTimezone}`);
 		} catch (error) {
-			console.error(`❌ Failed to create cron job ${jobName}:`, error);
-			console.error('Stack trace:', error.stack);
+			// Check if this is a timezone/time value error
+			const isTimezoneError = 
+				error.message.includes('Invalid timezone') ||
+				error.message.includes('Invalid time value') ||
+				error.name === 'RangeError' ||
+				(error.stack && error.stack.includes('DateTimeFormat.formatToParts'));
 
-			// Retry after a delay if initial creation failed
-			setTimeout(() => {
-				console.log(`🔄 Retrying to create cron job ${jobName}...`);
-				this.createCronJob(schedule, jobName, jobFunction);
-			}, 60000);
+			if (isTimezoneError && preferredTimezone !== 'UTC') {
+				// For timezone/time value errors, try with UTC as fallback
+				console.log(`🔄 Timezone error detected for ${jobName}. Attempting with UTC timezone as fallback...`);
+				this.createCronJob(schedule, jobName, jobFunction, retryCount, 'UTC');
+			} else if (!isTimezoneError) {
+				// Retry after a delay for other errors
+				console.error(`❌ Failed to create cron job ${jobName}:`, error);
+				console.error('Stack trace:', error.stack);
+				
+				setTimeout(() => {
+					console.log(`🔄 Retrying to create cron job ${jobName} (attempt ${retryCount + 1})...`);
+					this.createCronJob(schedule, jobName, jobFunction, retryCount + 1, preferredTimezone);
+				}, 60000);
+			} else {
+				// UTC fallback also failed
+				console.error(`❌ Failed to create cron job ${jobName} even with UTC fallback:`, error);
+				console.error('Stack trace:', error.stack);
+			}
 		}
 	}
 
@@ -416,7 +447,9 @@ class CronScheduler {
 			this.createCronJob(
 				definition.schedule,
 				jobName,
-				definition.jobFunction
+				definition.jobFunction,
+				0, // Reset retry count
+				definition.timezone || 'America/New_York' // Use stored timezone or default
 			);
 			restartedCount++;
 		}
