@@ -5,6 +5,7 @@ import {
 	listBorlette,
 	getBorletteDetails,
 	createLotteryRestriction,
+	updateLotteryRestriction,
 } from './controller';
 
 const router = new Router();
@@ -70,6 +71,34 @@ router.post(
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
 		done(res, await createLotteryRestriction(req.body, req.user))
+);
+
+/**
+ * PUT /api/admin/borlette-management/restrictions/:lotteryId
+ * Update lottery restrictions for a borlette lottery
+ * Params: lotteryId - Lottery ID
+ * Body: {
+ *   twoDigit: number (optional),
+ *   threeDigit: number (optional),
+ *   fourDigit: number (optional),
+ *   marriageNumber: number (optional),
+ *   individualNumber: [
+ *     {
+ *       number: string (required),
+ *       limit: number (required)
+ *     }
+ *   ] (optional)
+ * }
+ */
+router.put(
+	'/restrictions/:lotteryId',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(
+			res,
+			await updateLotteryRestriction(req.params.lotteryId, req.body, req.user)
+		)
 );
 
 export default router;

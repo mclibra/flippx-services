@@ -459,6 +459,150 @@ fetch('/api/admin/borlette-management/restrictions', {
 
 ---
 
+### 4. Update Lottery Restrictions
+
+Update existing restrictions for a borlette lottery.
+
+**Endpoint:** `PUT /api/admin/borlette-management/restrictions/:lotteryId`
+
+**URL Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `lotteryId` | string | Yes | Lottery ID |
+
+**Request Body:**
+
+```json
+{
+  "twoDigit": 1200,
+  "threeDigit": 600,
+  "fourDigit": 250,
+  "marriageNumber": 350,
+  "individualNumber": [
+    {
+      "number": "12",
+      "limit": 60
+    },
+    {
+      "number": "34",
+      "limit": 80
+    }
+  ]
+}
+```
+
+**Request Body Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `twoDigit` | number | No | Maximum bet amount for two-digit numbers |
+| `threeDigit` | number | No | Maximum bet amount for three-digit numbers |
+| `fourDigit` | number | No | Maximum bet amount for four-digit numbers |
+| `marriageNumber` | number | No | Maximum bet amount for marriage numbers |
+| `individualNumber` | array | No | Array of individual number restrictions |
+
+**Note:** Only include the fields you want to update. Fields not included in the request will remain unchanged.
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Lottery restriction updated successfully",
+  "restriction": {
+    "_id": "string",
+    "lottery": "507f1f77bcf86cd799439011",
+    "twoDigit": 1200,
+    "threeDigit": 600,
+    "fourDigit": 250,
+    "marriageNumber": 350,
+    "individualNumber": [
+      {
+        "number": "12",
+        "limit": 60
+      },
+      {
+        "number": "34",
+        "limit": 80
+      }
+    ],
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-02T00:00:00.000Z"
+  }
+}
+```
+
+**Example Request:**
+
+```javascript
+// Using fetch
+fetch('/api/admin/borlette-management/restrictions/507f1f77bcf86cd799439011', {
+  method: 'PUT',
+  headers: {
+    'x-api-key': 'your-api-key',
+    'Authorization': 'Bearer your-jwt-token',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    twoDigit: 1200,
+    threeDigit: 600,
+    individualNumber: [
+      {
+        number: '12',
+        limit: 60
+      }
+    ]
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+**Error Responses:**
+
+- `400 Bad Request`: Invalid lottery type
+```json
+{
+  "success": false,
+  "error": "Restrictions can only be updated for BORLETTE lotteries"
+}
+```
+
+- `400 Bad Request`: Invalid individualNumber format
+```json
+{
+  "success": false,
+  "error": "Each individualNumber must have both number and limit fields"
+}
+```
+
+- `404 Not Found`: Lottery not found
+```json
+{
+  "success": false,
+  "error": "Lottery not found"
+}
+```
+
+- `404 Not Found`: Restrictions not found
+```json
+{
+  "success": false,
+  "error": "Restrictions not found for this lottery. Use create endpoint to create restrictions."
+}
+```
+
+- `500 Internal Server Error`: Server error
+```json
+{
+  "success": false,
+  "error": "Error message"
+}
+```
+
+---
+
 ## Status Values
 
 The following status values are used for lottery status:
@@ -499,7 +643,7 @@ The following status values are used for lottery status:
 
 4. **Search**: The search parameter performs a case-insensitive search on the `title` and `metadata` fields.
 
-5. **Restrictions**: Once restrictions are created for a lottery, they cannot be created again. Use an update endpoint (if available) to modify existing restrictions.
+5. **Restrictions**: Once restrictions are created for a lottery, they cannot be created again. Use the update endpoint (`PUT /api/admin/borlette-management/restrictions/:lotteryId`) to modify existing restrictions.
 
 6. **Date Filters**: Date filters accept Unix timestamps in milliseconds. You can use `Date.now()` or `new Date().getTime()` in JavaScript to generate timestamps.
 
@@ -565,6 +709,33 @@ const response = await fetch(
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(restrictionData)
+  }
+);
+const data = await response.json();
+```
+
+### Scenario 4: Update restrictions for a lottery
+
+```javascript
+const lotteryId = '507f1f77bcf86cd799439011';
+const updateData = {
+  twoDigit: 1200,
+  threeDigit: 600,
+  individualNumber: [
+    { number: '12', limit: 60 }
+  ]
+};
+
+const response = await fetch(
+  `/api/admin/borlette-management/restrictions/${lotteryId}`,
+  {
+    method: 'PUT',
+    headers: {
+      'x-api-key': 'your-api-key',
+      'Authorization': 'Bearer your-jwt-token',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(updateData)
   }
 );
 const data = await response.json();

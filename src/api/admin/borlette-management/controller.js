@@ -449,3 +449,102 @@ export const createLotteryRestriction = async (body, adminUser) => {
 	}
 };
 
+// ===== UPDATE LOTTERY RESTRICTIONS =====
+
+export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
+	try {
+		const { twoDigit, threeDigit, fourDigit, marriageNumber, individualNumber } = body;
+
+		// Validate lottery exists
+		const lottery = await Lottery.findById(lotteryId);
+		if (!lottery) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Lottery not found',
+				},
+			};
+		}
+
+		// Validate lottery type is BORLETTE
+		if (lottery.type !== 'BORLETTE') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Restrictions can only be updated for BORLETTE lotteries',
+				},
+			};
+		}
+
+		// Check if restrictions exist
+		const existingRestriction = await LotteryRestriction.findOne({
+			lottery: lotteryId.toString(),
+		});
+
+		if (!existingRestriction) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Restrictions not found for this lottery. Use create endpoint to create restrictions.',
+				},
+			};
+		}
+
+		// Validate individualNumber format if provided
+		if (individualNumber && Array.isArray(individualNumber)) {
+			for (const item of individualNumber) {
+				if (!item.number || item.limit === undefined || item.limit === null) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'Each individualNumber must have both number and limit fields',
+						},
+					};
+				}
+			}
+		}
+
+		// Prepare update data (only include fields that are provided)
+		const updateData = {};
+		if (twoDigit !== undefined) updateData.twoDigit = twoDigit;
+		if (threeDigit !== undefined) updateData.threeDigit = threeDigit;
+		if (fourDigit !== undefined) updateData.fourDigit = fourDigit;
+		if (marriageNumber !== undefined) updateData.marriageNumber = marriageNumber;
+		if (individualNumber !== undefined) updateData.individualNumber = individualNumber;
+
+		// Update restriction
+		const restriction = await LotteryRestriction.findOneAndUpdate(
+			{
+				lottery: lotteryId.toString(),
+			},
+			updateData,
+			{
+				new: true,
+				runValidators: true,
+			}
+		);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Lottery restriction updated successfully',
+				restriction,
+			},
+		};
+	} catch (error) {
+		console.error('Update lottery restriction error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to update lottery restriction',
+			},
+		};
+	}
+};
+

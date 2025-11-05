@@ -883,363 +883,6 @@ export const placeBet = async ({ id }, body, user) => {
 	}
 };
 
-export const create = async (body, user) => {
-	try {
-		const { cashType = 'VIRTUAL' } = body;
-
-		// Validate cash type
-		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Invalid cash type. Must be REAL or VIRTUAL',
-				},
-			};
-		}
-
-		body.user = user._id;
-		body.purchasedBy = user.role;
-		body.purchasedOn = moment.now();
-		body.cashType = cashType;
-
-		// NEW: Get user's current tier for payout calculation
-		let userTier = 'NONE';
-		let payoutConfig = {
-			percentage: 60,
-			isCustom: false,
-			configId: null,
-			description: 'Default percentage',
-		};
-
-		try {
-			const loyaltyResult = await LoyaltyService.getUserLoyaltyProfile(
-				user._id
-			);
-			if (loyaltyResult.success && loyaltyResult.loyalty) {
-				userTier = loyaltyResult.loyalty.currentTier || 'NONE';
-			}
-
-			// Map NONE tier to SILVER for payout purposes (as per requirements)
-			const payoutTier = userTier === 'NONE' ? 'SILVER' : userTier;
-
-			// Get payout configuration for this tier
-			payoutConfig = await PayoutService.getPayoutPercentage(
-				payoutTier,
-				'BORLETTE'
-			);
-		} catch (loyaltyError) {
-			console.warn(
-				`Failed to get user tier for ${user._id}:`,
-				loyaltyError
-			);
-			// Continue with defaults
-		}
-
-		// Store tier and payout config in ticket
-		body.userTierAtPurchase = userTier;
-		body.payoutConfig = payoutConfig;
-
-		const lottery = await Lottery.findById(body.lottery)
-			.populate('state')
-			.populate('externalIds');
-
-		if (lottery && lottery.status === 'SCHEDULED') {
-			// Check if lottery is within 15 minutes of scheduled time
-			const currentTime = moment();
-			const scheduledTime = moment(lottery.scheduledTime);
-			const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
-
-			if (minutesUntilDraw <= 15) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
-							'MM/DD/YYYY h:mm A'
-						)}).`,
-					},
-				};
-			}
-			const walletData = await Wallet.findOne({ user: user._id });
-			const balanceField =
-				cashType === 'REAL' ? 'realBalance' : 'virtualBalance';
-			const balanceToCheck = walletData[balanceField];
-
-			// Check if lottery supports marriage numbers
-			const hasMarriageNumbers =
-				lottery.additionalData?.hasMarriageNumbers || false;
-
-			// Get lottery restrictions
-			const lotteryRestriction = await LotteryRestriction.findOne({
-				lottery: body.lottery,
-			});
-
-			let availableAmount = null;
-			if (lotteryRestriction) {
-				availableAmount = lotteryRestriction.availableAmount;
-			}
-
-			body.numbers = body.numbers.map(item => {
-				// Validation logic remains the same
-				if (availableAmount) {
-					if (hasMarriageNumbers) {
-						const numberStr = item.numberPlayed.toString();
-						const isMarriageNumber = numberStr.includes('x');
-
-						if (isMarriageNumber) {
-							if (
-								availableAmount.marriageNumber[numberStr] !==
-									undefined &&
-								parseInt(
-									availableAmount.marriageNumber[numberStr]
-								) < parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played.`
-								);
-							}
-						} else {
-							const numberLength = numberStr.length;
-
-							if (
-								numberLength === 2 &&
-								availableAmount.twoDigit[numberStr] !==
-									undefined &&
-								parseInt(availableAmount.twoDigit[numberStr]) <
-									parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played.`
-								);
-							}
-							if (
-								numberLength === 3 &&
-								availableAmount.threeDigit[numberStr] !==
-									undefined &&
-								parseInt(
-									availableAmount.threeDigit[numberStr]
-								) < parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played.`
-								);
-							}
-							if (
-								numberLength === 4 &&
-								availableAmount.fourDigit[numberStr] !==
-									undefined &&
-								parseInt(availableAmount.fourDigit[numberStr]) <
-									parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played.`
-								);
-							}
-							if (
-								hasMarriageNumbers &&
-								numberLength === 5 &&
-								availableAmount.marriageNumber[
-									item.numberPlayed.toString()
-								] !== undefined &&
-								parseInt(
-									availableAmount.marriageNumber[
-										item.numberPlayed.toString()
-									]
-								) < parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played.`
-								);
-							}
-						}
-					} else {
-						const numberStr = item.numberPlayed.toString();
-						const numberLength = numberStr.length;
-
-						if (
-							numberLength === 2 &&
-							availableAmount.twoDigit[numberStr] !== undefined &&
-							parseInt(availableAmount.twoDigit[numberStr]) <
-								parseInt(item.amountPlayed)
-						) {
-							throw new Error(
-								`${item.numberPlayed} cannot be played.`
-							);
-						}
-						if (
-							numberLength === 3 &&
-							availableAmount.threeDigit[numberStr] !==
-								undefined &&
-							parseInt(availableAmount.threeDigit[numberStr]) <
-								parseInt(item.amountPlayed)
-						) {
-							throw new Error(
-								`${item.numberPlayed} cannot be played.`
-							);
-						}
-						if (
-							numberLength === 4 &&
-							availableAmount.fourDigit[numberStr] !==
-								undefined &&
-							parseInt(availableAmount.fourDigit[numberStr]) <
-								parseInt(item.amountPlayed)
-						) {
-							throw new Error(
-								`${item.numberPlayed} cannot be played.`
-							);
-						}
-						if (
-							hasMarriageNumbers &&
-							numberLength === 5 &&
-							availableAmount.marriageNumber[
-								item.numberPlayed.toString()
-							] !== undefined &&
-							parseInt(
-								availableAmount.marriageNumber[
-									item.numberPlayed.toString()
-								]
-							) < parseInt(item.amountPlayed)
-						) {
-							throw new Error(
-								`${item.numberPlayed} cannot be played.`
-							);
-						}
-					}
-				}
-
-				body.totalAmountPlayed += parseInt(item.amountPlayed);
-				return {
-					numberPlayed: item.numberPlayed,
-					amountPlayed: item.amountPlayed,
-				};
-			});
-
-			if (balanceToCheck >= body.totalAmountPlayed) {
-				const borletteTicket = await BorletteTicket.create(body);
-				if (borletteTicket._id) {
-					// Process transaction
-					await makeTransaction(
-						user._id,
-						user.role,
-						'TICKET_BORLETTE',
-						body.totalAmountPlayed,
-						borletteTicket._id,
-						cashType // Pass cash type to transaction function
-					);
-
-					// **NEW: Record play activity for loyalty tracking**
-					try {
-						const loyaltyResult =
-							await LoyaltyService.recordUserPlayActivity(
-								user._id
-							);
-						if (!loyaltyResult.success) {
-							console.warn(
-								`Failed to record play activity for user ${user._id}:`,
-								loyaltyResult.error
-							);
-						} else {
-							console.log(
-								`Play activity recorded for user ${user._id} - Borlette ticket purchase`
-							);
-						}
-					} catch (loyaltyError) {
-						console.error(
-							`Error recording play activity for user ${user._id}:`,
-							loyaltyError
-						);
-						// Don't fail ticket creation if loyalty tracking fails
-					}
-
-					// **NEW: Award XP for ticket purchase**
-					try {
-						// Calculate XP based on amount played (1 XP per $5 played, minimum 5 XP)
-						const baseXP = Math.max(
-							5,
-							Math.floor(body.totalAmountPlayed / 5)
-						);
-						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
-						const totalXP = baseXP * cashTypeMultiplier;
-
-						const xpResult = await LoyaltyService.awardUserXP(
-							user._id,
-							totalXP,
-							'GAME_ACTIVITY',
-							`Borlette ticket purchase - Amount: $${body.totalAmountPlayed} (${cashType})`,
-							{
-								gameType: 'BORLETTE',
-								ticketId: borletteTicket._id,
-								amountPlayed: body.totalAmountPlayed,
-								cashType,
-								baseXP,
-								multiplier: cashTypeMultiplier,
-								userTier: userTier,
-								payoutPercentage: payoutConfig.percentage,
-							}
-						);
-
-						if (!xpResult.success) {
-							console.warn(
-								`Failed to award XP for user ${user._id}:`,
-								xpResult.error
-							);
-						} else {
-							console.log(
-								`Awarded ${totalXP} XP to user ${user._id} for Borlette ticket purchase`
-							);
-						}
-					} catch (xpError) {
-						console.error(
-							`Error awarding XP for user ${user._id}:`,
-							xpError
-						);
-						// Don't fail ticket creation if XP awarding fails
-					}
-
-					return {
-						status: 200,
-						entity: {
-							success: true,
-							borletteTicket: {
-								...borletteTicket.toObject(),
-								lottery: lottery,
-							},
-						},
-					};
-				}
-			} else {
-				return {
-					status: 500,
-					entity: {
-						success: false,
-						error: `Insufficient ${cashType.toLowerCase()} balance.`,
-					},
-				};
-			}
-		} else {
-			return {
-				status: 500,
-				entity: {
-					success: false,
-					error:
-						lottery && lottery._id
-							? 'Lottery is closed.'
-							: 'Invalid lottery ID.',
-				},
-			};
-		}
-	} catch (error) {
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
 export const createMultiState = async (body, user) => {
 	try {
 		const { cashType = 'VIRTUAL', purchases } = body;
@@ -1383,64 +1026,88 @@ export const createMultiState = async (body, user) => {
 				lottery: purchase.lotteryId,
 			});
 
-			let availableAmount = null;
-			if (lotteryRestriction) {
-				availableAmount = lotteryRestriction.availableAmount;
-			}
-
 			// Process and validate numbers for this lottery
 			let purchaseTotal = 0;
 			const validatedNumbers = purchase.numbers.map(item => {
-				// Same validation logic as single ticket creation
-				if (availableAmount) {
-					if (hasMarriageNumbers) {
-						const numberStr = item.numberPlayed.toString();
-						const isMarriageNumber = numberStr.includes('x');
+				// Validate restrictions if they exist
+				if (lotteryRestriction) {
+					const numberStr = item.numberPlayed.toString();
+					const numberLength = numberStr.length;
+					const amountPlayed = parseInt(item.amountPlayed);
 
-						if (isMarriageNumber) {
+					// Check individual number restrictions first
+					if (
+						lotteryRestriction.individualNumber &&
+						Array.isArray(lotteryRestriction.individualNumber) &&
+						lotteryRestriction.individualNumber.length > 0
+					) {
+						const individualRestriction =
+							lotteryRestriction.individualNumber.find(
+								restriction => restriction.number === numberStr
+							);
+						if (individualRestriction) {
 							if (
-								availableAmount.marriageNumber[numberStr] !==
-									undefined &&
-								parseInt(
-									availableAmount.marriageNumber[numberStr]
-								) < parseInt(item.amountPlayed)
+								individualRestriction.limit !== null &&
+								individualRestriction.limit !== undefined &&
+								amountPlayed > individualRestriction.limit
 							) {
 								throw new Error(
-									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
+									`${item.numberPlayed} cannot be played. Maximum amount allowed is ${individualRestriction.limit} in ${lottery.state.name}.`
 								);
 							}
-						} else {
-							const numberLength = numberStr.length;
-
-							if (
-								numberLength === 2 &&
-								availableAmount.twoDigit[numberStr] !==
-									undefined &&
-								parseInt(availableAmount.twoDigit[numberStr]) <
-									parseInt(item.amountPlayed)
-							) {
-								throw new Error(
-									`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
-								);
-							}
-							// Add other length validations...
+							// If individual restriction exists, skip type-based restrictions
+							purchaseTotal += amountPlayed;
+							return {
+								numberPlayed: item.numberPlayed,
+								amountPlayed: amountPlayed,
+							};
 						}
-					} else {
-						// Standard validation without marriage numbers
-						const numberStr = item.numberPlayed.toString();
-						const numberLength = numberStr.length;
+					}
 
+					// Check type-based restrictions
+					if (hasMarriageNumbers && numberStr.includes('x')) {
+						// Marriage number validation
 						if (
-							numberLength === 2 &&
-							availableAmount.twoDigit[numberStr] !== undefined &&
-							parseInt(availableAmount.twoDigit[numberStr]) <
-								parseInt(item.amountPlayed)
+							lotteryRestriction.marriageNumber !== null &&
+							lotteryRestriction.marriageNumber !== undefined &&
+							amountPlayed > lotteryRestriction.marriageNumber
 						) {
 							throw new Error(
-								`${item.numberPlayed} cannot be played in ${lottery.state.name}.`
+								`${item.numberPlayed} cannot be played. Maximum amount allowed for marriage numbers is ${lotteryRestriction.marriageNumber} in ${lottery.state.name}.`
 							);
 						}
-						// Add other length validations...
+					} else {
+						// Standard number validation based on length
+						if (
+							numberLength === 2 &&
+							lotteryRestriction.twoDigit !== null &&
+							lotteryRestriction.twoDigit !== undefined &&
+							amountPlayed > lotteryRestriction.twoDigit
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played. Maximum amount allowed for two-digit numbers is ${lotteryRestriction.twoDigit} in ${lottery.state.name}.`
+							);
+						}
+						if (
+							numberLength === 3 &&
+							lotteryRestriction.threeDigit !== null &&
+							lotteryRestriction.threeDigit !== undefined &&
+							amountPlayed > lotteryRestriction.threeDigit
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played. Maximum amount allowed for three-digit numbers is ${lotteryRestriction.threeDigit} in ${lottery.state.name}.`
+							);
+						}
+						if (
+							numberLength === 4 &&
+							lotteryRestriction.fourDigit !== null &&
+							lotteryRestriction.fourDigit !== undefined &&
+							amountPlayed > lotteryRestriction.fourDigit
+						) {
+							throw new Error(
+								`${item.numberPlayed} cannot be played. Maximum amount allowed for four-digit numbers is ${lotteryRestriction.fourDigit} in ${lottery.state.name}.`
+							);
+						}
 					}
 				}
 
