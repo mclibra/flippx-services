@@ -36,9 +36,7 @@ router.get(
 	'/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await getRouletteDetails(req.params.id))
+	async (req, res) => done(res, await getRouletteDetails(req.params.id))
 );
 
 export default router;
-

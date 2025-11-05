@@ -95,7 +95,12 @@ export const listBorlette = async query => {
 									$cond: [
 										{
 											$gt: [
-												{ $ifNull: ['$totalAmountWon', 0] },
+												{
+													$ifNull: [
+														'$totalAmountWon',
+														0,
+													],
+												},
 												0,
 											],
 										},
@@ -125,9 +130,10 @@ export const listBorlette = async query => {
 						profit: stats.totalAmountPlayed - stats.totalAmountWon,
 						profitMargin:
 							stats.totalAmountPlayed > 0
-								? ((stats.totalAmountPlayed - stats.totalAmountWon) /
+								? ((stats.totalAmountPlayed -
+										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
-								  100
+									100
 								: 0,
 					},
 				};
@@ -213,7 +219,10 @@ export const getBorletteDetails = async lotteryId => {
 						$sum: {
 							$cond: [
 								{
-									$gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0],
+									$gt: [
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
 								},
 								1,
 								0,
@@ -323,9 +332,10 @@ export const getBorletteDetails = async lotteryId => {
 						profit: stats.totalAmountPlayed - stats.totalAmountWon,
 						profitMargin:
 							stats.totalAmountPlayed > 0
-								? ((stats.totalAmountPlayed - stats.totalAmountWon) /
+								? ((stats.totalAmountPlayed -
+										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
-								  100
+									100
 								: 0,
 					},
 					restrictions: restrictions || null,
@@ -350,7 +360,14 @@ export const getBorletteDetails = async lotteryId => {
 
 export const createLotteryRestriction = async (body, adminUser) => {
 	try {
-		const { lotteryId, twoDigit, threeDigit, fourDigit, marriageNumber, individualNumber } = body;
+		const {
+			lotteryId,
+			twoDigit,
+			threeDigit,
+			fourDigit,
+			marriageNumber,
+			individualNumber,
+		} = body;
 
 		// Validate required fields
 		if (!lotteryId) {
@@ -404,7 +421,11 @@ export const createLotteryRestriction = async (body, adminUser) => {
 		// Validate individualNumber format if provided
 		if (individualNumber && Array.isArray(individualNumber)) {
 			for (const item of individualNumber) {
-				if (!item.number || item.limit === undefined || item.limit === null) {
+				if (
+					!item.number ||
+					item.limit === undefined ||
+					item.limit === null
+				) {
 					return {
 						status: 400,
 						entity: {
@@ -453,7 +474,13 @@ export const createLotteryRestriction = async (body, adminUser) => {
 
 export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
 	try {
-		const { twoDigit, threeDigit, fourDigit, marriageNumber, individualNumber } = body;
+		const {
+			twoDigit,
+			threeDigit,
+			fourDigit,
+			marriageNumber,
+			individualNumber,
+		} = body;
 
 		// Validate lottery exists
 		const lottery = await Lottery.findById(lotteryId);
@@ -496,7 +523,11 @@ export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
 		// Validate individualNumber format if provided
 		if (individualNumber && Array.isArray(individualNumber)) {
 			for (const item of individualNumber) {
-				if (!item.number || item.limit === undefined || item.limit === null) {
+				if (
+					!item.number ||
+					item.limit === undefined ||
+					item.limit === null
+				) {
 					return {
 						status: 400,
 						entity: {
@@ -513,8 +544,10 @@ export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
 		if (twoDigit !== undefined) updateData.twoDigit = twoDigit;
 		if (threeDigit !== undefined) updateData.threeDigit = threeDigit;
 		if (fourDigit !== undefined) updateData.fourDigit = fourDigit;
-		if (marriageNumber !== undefined) updateData.marriageNumber = marriageNumber;
-		if (individualNumber !== undefined) updateData.individualNumber = individualNumber;
+		if (marriageNumber !== undefined)
+			updateData.marriageNumber = marriageNumber;
+		if (individualNumber !== undefined)
+			updateData.individualNumber = individualNumber;
 
 		// Update restriction
 		const restriction = await LotteryRestriction.findOneAndUpdate(
@@ -547,4 +580,3 @@ export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
 		};
 	}
 };
-

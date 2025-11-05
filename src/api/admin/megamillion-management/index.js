@@ -44,8 +44,7 @@ router.get(
 	'/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await getMegamillionDetails(req.params.id))
+	async (req, res) => done(res, await getMegamillionDetails(req.params.id))
 );
 
 /**
@@ -97,9 +96,12 @@ router.put(
 	async (req, res) =>
 		done(
 			res,
-			await updateLotteryRestriction(req.params.lotteryId, req.body, req.user)
+			await updateLotteryRestriction(
+				req.params.lotteryId,
+				req.body,
+				req.user
+			)
 		)
 );
 
 export default router;
-

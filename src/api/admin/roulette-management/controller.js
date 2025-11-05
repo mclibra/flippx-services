@@ -17,7 +17,10 @@ export const listRoulette = async query => {
 		} = query;
 
 		// Build filter object
-		const filter = {};
+		const filter = {
+			// Skip roulette with winningNumber null
+			winningNumber: { $ne: null },
+		};
 
 		// Status filter
 		if (status) {
@@ -45,7 +48,9 @@ export const listRoulette = async query => {
 		if (sortBy === 'totalAmountPlayed' || sortBy === 'totalAmountWon') {
 			// First, get all roulettes matching the filter
 			const allFilteredRoulettes = await Roulette.find(filter).exec();
-			const filteredRouletteIds = allFilteredRoulettes.map(r => r._id.toString());
+			const filteredRouletteIds = allFilteredRoulettes.map(r =>
+				r._id.toString()
+			);
 
 			// Aggregate by roulette to get ticket statistics (only for filtered roulettes)
 			const rouletteStats = await RouletteTicket.aggregate([
@@ -133,7 +138,12 @@ export const listRoulette = async query => {
 									$cond: [
 										{
 											$gt: [
-												{ $ifNull: ['$totalAmountWon', 0] },
+												{
+													$ifNull: [
+														'$totalAmountWon',
+														0,
+													],
+												},
 												0,
 											],
 										},
@@ -163,9 +173,10 @@ export const listRoulette = async query => {
 						profit: stats.totalAmountPlayed - stats.totalAmountWon,
 						profitMargin:
 							stats.totalAmountPlayed > 0
-								? ((stats.totalAmountPlayed - stats.totalAmountWon) /
+								? ((stats.totalAmountPlayed -
+										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
-								  100
+									100
 								: 0,
 					},
 				};
@@ -242,7 +253,10 @@ export const getRouletteDetails = async rouletteId => {
 						$sum: {
 							$cond: [
 								{
-									$gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0],
+									$gt: [
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
 								},
 								1,
 								0,
@@ -265,7 +279,10 @@ export const getRouletteDetails = async rouletteId => {
 
 		// Get winning number breakdown by bet type
 		let winningNumberBreakdown = null;
-		if (roulette.winningNumber !== null && roulette.winningNumber !== undefined) {
+		if (
+			roulette.winningNumber !== null &&
+			roulette.winningNumber !== undefined
+		) {
 			const winningNumber = roulette.winningNumber;
 
 			// Calculate breakdown by bet type
@@ -332,7 +349,10 @@ export const getRouletteDetails = async rouletteId => {
 						$sum: {
 							$cond: [
 								{
-									$gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0],
+									$gt: [
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
 								},
 								1,
 								0,
@@ -362,7 +382,10 @@ export const getRouletteDetails = async rouletteId => {
 						$sum: {
 							$cond: [
 								{
-									$gt: [{ $ifNull: ['$totalAmountWon', 0] }, 0],
+									$gt: [
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
 								},
 								1,
 								0,
@@ -416,9 +439,10 @@ export const getRouletteDetails = async rouletteId => {
 						profit: stats.totalAmountPlayed - stats.totalAmountWon,
 						profitMargin:
 							stats.totalAmountPlayed > 0
-								? ((stats.totalAmountPlayed - stats.totalAmountWon) /
+								? ((stats.totalAmountPlayed -
+										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
-								  100
+									100
 								: 0,
 					},
 					winningNumberBreakdown,
@@ -438,4 +462,3 @@ export const getRouletteDetails = async rouletteId => {
 		};
 	}
 };
-
