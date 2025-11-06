@@ -75,6 +75,7 @@ export const initializeDominoGameSocket = io => {
 					winRule = 'STANDARD',
 					roomType = 'PUBLIC',
 					targetPoints = 0,
+					opponentType = 'AI',
 				} = data;
 
 				const { role } = socket;
@@ -86,6 +87,7 @@ export const initializeDominoGameSocket = io => {
 					winRule,
 					roomType,
 					targetPoints,
+					opponentType,
 				});
 
 				if (result.success) {
@@ -388,6 +390,7 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			winRule = 'STANDARD',
 			roomType = 'PUBLIC',
 			targetPoints = 0,
+			opponentType = 'AI',
 		} = options;
 
 		// Get game configuration for validation
@@ -446,6 +449,14 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			return {
 				success: false,
 				error: 'Room type must be PUBLIC or PRIVATE',
+			};
+		}
+
+		// Validate opponent type
+		if (!['HUMAN', 'AI'].includes(opponentType)) {
+			return {
+				success: false,
+				error: 'Opponent type must be HUMAN or AI',
 			};
 		}
 
@@ -571,6 +582,7 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			playerCount,
 			entryFee,
 			'gameSettings.winRule': winRule,
+			opponentType,
 			$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
 		});
 
@@ -598,6 +610,7 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 				playerCount,
 				entryFee,
 				cashType,
+				opponentType,
 				gameSettings: {
 					tilesPerPlayer: playerCount <= 2 ? 9 : 7,
 					winRule,

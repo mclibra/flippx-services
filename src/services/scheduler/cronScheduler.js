@@ -856,16 +856,35 @@ class CronScheduler {
 				return;
 			}
 
-			const maxWaitTime = new Date(Date.now() - 3 * 1000);
-
-			const virtualRoomsNeedingBots = await DominoRoom.find({
+			// Get rooms with AI opponent type (3 seconds wait time)
+			const maxWaitTimeAI = new Date(Date.now() - 3 * 1000);
+			const virtualRoomsNeedingBotsAI = await DominoRoom.find({
 				status: 'WAITING',
 				cashType: 'VIRTUAL',
+				opponentType: 'AI',
 				createdAt: {
-					$lte: maxWaitTime,
+					$lte: maxWaitTimeAI,
 				},
 				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
 			}).limit(10);
+
+			// Get rooms with HUMAN opponent type (30 seconds wait time)
+			const maxWaitTimeHUMAN = new Date(Date.now() - 30 * 1000);
+			const virtualRoomsNeedingBotsHUMAN = await DominoRoom.find({
+				status: 'WAITING',
+				cashType: 'VIRTUAL',
+				opponentType: 'HUMAN',
+				createdAt: {
+					$lte: maxWaitTimeHUMAN,
+				},
+				$expr: { $lt: [{ $size: '$players' }, '$playerCount'] },
+			}).limit(10);
+
+			// Combine both lists
+			const virtualRoomsNeedingBots = [
+				...virtualRoomsNeedingBotsAI,
+				...virtualRoomsNeedingBotsHUMAN,
+			];
 
 			for (const room of virtualRoomsNeedingBots) {
 				try {

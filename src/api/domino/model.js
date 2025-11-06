@@ -36,6 +36,11 @@ const DominoRoomSchema = new Schema(
 			enum: ['WAITING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
 			default: 'WAITING',
 		},
+		opponentType: {
+			type: String,
+			enum: ['HUMAN', 'AI'],
+			default: 'AI',
+		},
 		players: [
 			{
 				user: { type: String, ref: 'User' },
