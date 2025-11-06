@@ -45,6 +45,7 @@ class CronScheduler {
 		this.isShuttingDown = false;
 		this.jobLastRun = new Map(); // Track when each job last ran
 		this.jobDefinitions = new Map(); // Store job definitions for restart
+		this.jobNameToInstance = new Map(); // Map job names to cron job instances
 	}
 
 	/**
@@ -304,6 +305,7 @@ class CronScheduler {
 			);
 
 			this.activeCronJobs.add(cronJob);
+			this.jobNameToInstance.set(jobName, cronJob);
 			this.jobLastRun.set(jobName, new Date());
 			console.log(
 				`✅ Cron job registered: ${jobName} (${schedule}) with timezone ${preferredTimezone}`
@@ -393,6 +395,7 @@ class CronScheduler {
 		this.activeCronJobs.clear();
 		this.jobDefinitions.clear();
 		this.jobLastRun.clear();
+		this.jobNameToInstance.clear();
 		console.log('✅ Cron scheduler shut down successfully');
 	}
 
@@ -462,31 +465,50 @@ class CronScheduler {
 	async restartAllJobs() {
 		console.log('🔄 Restarting all cron jobs...');
 
-		// Destroy existing jobs
-		for (const cronJob of this.activeCronJobs) {
-			try {
-				if (cronJob && typeof cronJob.destroy === 'function') {
-					cronJob.destroy();
+		// System jobs that should not be restarted (they handle themselves)
+		const systemJobs = new Set([
+			'cron-restart-all-jobs',
+			'cron-health-check',
+		]);
+
+		// Destroy only non-system jobs
+		for (const [jobName, cronJob] of this.jobNameToInstance) {
+			if (!systemJobs.has(jobName)) {
+				try {
+					if (cronJob && typeof cronJob.destroy === 'function') {
+						cronJob.destroy();
+					}
+					this.activeCronJobs.delete(cronJob);
+					this.jobNameToInstance.delete(jobName);
+				} catch (error) {
+					console.error(`Error stopping cron job ${jobName}:`, error);
 				}
-			} catch (error) {
-				console.error('Error stopping cron job:', error);
 			}
 		}
 
-		// Clear active jobs
-		this.activeCronJobs.clear();
-
-		// Recreate all jobs from stored definitions
+		// Recreate all jobs from stored definitions (except system jobs)
 		let restartedCount = 0;
 		for (const [jobName, definition] of this.jobDefinitions) {
-			this.createCronJob(
-				definition.schedule,
-				jobName,
-				definition.jobFunction,
-				0, // Reset retry count
-				definition.timezone || 'America/New_York' // Use stored timezone or default
-			);
-			restartedCount++;
+			// Skip system jobs - they should continue running and not be restarted
+			if (systemJobs.has(jobName)) {
+				continue;
+			}
+
+			try {
+				this.createCronJob(
+					definition.schedule,
+					jobName,
+					definition.jobFunction,
+					0, // Reset retry count
+					definition.timezone || 'America/New_York' // Use stored timezone or default
+				);
+				restartedCount++;
+			} catch (error) {
+				console.error(
+					`❌ Failed to restart cron job ${jobName}:`,
+					error.message
+				);
+			}
 		}
 
 		// Update restart job's own last run time
@@ -885,6 +907,8 @@ class CronScheduler {
 				...virtualRoomsNeedingBotsAI,
 				...virtualRoomsNeedingBotsHUMAN,
 			];
+
+			console.log(`VirtualRoomsNeedingBots ${virtualRoomsNeedingBots}`);
 
 			for (const room of virtualRoomsNeedingBots) {
 				try {
