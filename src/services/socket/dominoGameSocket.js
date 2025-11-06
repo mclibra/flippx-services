@@ -471,14 +471,11 @@ const joinOrCreateRoomSocket = async (socket, options) => {
 			status: 'WAITING',
 		});
 
-		console.log(
-			`[ROOM-VALIDATION] User ${userName} (${userId}) validation check:`,
-			{
-				hasExistingRoom: !!existingRoom,
-				existingRoomId: existingRoom?.roomId,
-				existingRoomStatus: existingRoom?.status,
-			}
-		);
+		console.log(`[ROOM-VALIDATION] User ${userName} validation check:`, {
+			hasExistingRoom: !!existingRoom,
+			existingRoomId: existingRoom?.roomId,
+			existingRoomStatus: existingRoom?.status,
+		});
 
 		if (existingRoom) {
 			// Check if the user is actually connected in this room
@@ -705,9 +702,7 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 		`Broadcasting ${event} to room ${roomId} - ${socketCount} sockets in room`
 	);
 
-	// Debug: List all connected sockets and their rooms
 	const connectedSockets = Array.from(dominoNamespace.sockets.values());
-	console.log(`Total connected sockets: ${connectedSockets.length}`);
 	connectedSockets.forEach(socket => {
 		const rooms = Array.from(socket.rooms);
 		console.log(
@@ -716,14 +711,12 @@ export const broadcastDominoGameUpdateToRoom = (roomId, event, data) => {
 			}) in rooms: [${rooms.join(', ')}]`
 		);
 	});
-
-	console.log(data);
 	dominoNamespace.to(roomId).emit(event, data);
 };
 
 // Send message to specific user
 export const sendDominoGameUpdateToUser = (userId, roomId, event, data) => {
-	console.log(`Sending ${event} to user ${userId} in room ${roomId}`);
+	console.log(`Trying to send ${event} to user ${userId} in room ${roomId}`);
 
 	if (!dominoNamespace) {
 		console.warn(
@@ -731,18 +724,12 @@ export const sendDominoGameUpdateToUser = (userId, roomId, event, data) => {
 		);
 		return;
 	}
-
-	console.log(`DominoSocket ${dominoNamespace}`);
-	Array.from(dominoNamespace.sockets.values()).forEach(socket =>
-		console.log(
-			`Socket user ${socket.userId} && Socket room => ${socket.roomId}`
-		)
-	);
 	const userSockets = Array.from(dominoNamespace.sockets.values()).filter(
 		socket => socket.userId === userId && socket.roomId == roomId
 	);
 
 	userSockets.forEach(socket => {
+		console.log(`Sending ${event} to user ${userId} in room ${roomId}`);
 		socket.emit(event, data);
 	});
 };

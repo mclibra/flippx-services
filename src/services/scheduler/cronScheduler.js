@@ -26,7 +26,7 @@ import {
 	removeDisconnectedPlayersFromWaitingRooms,
 	handleGameCompletion,
 } from '../../api/domino/controller';
-import SocketBroadcastService from '../socket/socketBroadcastService';
+import { broadcastDominoGameUpdateToRoom } from '../socket/dominoGameSocket';
 
 // Import loyalty dependencies
 import {
@@ -250,7 +250,13 @@ class CronScheduler {
 	/**
 	 * Create a cron job with error handling
 	 */
-	createCronJob(schedule, jobName, jobFunction, retryCount = 0, preferredTimezone = 'America/New_York') {
+	createCronJob(
+		schedule,
+		jobName,
+		jobFunction,
+		retryCount = 0,
+		preferredTimezone = 'America/New_York'
+	) {
 		// Prevent infinite retry loops
 		if (retryCount > 3) {
 			console.error(
@@ -262,7 +268,9 @@ class CronScheduler {
 		try {
 			// Validate schedule format before attempting to create cron job
 			if (!schedule || typeof schedule !== 'string') {
-				throw new Error(`Invalid schedule format for ${jobName}: ${schedule}`);
+				throw new Error(
+					`Invalid schedule format for ${jobName}: ${schedule}`
+				);
 			}
 
 			// Store job definition for potential restart (with timezone info)
@@ -297,31 +305,58 @@ class CronScheduler {
 
 			this.activeCronJobs.add(cronJob);
 			this.jobLastRun.set(jobName, new Date());
-			console.log(`✅ Cron job registered: ${jobName} (${schedule}) with timezone ${preferredTimezone}`);
+			console.log(
+				`✅ Cron job registered: ${jobName} (${schedule}) with timezone ${preferredTimezone}`
+			);
 		} catch (error) {
 			// Check if this is a timezone/time value error
-			const isTimezoneError = 
+			const isTimezoneError =
 				error.message.includes('Invalid timezone') ||
 				error.message.includes('Invalid time value') ||
 				error.name === 'RangeError' ||
-				(error.stack && error.stack.includes('DateTimeFormat.formatToParts'));
+				(error.stack &&
+					error.stack.includes('DateTimeFormat.formatToParts'));
 
 			if (isTimezoneError && preferredTimezone !== 'UTC') {
 				// For timezone/time value errors, try with UTC as fallback
-				console.log(`🔄 Timezone error detected for ${jobName}. Attempting with UTC timezone as fallback...`);
-				this.createCronJob(schedule, jobName, jobFunction, retryCount, 'UTC');
+				console.log(
+					`🔄 Timezone error detected for ${jobName}. Attempting with UTC timezone as fallback...`
+				);
+				this.createCronJob(
+					schedule,
+					jobName,
+					jobFunction,
+					retryCount,
+					'UTC'
+				);
 			} else if (!isTimezoneError) {
 				// Retry after a delay for other errors
-				console.error(`❌ Failed to create cron job ${jobName}:`, error);
+				console.error(
+					`❌ Failed to create cron job ${jobName}:`,
+					error
+				);
 				console.error('Stack trace:', error.stack);
-				
+
 				setTimeout(() => {
-					console.log(`🔄 Retrying to create cron job ${jobName} (attempt ${retryCount + 1})...`);
-					this.createCronJob(schedule, jobName, jobFunction, retryCount + 1, preferredTimezone);
+					console.log(
+						`🔄 Retrying to create cron job ${jobName} (attempt ${
+							retryCount + 1
+						})...`
+					);
+					this.createCronJob(
+						schedule,
+						jobName,
+						jobFunction,
+						retryCount + 1,
+						preferredTimezone
+					);
 				}, 60000);
 			} else {
 				// UTC fallback also failed
-				console.error(`❌ Failed to create cron job ${jobName} even with UTC fallback:`, error);
+				console.error(
+					`❌ Failed to create cron job ${jobName} even with UTC fallback:`,
+					error
+				);
 				console.error('Stack trace:', error.stack);
 			}
 		}
@@ -1129,7 +1164,7 @@ class CronScheduler {
 			await room.save();
 
 			for (const bot of bots) {
-				await SocketBroadcastService.broadcastToDominoRoom(
+				await broadcastDominoGameUpdateToRoom(
 					room.roomId,
 					'player-joined',
 					{
@@ -1212,7 +1247,7 @@ class CronScheduler {
 				return;
 			}
 
-			await SocketBroadcastService.broadcastToDominoRoom(
+			await broadcastDominoGameUpdateToRoom(
 				updatedGame.room.roomId,
 				'game-update',
 				{

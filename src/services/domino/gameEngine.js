@@ -181,8 +181,6 @@ export class DominoGameEngine {
 		// Strategy for computer players
 		let validMoves = this.getValidMoves(player.hand, gameState.board);
 
-		console.log('validMoves => ', validMoves);
-
 		if (validMoves.length > 0) {
 			// Computer strategy: prefer tiles with higher dots or doubles
 			const bestMove = validMoves.reduce((best, current) => {
@@ -239,7 +237,6 @@ export class DominoGameEngine {
 
 	static processMove(game, move, isAutoMove = false) {
 		try {
-			console.log(`processMove => ${JSON.stringify(move)}`);
 			// Create a deep copy of the game state to avoid mutations
 			const gameState = JSON.parse(JSON.stringify(game));
 
@@ -306,11 +303,6 @@ export class DominoGameEngine {
 			}
 
 			// Validate tile can be placed
-			console.log(
-				`Calling canPlaceTile with => ${JSON.stringify(
-					move
-				)} and ${JSON.stringify(gameState.board)}`
-			);
 			const canPlace = this.canPlaceTile(move.tile, gameState.board);
 			if (!canPlace.canPlace) {
 				return {
@@ -360,15 +352,11 @@ export class DominoGameEngine {
 		// Check if game should be blocked using enhanced logic
 		const blockCheck = this.checkGameBlocked(gameState);
 
-		console.log(`Block check result: ${JSON.stringify(blockCheck)}`);
-
 		// Check for game completion
 		const winnerCheck = this.checkGameCompletion(
 			gameState,
 			blockCheck.isBlocked
 		);
-
-		console.log(`Winner check result: ${JSON.stringify(winnerCheck)}`);
 
 		if (winnerCheck.isComplete) {
 			gameState.gameState = blockCheck.isBlocked
@@ -391,8 +379,6 @@ export class DominoGameEngine {
 			gameState.turnStartTime = new Date();
 		}
 
-		console.log(`Processing move has completed`);
-
 		return {
 			success: true,
 			gameState,
@@ -406,11 +392,6 @@ export class DominoGameEngine {
 			player => !this.hasValidMoves(player.hand, gameState.board)
 		);
 		const noTilesToDraw = gameState.drawPile.length === 0;
-
-		console.log(`Checking if game is blocked`);
-		console.log(
-			`noPlayableTiles => ${noPlayableTiles} and noTilesToDraw => ${noTilesToDraw}`
-		);
 
 		if (noPlayableTiles && noTilesToDraw) {
 			return {
@@ -428,9 +409,6 @@ export class DominoGameEngine {
 
 		// If there are no human players, skip this check
 		if (humanPlayersCount === 0) {
-			console.log(
-				'No human players found, skipping human auto-move check'
-			);
 			return { isBlocked: false };
 		}
 
@@ -446,30 +424,9 @@ export class DominoGameEngine {
 
 		const recentHumanMoves = humanMoves.slice(-requiredAutoMoves);
 
-		console.log(
-			`Checking last ${requiredAutoMoves} moves by human players for all AUTO moves`
-		);
-		console.log(
-			`Human player positions: ${humanPlayerPositions.join(', ')}`
-		);
-		console.log(
-			`Total moves: ${gameState.moves.length}, Human moves: ${humanMoves.length}`
-		);
-		console.log(
-			`Recent human moves (${recentHumanMoves.length}):`,
-			recentHumanMoves.map(move => ({
-				player: move.player,
-				isAutoMove: move.isAutoMove,
-			}))
-		);
-
 		const allRecentHumanMovesAreAuto =
 			recentHumanMoves.length === requiredAutoMoves &&
 			recentHumanMoves.every(move => move.isAutoMove === true);
-
-		console.log(
-			`All human players have auto-moved for last 2 rounds: ${allRecentHumanMovesAreAuto}`
-		);
 
 		if (allRecentHumanMovesAreAuto) {
 			return {
@@ -553,10 +510,6 @@ export class DominoGameEngine {
 			nextPlayer = (nextPlayer + 1) % gameState.players.length;
 			attempts++;
 		}
-
-		console.log(
-			`Next player is: ${nextPlayer} (current: ${gameState.currentPlayer})`
-		);
 
 		return nextPlayer;
 	}
