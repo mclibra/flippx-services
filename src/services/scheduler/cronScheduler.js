@@ -471,26 +471,41 @@ class CronScheduler {
 			'cron-health-check',
 		]);
 
-		// Destroy only non-system jobs
-		for (const [jobName, cronJob] of this.jobNameToInstance) {
+		// Determine which jobs should be restarted
+		const jobNamesToRestart = [];
+		for (const jobName of this.jobDefinitions.keys()) {
 			if (!systemJobs.has(jobName)) {
-				try {
-					if (cronJob && typeof cronJob.destroy === 'function') {
-						cronJob.destroy();
-					}
-					this.activeCronJobs.delete(cronJob);
-					this.jobNameToInstance.delete(jobName);
-				} catch (error) {
-					console.error(`Error stopping cron job ${jobName}:`, error);
-				}
+				jobNamesToRestart.push(jobName);
 			}
+		}
+
+		// Destroy existing instances for restartable jobs
+		for (const jobName of jobNamesToRestart) {
+			const cronJob = this.jobNameToInstance.get(jobName);
+			if (!cronJob) {
+				continue;
+			}
+
+			try {
+				if (typeof cronJob.destroy === 'function') {
+					cronJob.destroy();
+				}
+			} catch (error) {
+				console.error(`Error stopping cron job ${jobName}:`, error);
+			}
+
+			this.activeCronJobs.delete(cronJob);
+			this.jobNameToInstance.delete(jobName);
 		}
 
 		// Recreate all jobs from stored definitions (except system jobs)
 		let restartedCount = 0;
-		for (const [jobName, definition] of this.jobDefinitions) {
-			// Skip system jobs - they should continue running and not be restarted
-			if (systemJobs.has(jobName)) {
+		for (const jobName of jobNamesToRestart) {
+			const definition = this.jobDefinitions.get(jobName);
+			if (!definition) {
+				console.warn(
+					`⚠️  Missing job definition while restarting ${jobName}. Skipping.`
+				);
 				continue;
 			}
 
@@ -510,7 +525,6 @@ class CronScheduler {
 				);
 			}
 		}
-
 		// Update restart job's own last run time
 		this.jobLastRun.set('cron-restart-all-jobs', new Date());
 		console.log(`✅ Restarted ${restartedCount} cron jobs`);
