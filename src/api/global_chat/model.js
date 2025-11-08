@@ -113,6 +113,41 @@ GlobalChatUserReportSchema.index(
 	{ unique: true, partialFilterExpression: { message: { $exists: false } } }
 );
 
+const GlobalChatSettingsSchema = new Schema(
+	{
+		_id: { type: String, default: 'global-settings' },
+		isChatDisabled: { type: Boolean, default: false },
+		disabledReason: { type: String, default: null },
+		disabledBy: { type: String, ref: 'User', default: null },
+		disabledAt: { type: Date, default: null },
+	},
+	{
+		timestamps: true,
+		toJSON: {
+			virtuals: true,
+			transform: (obj, ret) => {
+				delete ret._id;
+			},
+		},
+	}
+);
+
+GlobalChatSettingsSchema.statics.getSettings = async function () {
+	let settings = await this.findById('global-settings');
+	if (!settings) {
+		try {
+			settings = await this.create({ _id: 'global-settings' });
+		} catch (error) {
+			if (error.code === 11000) {
+				settings = await this.findById('global-settings');
+			} else {
+				throw error;
+			}
+		}
+	}
+	return settings;
+};
+
 export const GlobalChatMessage = mongoose.model(
 	'GlobalChatMessage',
 	GlobalChatMessageSchema
@@ -128,5 +163,9 @@ export const GlobalChatMessageReport = mongoose.model(
 export const GlobalChatUserReport = mongoose.model(
 	'GlobalChatUserReport',
 	GlobalChatUserReportSchema
+);
+export const GlobalChatSettings = mongoose.model(
+	'GlobalChatSettings',
+	GlobalChatSettingsSchema
 );
 

@@ -22,6 +22,7 @@ import adminTierManagement from './admin/tier-management';
 import adminBorletteManagement from './admin/borlette-management';
 import adminMegamillionManagement from './admin/megamillion-management';
 import adminRouletteManagement from './admin/roulette-management';
+import adminGlobalChatManagement from './admin/global-chat-management';
 import globalChat from './global_chat';
 
 const router = new Router();
@@ -49,6 +50,7 @@ router.use('/admin/states', adminStateManagement);
 router.use('/admin/borlette-management', adminBorletteManagement);
 router.use('/admin/megamillion-management', adminMegamillionManagement);
 router.use('/admin/roulette-management', adminRouletteManagement);
+router.use('/admin/global-chat-management', adminGlobalChatManagement);
 router.use('/global-chat', globalChat);
 
 export default router;

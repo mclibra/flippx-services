@@ -1,5 +1,9 @@
 import { jwtVerify } from '../jwt';
-import { GlobalChatMessage, GlobalChatMute } from '../../api/global_chat/model';
+import {
+	GlobalChatMessage,
+	GlobalChatMute,
+	GlobalChatSettings,
+} from '../../api/global_chat/model';
 
 let globalChatNamespace = null;
 
@@ -82,6 +86,20 @@ export const initializeGlobalChatSocket = io => {
 					mediaHeight,
 				} = data;
 				const { userId, userName } = socket;
+
+				// Check if chat is disabled
+				const settings = await GlobalChatSettings.getSettings();
+				if (settings.isChatDisabled) {
+					socket.emit('message-error', {
+						success: false,
+						error:
+							settings.disabledReason ||
+							'Global chat is currently disabled',
+						chatDisabled: true,
+						disabledAt: settings.disabledAt,
+					});
+					return;
+				}
 
 				// Check if user is muted
 				const muteCheck = await checkIfUserMuted(userId);
