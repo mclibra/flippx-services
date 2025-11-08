@@ -86,10 +86,6 @@ All routes are mounted under `/api/global-chat` and require:
 | `GET /online` | User | Current online user count |
 | `POST /report/message` | User | Report a message and hide it from the reporter |
 | `POST /report/user` | User | Report a chat participant (optional message context) |
-| `GET /muted` | Admin | List muted users (optional pagination, include expired) |
-| `POST /mute` | Admin | Mute a user with optional expiration |
-| `DELETE /mute/:userId` | Admin | Remove mute |
-| `DELETE /message/:messageId` | Admin | Soft delete a message |
 
 ### `GET /api/global-chat/`
 Retrieve chat history.
@@ -171,33 +167,6 @@ Escalate a participant to moderators, optionally tying it to a message.
 **Important checks**
 - Reporter cannot be the same as `reportedUserId`.
 - If `messageId` is provided it must belong to `reportedUserId`.
-
-### `GET /api/global-chat/muted` (Admin)
-List mute records. Supports the following query params:
-
-| Param | Default | Notes |
-| --- | --- | --- |
-| `limit` | 50 | Page size |
-| `offset` | 0 | Page offset |
-| `includeExpired` | `false` | Pass `"true"` to include inactive records |
-
-### `POST /api/global-chat/mute` (Admin)
-```json
-{
-  "userId": "5f9ab1...",
-  "reason": "Spam",
-  "expiresAt": "2025-11-15T00:00:00.000Z"  // optional
-}
-```
-Creates a mute and notifies the target user via socket event.
-
-### `DELETE /api/global-chat/mute/:userId` (Admin)
-Immediately marks the mute as inactive.
-
-### `DELETE /api/global-chat/message/:messageId` (Admin)
-Soft deletes a message. The record remains in the database with `isDeleted=true`.
-
----
 
 ## Socket Events
 
