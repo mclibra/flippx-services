@@ -74,7 +74,13 @@ export const initializeGlobalChatSocket = io => {
 		// Send message
 		socket.on('send-message', async data => {
 			try {
-				const { message, messageType = 'TEXT', mediaUrl } = data;
+				const {
+					message,
+					messageType = 'TEXT',
+					mediaUrl,
+					mediaWidth,
+					mediaHeight,
+				} = data;
 				const { userId, userName } = socket;
 
 				// Check if user is muted
@@ -122,6 +128,20 @@ export const initializeGlobalChatSocket = io => {
 						});
 						return;
 					}
+
+					const widthValid =
+						typeof mediaWidth === 'number' && mediaWidth > 0;
+					const heightValid =
+						typeof mediaHeight === 'number' && mediaHeight > 0;
+
+					if (!widthValid || !heightValid) {
+						socket.emit('message-error', {
+							success: false,
+							error:
+								'Media width and height must be positive numbers',
+						});
+						return;
+					}
 				}
 
 				// Create chat message in database
@@ -131,6 +151,10 @@ export const initializeGlobalChatSocket = io => {
 					message: messageType === 'TEXT' ? message.trim() : '',
 					messageType: messageType,
 					mediaUrl: messageType !== 'TEXT' ? mediaUrl : undefined,
+					mediaWidth:
+						messageType !== 'TEXT' ? mediaWidth : undefined,
+					mediaHeight:
+						messageType !== 'TEXT' ? mediaHeight : undefined,
 				});
 
 				// Broadcast message to all users in global chat (including sender)
@@ -141,6 +165,8 @@ export const initializeGlobalChatSocket = io => {
 					message: chatMessage.message,
 					messageType: chatMessage.messageType,
 					mediaUrl: chatMessage.mediaUrl,
+					mediaWidth: chatMessage.mediaWidth,
+					mediaHeight: chatMessage.mediaHeight,
 					timestamp: chatMessage.createdAt,
 				};
 

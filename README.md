@@ -11,7 +11,7 @@ This Node.js/Express.js API service powers a multi-state gaming platform that of
 - **Dual Cash System**: Real cash (withdrawable/non-withdrawable) and virtual cash
 - **Loyalty Program**: Tier-based rewards (NONE, SILVER, GOLD, VIP) with XP system
 - **Multi-state Support**: Different lottery configurations per state
-- **Real-time Features**: Live game updates via Socket.io
+- **Real-time Features**: Live game updates via Socket.io and moderated global chat
 
 ## 🏗️ Architecture
 
@@ -28,6 +28,7 @@ src/
 │   ├── roulette/                # Roulette game logic
 │   ├── roulette_ticket/         # Roulette betting
 │   ├── domino/                  # Domino game management
+│   ├── global_chat/             # Global lobby chat APIs
 │   ├── wallet/                  # Wallet and balance operations
 │   ├── transaction/             # Transaction processing
 │   ├── user/                    # User management
@@ -175,6 +176,14 @@ POST   /api/ticket/megamillion    # Place Mega Million bet
 GET    /api/roulette              # Active roulette games
 POST   /api/roulette-ticket       # Place roulette bet
 GET    /api/roulette/:id/results  # Game results
+```
+
+### **Global Chat**
+```
+GET    /api/global-chat                   # Fetch chat history
+GET    /api/global-chat/online            # Online user count
+POST   /api/global-chat/report/message    # Report a chat message
+POST   /api/global-chat/report/user       # Report a chat participant
 ```
 
 ### **Loyalty System**

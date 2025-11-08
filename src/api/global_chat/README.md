@@ -1,292 +1,367 @@
-# Global Chat System Implementation
+# Global Chat Service
 
-## Overview
-A complete socket-based global chat system has been successfully implemented following the existing codebase patterns. The system includes real-time messaging, media support, admin moderation, persistence, and REST API endpoints.
+REST and socket interfaces that power the public lobby chat in FlippX. This document explains how messages move through the system, which APIs are available, and how moderation features operate.
 
-## Files Created
+---
 
-### 1. Database Models
-**File:** `/src/api/global_chat/model.js`
+## Quick Reference
 
-Created two MongoDB schemas:
-- **GlobalChatMessage**: Stores all chat messages with support for text and media (images, audio, video)
-- **GlobalChatMute**: Manages muted users with optional expiration dates
+| Area | What’s Covered |
+| --- | --- |
+| [Key Concepts](#key-concepts) | Core data entities and how they relate |
+| [Data Models](#data-models) | Mongo collections with important fields |
+| [REST APIs](#rest-apis) | Request/response contracts and examples |
+| [Socket Events](#socket-events) | Client/server events with payload samples |
+| [Moderation Flows](#moderation-flows) | How reporting, hiding, and muting work |
+| [Usage Examples](#usage-examples) | End-to-end snippets for common actions |
+| [Testing Checklist](#testing-checklist) | Manual validation steps |
 
-### 2. Socket Implementation
-**File:** `/src/services/socket/globalChatSocket.js`
+---
 
-Implemented socket namespace `/global-chat` with the following features:
+## Key Concepts
 
-#### Client Events (received from client):
-- `join-global-chat` - User joins global chat
-- `send-message` - Send chat message (text or media URL)
-- `leave-global-chat` - User leaves global chat
-- `typing-start` - User starts typing
-- `typing-stop` - User stops typing
-- `get-chat-history` - Request chat history with pagination
-- `delete-message` - Admin deletes a message (admin only)
+- **Public Lobby** – shared channel where every connected player sees the same stream, except for messages they personally report.
+- **Message Visibility** – messages are soft deleted globally for admin removals and locally hidden when a user reports them.
+- **Moderation Roles** – admins can mute users and delete messages; end users can report content or other participants.
+- **Transport** – Socket.io drives real-time updates; Express routes expose history, status, and moderation operations.
 
-#### Server Events (emitted to clients):
-- `global-chat-joined` - Successful join confirmation
-- `new-message` - Broadcast new message to all users
-- `message-deleted` - Broadcast message deletion
-- `user-joined` - Notify when user joins
-- `user-left` - Notify when user leaves
-- `user-typing` - Broadcast typing indicator
-- `user-stopped-typing` - Broadcast stop typing
-- `online-users-count` - Broadcast online user count
-- `chat-history` - Return paginated chat history
-- `message-error` - Error sending message
-- `user-muted` - User was muted notification
+---
 
-#### Helper Functions Exported:
-- `broadcastToGlobalChat(event, data)` - Broadcast to all users
-- `getOnlineUsersCount()` - Get current online users count
-- `notifyUserMuted(userId, muteInfo)` - Notify specific user they were muted
-
-### 3. REST API Controller
-**File:** `/src/api/global_chat/controller.js`
-
-Implemented the following controller functions:
-- `getChatHistory` - Get paginated chat history (authenticated users)
-- `reportMessage` - Report a chat message (authenticated users, hides message for reporter)
-- `reportUser` - Report a chat participant (authenticated users)
-- `deleteMessage` - Admin soft-deletes a message (admin only)
-- `muteUser` - Admin mutes a user from global chat (admin only)
-- `unmuteUser` - Admin unmutes a user (admin only)
-- `getMutedUsers` - Get list of muted users (admin only)
-- `getOnlineUsers` - Get current online users count (authenticated users)
-
-### 4. REST API Routes
-**File:** `/src/api/global_chat/index.js`
-
-Created the following REST endpoints:
-- `GET /global-chat/` - Get chat history (authenticated)
-- `GET /global-chat/online` - Get online users count (authenticated)
-- `POST /global-chat/report/message` - Report a message (authenticated)
-- `POST /global-chat/report/user` - Report a user (authenticated)
-- `GET /global-chat/muted` - Get muted users list (admin only)
-- `DELETE /global-chat/message/:messageId` - Delete message (admin only)
-- `POST /global-chat/mute` - Mute user (admin only)
-- `DELETE /global-chat/mute/:userId` - Unmute user (admin only)
-
-## Files Modified
-
-### 1. Socket Registration
-**File:** `/src/services/socket/index.js`
-- Imported `initializeGlobalChatSocket`
-- Added initialization call for global chat socket namespace
-
-### 2. API Routes Registration
-**File:** `/src/api/index.js`
-- Imported global_chat routes
-- Registered route: `router.use('/global-chat', globalChat)`
-
-## Key Features Implemented
-
-### 1. Authentication
-- JWT authentication middleware for both socket and HTTP connections
-- User identity attached to all socket connections (userId, role, userName)
-
-### 2. Message Validation
-- Text messages: Max 500 characters, required, non-empty
-- Media messages: Require valid mediaUrl
-- Message type validation (TEXT, IMAGE, AUDIO, VIDEO)
-
-### 3. Mute System
-- Admins can mute/unmute users
-- Optional expiration dates for temporary mutes
-- Auto-expiration checking
-- Real-time notification to muted users
-- Prevents muted users from sending messages
-
-### 4. Soft Delete
-- Messages are soft-deleted (isDeleted flag)
-- Tracks who deleted the message and when
-- Deleted messages excluded from history queries
-
-### 5. Real-time Features
-- User join/leave notifications
-- Typing indicators
-- Online users count tracking
-- Message broadcasting to all connected users
-
-### 6. Pagination
-- Chat history supports limit/offset pagination
-- Returns total count and hasMore flag
-- Configurable sorting
-
-### 7. Admin Moderation
-- Delete messages via socket or REST API
-- Mute/unmute users
-- View list of all muted users
-- Role-based access control
-
-## Database Schema Details
+## Data Models
 
 ### GlobalChatMessage
-```javascript
-{
-  user: String (ref to User),
-  userName: String,
-  message: String,
-  messageType: String (TEXT, IMAGE, AUDIO, VIDEO),
-  mediaUrl: String,
-  isDeleted: Boolean,
-  deletedBy: String (ref to User),
-  deletedAt: Date,
-  timestamps: true (createdAt, updatedAt)
-}
-```
+| Field | Type | Notes |
+| --- | --- | --- |
+| `user` | `String` (ref `User`) | Author ID |
+| `userName` | `String` | Stored for quick rendering |
+| `message` | `String` | Required for `TEXT` messages |
+| `messageType` | `Enum('TEXT','IMAGE','AUDIO','VIDEO')` | Defaults to `TEXT` |
+| `mediaUrl` | `String` | Required for non-text messages |
+| `mediaWidth` | `Number` | Pixel width for media messages |
+| `mediaHeight` | `Number` | Pixel height for media messages |
+| `isDeleted` | `Boolean` | Soft delete flag (admin only) |
+| `deletedBy` | `String` (ref `User`) | Admin responsible for deletion |
+| `deletedAt` | `Date` | Timestamp of deletion |
+| `createdAt/updatedAt` | `Date` | Managed by Mongoose |
 
 ### GlobalChatMute
-```javascript
-{
-  user: String (ref to User, unique),
-  mutedBy: String (ref to User),
-  reason: String,
-  expiresAt: Date (optional),
-  isActive: Boolean,
-  timestamps: true (createdAt, updatedAt)
-}
-```
+| Field | Type | Notes |
+| --- | --- | --- |
+| `user` | `String` (ref `User`, unique)` | Muted player |
+| `mutedBy` | `String` (ref `User`) | Admin who muted |
+| `reason` | `String` | Optional note |
+| `expiresAt` | `Date` | Optional auto-unmute time |
+| `isActive` | `Boolean` | False when unmuted/expired |
 
 ### GlobalChatMessageReport
-```javascript
+| Field | Type | Notes |
+| --- | --- | --- |
+| `message` | `ObjectId` (ref `GlobalChatMessage`) | Reported message |
+| `reportedBy` | `ObjectId` (ref `User`) | Reporter |
+| `reason` | `String` | Optional reason |
+| Unique Index | `(message, reportedBy)` | Prevents duplicate reports |
+
+### GlobalChatUserReport
+| Field | Type | Notes |
+| --- | --- | --- |
+| `reportedUser` | `ObjectId` (ref `User`) | User being reported |
+| `reportedBy` | `ObjectId` (ref `User`) | Reporter |
+| `message` | `ObjectId` (ref `GlobalChatMessage`, optional)` | Tie report to a specific message |
+| `reason` | `String` | Optional |
+| Unique Indexes | `(reportedUser, reportedBy)` and `(reportedUser, reportedBy, message)` | Enforces one report per pair (with/without message) |
+
+---
+
+## REST APIs
+
+All routes are mounted under `/api/global-chat` and require:
+- `x-api-key` header (`xApi()` middleware)
+- Valid JWT (`token({ required: true })`)
+
+### Summary
+
+| Method & Path | Auth | Description |
+| --- | --- | --- |
+| `GET /` | User | Paginated chat history (auto-hides reporter’s flagged messages) |
+| `GET /online` | User | Current online user count |
+| `POST /report/message` | User | Report a message and hide it from the reporter |
+| `POST /report/user` | User | Report a chat participant (optional message context) |
+| `GET /muted` | Admin | List muted users (optional pagination, include expired) |
+| `POST /mute` | Admin | Mute a user with optional expiration |
+| `DELETE /mute/:userId` | Admin | Remove mute |
+| `DELETE /message/:messageId` | Admin | Soft delete a message |
+
+### `GET /api/global-chat/`
+Retrieve chat history.
+
+**Query Parameters**
+| Name | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `limit` | `number` | 50 | Max records to return |
+| `offset` | `number` | 0 | Records to skip |
+| `sortBy` | `string` | `createdAt` | Any indexed field |
+| `sortOrder` | `string` | `desc` | `asc` or `desc` |
+
+**Success Response**
+```json
 {
-  message: ObjectId (ref to GlobalChatMessage),
-  reportedBy: ObjectId (ref to User),
-  reason: String,
-  timestamps: true (createdAt, updatedAt)
+  "success": true,
+  "messages": [
+    {
+      "id": "64f0...",
+      "user": { "id": "5f9...", "name": "Jane" },
+      "userName": "Jane",
+      "message": "Welcome!",
+      "messageType": "TEXT",
+      "mediaUrl": null,
+      "mediaWidth": null,
+      "mediaHeight": null,
+      "createdAt": "2025-11-08T12:10:00.000Z"
+    }
+  ],
+  "total": 120,
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "hasMore": true
+  }
 }
 ```
 
-### GlobalChatUserReport
-```javascript
+Messages that the requester reported are excluded automatically.
+
+### `GET /api/global-chat/online`
+Returns the current number of connected users.
+
+```json
 {
-  reportedUser: ObjectId (ref to User),
-  reportedBy: ObjectId (ref to User),
-  message: ObjectId (ref to GlobalChatMessage, optional),
-  reason: String,
-  timestamps: true (createdAt, updatedAt)
+  "success": true,
+  "onlineUsersCount": 34
 }
 ```
+
+### `POST /api/global-chat/report/message`
+Report a chat message, hiding it for the reporting user.
+
+**Body**
+```json
+{
+  "messageId": "64f0b2...",
+  "reason": "Offensive language"
+}
+```
+
+**Responses**
+- `200` – report stored (idempotent; subsequent requests update the reason)
+- `404` – message not found or already deleted
+- `500` – unexpected error
+
+### `POST /api/global-chat/report/user`
+Escalate a participant to moderators, optionally tying it to a message.
+
+**Body**
+```json
+{
+  "reportedUserId": "5f9ab1...",
+  "messageId": "64f0b2...",        // optional
+  "reason": "Harassment"
+}
+```
+
+**Important checks**
+- Reporter cannot be the same as `reportedUserId`.
+- If `messageId` is provided it must belong to `reportedUserId`.
+
+### `GET /api/global-chat/muted` (Admin)
+List mute records. Supports the following query params:
+
+| Param | Default | Notes |
+| --- | --- | --- |
+| `limit` | 50 | Page size |
+| `offset` | 0 | Page offset |
+| `includeExpired` | `false` | Pass `"true"` to include inactive records |
+
+### `POST /api/global-chat/mute` (Admin)
+```json
+{
+  "userId": "5f9ab1...",
+  "reason": "Spam",
+  "expiresAt": "2025-11-15T00:00:00.000Z"  // optional
+}
+```
+Creates a mute and notifies the target user via socket event.
+
+### `DELETE /api/global-chat/mute/:userId` (Admin)
+Immediately marks the mute as inactive.
+
+### `DELETE /api/global-chat/message/:messageId` (Admin)
+Soft deletes a message. The record remains in the database with `isDeleted=true`.
+
+---
+
+## Socket Events
+
+Namespace: `/global-chat`
+
+### Authentication
+```javascript
+const socket = io('https://api.example.com/global-chat', {
+  auth: { token: '<jwt-token>' }
+});
+```
+
+### Client → Server Events
+
+| Event | Payload | Description |
+| --- | --- | --- |
+| `join-global-chat` | none | Register presence; server responds with `global-chat-joined` |
+| `send-message` | `{ messageType, message?, mediaUrl?, mediaWidth?, mediaHeight? }` | Submit text or media message (media requires URL + dimensions) |
+| `typing-start` | none | Signal typing indicator |
+| `typing-stop` | none | Remove typing indicator |
+| `leave-global-chat` | none | Optional explicit disconnect |
+| `get-chat-history` | `{ limit?, offset? }` | Request history snapshot via socket |
+| `delete-message` *(admin)* | `{ messageId }` | Delete message through socket moderation |
+
+### Server → Client Events
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `global-chat-joined` | `{ userId, onlineUsersCount }` | After successful join |
+| `new-message` | `message` object | Broadcast of newly created message |
+| `message-deleted` | `{ messageId }` | When a message is soft deleted |
+| `chat-history` | `{ messages, total, pagination }` | Response to `get-chat-history` |
+| `online-users-count` | `{ count }` | Periodic updates and on join/leave |
+| `user-typing` | `{ userId, userName }` | Another user started typing |
+| `user-stopped-typing` | `{ userId }` | Typing indicator cleared |
+| `user-muted` | `{ reason, mutedBy, expiresAt }` | Sent to muted user |
+| `message-error` | `{ error }` | Validation or authorization issues |
+
+---
+
+## Moderation Flows
+
+### User Reporting a Message
+1. Client calls `POST /report/message`.
+2. API upserts a report record and records the reason.
+3. Reported message ID is stored and excluded from that user’s future history requests.
+4. Admin tooling (outside scope) can surface report volume for review.
+
+### User Reporting Another Participant
+1. Optional `messageId` ensures the report references the offender’s content.
+2. Multiple messages can be reported individually; each pair `(reportedUser, reporter)` has at most one open report per message.
+3. Backend stores reports for manual moderation follow-up.
+
+### Admin Muting a User
+1. Admin invokes `POST /mute`.
+2. Active mute prevents the user from sending new messages (enforced server-side).
+3. Socket emits `user-muted` to the affected user with context.
+4. `expiresAt` automatically releases the mute when a background job/process evaluates it (implementation detail).
+
+### Admin Deleting a Message
+1. Admin calls REST `DELETE /message/:id` or socket `delete-message`.
+2. Message flagged with `isDeleted=true`; future history queries exclude it for everyone.
+3. Clients receive `message-deleted` broadcast and can remove the content locally.
+
+---
 
 ## Usage Examples
 
-### Socket Connection (Client Side)
+### Fetch Chat History (REST)
 ```javascript
-import io from 'socket.io-client';
-
-const socket = io('http://localhost:3000/global-chat', {
-  auth: {
-    token: 'your-jwt-token'
+const response = await fetch('/api/global-chat?limit=20', {
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    'x-api-key': apiKey
   }
 });
+const data = await response.json();
+```
 
-// Join global chat
-socket.emit('join-global-chat');
+### Report Message (REST)
+```javascript
+await fetch('/api/global-chat/report/message', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    'x-api-key': apiKey
+  },
+  body: JSON.stringify({
+    messageId: '64f0b2a...',
+    reason: 'Spam links'
+  })
+});
+```
 
-// Send text message
+### Send Message (Socket)
+```javascript
 socket.emit('send-message', {
   messageType: 'TEXT',
-  message: 'Hello everyone!'
+  message: 'Good luck everyone!'
 });
+```
 
-// Send image message
+```javascript
 socket.emit('send-message', {
   messageType: 'IMAGE',
-  mediaUrl: 'https://example.com/image.jpg'
+  mediaUrl: 'https://cdn.example.com/chat/emoji.png',
+  mediaWidth: 128,
+  mediaHeight: 128
 });
-
-// Listen for new messages
-socket.on('new-message', (data) => {
-  console.log('New message:', data);
-});
-
-// Listen for online users count
-socket.on('online-users-count', (data) => {
-  console.log('Online users:', data.count);
-});
-
-// Typing indicators
-socket.emit('typing-start');
-socket.emit('typing-stop');
 ```
 
-### REST API Usage
+### Handle Real-Time Updates (Socket)
 ```javascript
-// Get chat history
-GET /api/global-chat/?limit=50&offset=0
-
-// Get online users count
-GET /api/global-chat/online
-
-// Delete message (admin only)
-DELETE /api/global-chat/message/messageId123
-
-// Mute user (admin only)
-POST /api/global-chat/mute
-Body: {
-  userId: 'user123',
-  reason: 'Spam',
-  expiresAt: '2025-10-20T00:00:00Z' // optional
-}
-
-// Unmute user (admin only)
-DELETE /api/global-chat/mute/user123
-
-// Get muted users (admin only)
-GET /api/global-chat/muted?limit=50&offset=0
+socket.on('new-message', msg => addMessageToFeed(msg));
+socket.on('message-deleted', ({ messageId }) => removeMessage(messageId));
+socket.on('online-users-count', ({ count }) => updatePresence(count));
 ```
+
+---
 
 ## Testing Checklist
 
-- [ ] User can connect to global chat socket
-- [ ] User can send text messages
-- [ ] User can send media messages (images, audio, video)
-- [ ] Messages are broadcasted to all connected users
-- [ ] Chat history is retrieved correctly
-- [ ] Typing indicators work
-- [ ] Online users count updates correctly
-- [ ] Admin can delete messages via socket
-- [ ] Admin can delete messages via REST API
-- [ ] Admin can mute users
-- [ ] Admin can unmute users
-- [ ] Muted users cannot send messages
-- [ ] Muted users receive notification when muted
-- [ ] Temporary mutes expire correctly
-- [ ] User join/leave notifications work
-- [ ] Authentication is enforced
-- [ ] Non-admin users cannot access admin endpoints
+- [ ] Connect to `/global-chat` namespace with valid and invalid tokens
+- [ ] Emit `send-message` as muted and non-muted users
+- [ ] Verify media messages require `mediaUrl`, `mediaWidth`, and `mediaHeight`
+- [ ] Ensure `report/message` hides content for the reporting user only
+- [ ] Report same message twice; confirm reason updates and no duplicates created
+- [ ] Report user with unrelated message; expect 400 error
+- [ ] Admin mute/unmute flow updates `GlobalChatMute` and sends `user-muted`
+- [ ] Deleted messages disappear via REST and socket history
+- [ ] Pagination returns consistent totals and `hasMore`
+- [ ] Online user count increments/decrements on join/leave
+- [ ] Role-guarded endpoints reject non-admin access
 
-## Security Considerations
+---
 
-1. **Authentication**: JWT token required for all socket and HTTP connections
-2. **Authorization**: Admin role checked for moderation actions
-3. **Input Validation**: Message length limits and type validation
-4. **Soft Deletes**: Messages are never permanently deleted from database
-5. **Rate Limiting**: Consider adding rate limiting for message sending (not implemented yet)
-6. **XSS Protection**: Client should sanitize HTML in messages before rendering
+## Security Notes
 
-## Future Enhancements (Optional)
+1. **Authentication** – All traffic (REST + Socket) requires a valid JWT token and API key.
+2. **Authorization** – `token({ roles: ['ADMIN'] })` guards administrative routes.
+3. **Visibility Rules** – Reported messages are hidden per-user; admins can still see them in the database.
+4. **Input Validation** – Controllers enforce message length/type and ensure reporters cannot self-report.
+5. **Abuse Prevention** – Consider rate limiting message send/report endpoints (not implemented yet).
+6. **Client Responsibilities** – Sanitize rendered HTML to prevent XSS; handle `message-error` gracefully.
 
-1. Rate limiting for message sending
-2. User blocking/reporting
-3. Private direct messages
-4. Message reactions/emojis
-5. Message editing
-6. File upload integration
-7. Message search functionality
-8. User status (online/offline/away)
-9. Read receipts
-10. Message threading/replies
+---
+
+## Future Enhancements
+
+1. Rate limiting and spam heuristics
+2. Admin dashboard for viewing reports and escalating actions
+3. Private or group chat rooms
+4. Message reactions, editing, and threading
+5. Attachment upload pipeline with virus scanning
+6. Automated moderation (keyword filters, NLP scoring)
+
+---
 
 ## Notes
 
-- The implementation follows the existing domino chat pattern
-- All code follows the established coding style
-- Socket namespace isolation prevents conflicts
-- Database indexes optimize query performance
-- Exports allow programmatic access to socket functions
+- Platform follows the domino chat architecture for consistency.
+- Socket helpers (`broadcastToGlobalChat`, `notifyUserMuted`) provide reusable hooks for other services.
+- Mongo indexes are defined on message timestamps, mute status, and report uniqueness for high throughput.
+
 

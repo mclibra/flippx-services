@@ -10,6 +10,8 @@ const GlobalChatMessageSchema = new Schema(
 		message: { type: String },
 		messageType: { type: String, enum: messageType, default: 'TEXT' },
 		mediaUrl: { type: String },
+		mediaWidth: { type: Number },
+		mediaHeight: { type: Number },
 		isDeleted: { type: Boolean, default: false },
 		deletedBy: { type: String, ref: 'User' },
 		deletedAt: { type: Date },
