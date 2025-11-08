@@ -2,6 +2,129 @@ import moment from 'moment';
 import { Roulette } from '../../roulette/model';
 import { RouletteTicket } from '../../roulette_ticket/model';
 
+const validateWinningNumber = value =>
+	Number.isInteger(value) && value >= 0 && value <= 36;
+
+export const setTemporaryWinningNumber = async (
+	rouletteId,
+	{ winningNumber, expiresAt, expiresInSeconds },
+	adminUser = {}
+) => {
+	try {
+		const roulette = await Roulette.findById(rouletteId).exec();
+
+		if (!roulette) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Roulette game not found',
+				},
+			};
+		}
+
+		if (roulette.status !== 'SCHEDULED') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Temporary winning number can only be set for scheduled roulettes',
+				},
+			};
+		}
+
+		const now = new Date();
+		let message = 'Temporary winning number cleared';
+
+		if (winningNumber === null || winningNumber === undefined) {
+			roulette.temporaryWinningNumber = null;
+			roulette.temporaryWinningNumberExpiresAt = null;
+			roulette.temporaryWinningNumberSetBy = null;
+			roulette.temporaryWinningNumberSetAt = null;
+		} else {
+			const parsedWinningNumber = Number(winningNumber);
+			if (!validateWinningNumber(parsedWinningNumber)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'winningNumber must be an integer between 0 and 36',
+					},
+				};
+			}
+
+			let expiresAtDate = null;
+
+			if (expiresAt) {
+				const expiresAtParsed = new Date(expiresAt);
+				if (Number.isNaN(expiresAtParsed.getTime())) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'expiresAt must be a valid date string or timestamp',
+						},
+					};
+				}
+				if (expiresAtParsed <= now) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'expiresAt must be in the future',
+						},
+					};
+				}
+				expiresAtDate = expiresAtParsed;
+			} else if (expiresInSeconds !== undefined && expiresInSeconds !== null) {
+				const parsedDuration = Number(expiresInSeconds);
+				if (Number.isNaN(parsedDuration) || parsedDuration <= 0) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'expiresInSeconds must be a positive number',
+						},
+					};
+				}
+				expiresAtDate = new Date(now.getTime() + parsedDuration * 1000);
+			}
+
+			roulette.temporaryWinningNumber = parsedWinningNumber;
+			roulette.temporaryWinningNumberExpiresAt = expiresAtDate;
+			roulette.temporaryWinningNumberSetBy =
+				adminUser?._id || adminUser?.id || null;
+			roulette.temporaryWinningNumberSetAt = now;
+			message = 'Temporary winning number set';
+		}
+
+		await roulette.save();
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message,
+				temporaryWinningNumber: roulette.temporaryWinningNumber,
+				temporaryWinningNumberExpiresAt:
+					roulette.temporaryWinningNumberExpiresAt,
+				temporaryWinningNumberSetAt: roulette.temporaryWinningNumberSetAt,
+				temporaryWinningNumberSetBy: roulette.temporaryWinningNumberSetBy,
+			},
+		};
+	} catch (error) {
+		console.error('Set temporary winning number error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error:
+					error.message || 'Failed to update temporary winning number for roulette',
+			},
+		};
+	}
+};
+
 // ===== LIST ROULETTE =====
 
 export const listRoulette = async query => {

@@ -290,7 +290,27 @@ export const winningNumber = async ({ id }, { userId }) => {
 
 const generateRouletteResult = async roulette => {
 	roulette.status = 'COMPLETED';
-	roulette.winningNumber = Math.floor(Math.random() * 37);
+
+	const now = new Date();
+	const hasTemporaryWinningNumber =
+		typeof roulette.temporaryWinningNumber === 'number' &&
+		!Number.isNaN(roulette.temporaryWinningNumber);
+	const isTemporaryNotExpired =
+		!roulette.temporaryWinningNumberExpiresAt ||
+		roulette.temporaryWinningNumberExpiresAt >= now;
+
+	if (hasTemporaryWinningNumber && isTemporaryNotExpired) {
+		roulette.winningNumber = roulette.temporaryWinningNumber;
+	} else {
+		roulette.winningNumber = Math.floor(Math.random() * 37);
+	}
+
+	if (hasTemporaryWinningNumber || roulette.temporaryWinningNumberExpiresAt) {
+		roulette.temporaryWinningNumber = null;
+		roulette.temporaryWinningNumberExpiresAt = null;
+		roulette.temporaryWinningNumberSetBy = null;
+		roulette.temporaryWinningNumberSetAt = null;
+	}
 	// let winningNumber1 = Math.floor(Math.random() * 37),
 	// 	winningNumber2 = Math.floor(Math.random() * 37);
 	// if (winningNumber2 === winningNumber1) {

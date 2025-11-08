@@ -252,6 +252,60 @@ fetch('/api/admin/roulette-management/507f1f77bcf86cd799439011', {
 
 ---
 
+### 3. Set Temporary Winning Number
+
+Set (or clear) a temporary winning number for a scheduled roulette game. When set, the next time the game is completed the provided number will be used instead of a random value. The override is cleared automatically after it is applied or if it expires.
+
+**Endpoint:** `POST /api/admin/roulette-management/:id/temporary-winning-number`
+
+**URL Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Roulette ID |
+
+**Body Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `winningNumber` | number | No | Integer between `0` and `36`. Omit or set to `null` to clear an existing override. |
+| `expiresAt` | string \| number | No | ISO date string or timestamp representing when the temporary value should expire. Must be in the future. |
+| `expiresInSeconds` | number | No | Convenience alternative to `expiresAt`. Number of seconds from now before the override expires. |
+
+At most one of `expiresAt` and `expiresInSeconds` should be provided.
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Temporary winning number set",
+  "temporaryWinningNumber": 7,
+  "temporaryWinningNumberExpiresAt": "2024-01-01T00:00:30.000Z",
+  "temporaryWinningNumberSetAt": "2024-01-01T00:00:00.000Z",
+  "temporaryWinningNumberSetBy": "660a58c4c1f19b7f5c0f8331"
+}
+```
+
+**Clearing the override:**
+
+```http
+POST /api/admin/roulette-management/66f5348e5a2e9a05c4f6a019/temporary-winning-number
+Content-Type: application/json
+
+{
+  "winningNumber": null
+}
+```
+
+**Error Responses:**
+
+- `400 Bad Request`: Invalid roulette status or invalid body parameters
+- `404 Not Found`: Roulette game not found
+- `500 Internal Server Error`: Server error
+
+---
+
 ## Status Values
 
 The following status values are used for roulette game status:
