@@ -1,10 +1,7 @@
 import moment from 'moment';
 import { Roulette } from './model';
 import { RouletteTicket } from '../roulette_ticket/model';
-import {
-	updatePlacedBet,
-	getTotalWinningAmount,
-} from '../roulette_ticket/controller';
+import { updatePlacedBet } from '../roulette_ticket/controller';
 import { RouletteConfig } from './config.model';
 
 export const list = async ({
@@ -77,7 +74,8 @@ export const list = async ({
 			]);
 			roulettePromise = rouletteTickets.map(
 				ticket =>
-					new Promise(async (resolve, reject) => {
+					// eslint-disable-next-line no-async-promise-executor
+					new Promise(async resolve => {
 						let roulette = await Roulette.findById(
 							ticket._id
 						).exec();
@@ -97,7 +95,8 @@ export const list = async ({
 				.exec();
 			roulettePromise = rouletteList.map(
 				roulette =>
-					new Promise(async (resolve, reject) => {
+					// eslint-disable-next-line no-async-promise-executor
+					new Promise(async resolve => {
 						let amount = await RouletteTicket.aggregate([
 							{
 								$match: {
@@ -251,7 +250,7 @@ export const nextSpin = async () => {
 	}
 };
 
-export const winningNumber = async ({ id }, { userId }) => {
+export const winningNumber = async ({ id }) => {
 	try {
 		let currentTime = moment.now();
 		let nextRoulette = await Roulette.findById(id);

@@ -49,6 +49,8 @@ Implemented socket namespace `/global-chat` with the following features:
 
 Implemented the following controller functions:
 - `getChatHistory` - Get paginated chat history (authenticated users)
+- `reportMessage` - Report a chat message (authenticated users, hides message for reporter)
+- `reportUser` - Report a chat participant (authenticated users)
 - `deleteMessage` - Admin soft-deletes a message (admin only)
 - `muteUser` - Admin mutes a user from global chat (admin only)
 - `unmuteUser` - Admin unmutes a user (admin only)
@@ -61,6 +63,8 @@ Implemented the following controller functions:
 Created the following REST endpoints:
 - `GET /global-chat/` - Get chat history (authenticated)
 - `GET /global-chat/online` - Get online users count (authenticated)
+- `POST /global-chat/report/message` - Report a message (authenticated)
+- `POST /global-chat/report/user` - Report a user (authenticated)
 - `GET /global-chat/muted` - Get muted users list (admin only)
 - `DELETE /global-chat/message/:messageId` - Delete message (admin only)
 - `POST /global-chat/mute` - Mute user (admin only)
@@ -143,6 +147,27 @@ Created the following REST endpoints:
   reason: String,
   expiresAt: Date (optional),
   isActive: Boolean,
+  timestamps: true (createdAt, updatedAt)
+}
+```
+
+### GlobalChatMessageReport
+```javascript
+{
+  message: ObjectId (ref to GlobalChatMessage),
+  reportedBy: ObjectId (ref to User),
+  reason: String,
+  timestamps: true (createdAt, updatedAt)
+}
+```
+
+### GlobalChatUserReport
+```javascript
+{
+  reportedUser: ObjectId (ref to User),
+  reportedBy: ObjectId (ref to User),
+  message: ObjectId (ref to GlobalChatMessage, optional),
+  reason: String,
   timestamps: true (createdAt, updatedAt)
 }
 ```
