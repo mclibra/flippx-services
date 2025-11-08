@@ -392,7 +392,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[
 								3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '2_to_1_2':
@@ -400,7 +400,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[
 								2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '2_to_1_3':
@@ -408,7 +408,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[
 								1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '1_12':
@@ -416,7 +416,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].indexOf(
 								winningNumber
 							) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '2_12':
@@ -424,7 +424,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[
 								13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '3_12':
@@ -432,28 +432,28 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 							[
 								25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed * 2
+								? bet.amountPlayed * 3
 								: 0;
 						break;
 					case '1_18':
 						winningAmount =
 							winningNumber >= 1 && winningNumber <= 18
-								? bet.amountPlayed
+								? bet.amountPlayed * 2
 								: 0;
 						break;
 					case '19_36':
 						winningAmount =
 							winningNumber >= 19 && winningNumber <= 36
-								? bet.amountPlayed
+								? bet.amountPlayed * 2
 								: 0;
 						break;
 					case 'even':
 						winningAmount =
-							winningNumber % 2 === 0 ? bet.amountPlayed : 0;
+							winningNumber % 2 === 0 ? bet.amountPlayed * 2 : 0;
 						break;
 					case 'odd':
 						winningAmount =
-							winningNumber % 2 === 0 ? 0 : bet.amountPlayed;
+							winningNumber % 2 === 0 ? 0 : bet.amountPlayed * 2;
 						break;
 					case 'red':
 						winningAmount =
@@ -461,7 +461,7 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 								1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25,
 								27, 30, 32, 34, 36,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed
+								? bet.amountPlayed * 2
 								: 0;
 						break;
 					case 'black':
@@ -470,12 +470,12 @@ export const getTotalWinningAmount = async (id, winningNumber) => {
 								2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26,
 								28, 29, 31, 33, 35,
 							].indexOf(winningNumber) !== -1
-								? bet.amountPlayed
+								? bet.amountPlayed * 2
 								: 0;
 						break;
 					default:
 						if (parseInt(bet.blockPlayed) === winningNumber) {
-							winningAmount = bet.amountPlayed * 35;
+							winningAmount = bet.amountPlayed * 36;
 						}
 						break;
 				}
@@ -522,7 +522,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33,
 										36,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '2_to_1_2':
@@ -531,7 +531,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32,
 										35,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '2_to_1_3':
@@ -540,7 +540,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31,
 										34,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '1_12':
@@ -548,7 +548,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 									[
 										1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '2_12':
@@ -557,7 +557,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
 										23, 24,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '3_12':
@@ -566,32 +566,32 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
 										35, 36,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 2
+										? bet.amountPlayed * 3
 										: 0;
 								break;
 							case '1_18':
 								bet.amountWon =
 									winningNumber >= 1 && winningNumber <= 18
-										? bet.amountPlayed
+										? bet.amountPlayed * 2
 										: 0;
 								break;
 							case '19_36':
 								bet.amountWon =
 									winningNumber >= 19 && winningNumber <= 36
-										? bet.amountPlayed
+										? bet.amountPlayed * 2
 										: 0;
 								break;
 							case 'even':
 								bet.amountWon =
 									winningNumber % 2 === 0
-										? bet.amountPlayed
+										? bet.amountPlayed * 2
 										: 0;
 								break;
 							case 'odd':
 								bet.amountWon =
 									winningNumber % 2 === 0
 										? 0
-										: bet.amountPlayed;
+										: bet.amountPlayed * 2;
 								break;
 							case 'red':
 								bet.amountWon =
@@ -599,7 +599,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21,
 										23, 25, 27, 30, 32, 34, 36,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed
+										? bet.amountPlayed * 2
 										: 0;
 								break;
 							case 'black':
@@ -608,7 +608,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22,
 										24, 26, 28, 29, 31, 33, 35,
 									].indexOf(winningNumber) !== -1
-										? bet.amountPlayed
+										? bet.amountPlayed * 2
 										: 0;
 								break;
 							// Handle corner bets and other special bets
@@ -618,7 +618,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										.split('_')
 										.map(n => parseInt(n))
 										.indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 17
+										? bet.amountPlayed * 18
 										: 0;
 								break;
 							case '3_6_2_5':
@@ -627,7 +627,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										.split('_')
 										.map(n => parseInt(n))
 										.indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 8
+										? bet.amountPlayed * 9
 										: 0;
 								break;
 							case '6_9':
@@ -636,7 +636,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										.split('_')
 										.map(n => parseInt(n))
 										.indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 17
+										? bet.amountPlayed * 18
 										: 0;
 								break;
 							case '6_9_5_8':
@@ -645,7 +645,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										.split('_')
 										.map(n => parseInt(n))
 										.indexOf(winningNumber) !== -1
-										? bet.amountPlayed * 8
+										? bet.amountPlayed * 9
 										: 0;
 								break;
 							// Handle line bets like 4_5_6_7_8_9 (from the POST body)
@@ -654,7 +654,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 									[4, 5, 6, 7, 8, 9].indexOf(
 										winningNumber
 									) !== -1
-										? bet.amountPlayed * 5
+										? bet.amountPlayed * 6
 										: 0;
 								break;
 							// Handle other multi-number bets dynamically
@@ -666,17 +666,17 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										.map(n => parseInt(n));
 									if (numbers.includes(winningNumber)) {
 										// Determine payout based on number of numbers in the bet
-										let multiplier = 35; // Single number default
+										let multiplier = 36; // Single number default (includes stake)
 										if (numbers.length === 2)
-											multiplier = 17; // Split bet
+											multiplier = 18; // Split bet
 										else if (numbers.length === 3)
-											multiplier = 11; // Street bet
+											multiplier = 12; // Street bet
 										else if (numbers.length === 4)
-											multiplier = 8; // Corner bet
+											multiplier = 9; // Corner bet
 										else if (numbers.length === 5)
-											multiplier = 6; // Five number bet
+											multiplier = 7; // Five number bet
 										else if (numbers.length === 6)
-											multiplier = 5; // Line bet
+											multiplier = 6; // Line bet
 
 										bet.amountWon =
 											bet.amountPlayed * multiplier;
@@ -689,7 +689,7 @@ export const updatePlacedBet = async (roulette, winningNumber) => {
 										parseInt(bet.blockPlayed) ===
 										winningNumber
 									) {
-										bet.amountWon = bet.amountPlayed * 35;
+										bet.amountWon = bet.amountPlayed * 36;
 									} else {
 										bet.amountWon = 0;
 									}
