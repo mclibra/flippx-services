@@ -12,14 +12,6 @@ const RouletteSchema = new Schema(
 			default: 'SCHEDULED',
 			required: true,
 		},
-		temporaryWinningNumber: { type: Number, default: null },
-		temporaryWinningNumberExpiresAt: { type: Date, default: null },
-		temporaryWinningNumberSetBy: {
-			type: Schema.Types.ObjectId,
-			ref: 'User',
-			default: null,
-		},
-		temporaryWinningNumberSetAt: { type: Date, default: null },
 	},
 	{
 		timestamps: true,

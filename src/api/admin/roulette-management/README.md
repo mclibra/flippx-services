@@ -254,15 +254,9 @@ fetch('/api/admin/roulette-management/507f1f77bcf86cd799439011', {
 
 ### 3. Set Temporary Winning Number
 
-Set (or clear) a temporary winning number for a scheduled roulette game. When set, the next time the game is completed the provided number will be used instead of a random value. The override is cleared automatically after it is applied or if it expires.
+Set (or clear) a temporary winning number that applies globally to all roulette games. When set, every roulette spin will use the provided number instead of a random value until the override is cleared or expires.
 
-**Endpoint:** `POST /api/admin/roulette-management/:id/temporary-winning-number`
-
-**URL Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | string | Yes | Roulette ID |
+**Endpoint:** `POST /api/admin/roulette-management/temporary-winning-number`
 
 **Body Parameters:**
 
@@ -290,7 +284,7 @@ At most one of `expiresAt` and `expiresInSeconds` should be provided.
 **Clearing the override:**
 
 ```http
-POST /api/admin/roulette-management/66f5348e5a2e9a05c4f6a019/temporary-winning-number
+POST /api/admin/roulette-management/temporary-winning-number
 Content-Type: application/json
 
 {

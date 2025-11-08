@@ -1,46 +1,32 @@
 import moment from 'moment';
 import { Roulette } from '../../roulette/model';
 import { RouletteTicket } from '../../roulette_ticket/model';
+import { RouletteConfig } from '../../roulette/config.model';
 
 const validateWinningNumber = value =>
 	Number.isInteger(value) && value >= 0 && value <= 36;
 
 export const setTemporaryWinningNumber = async (
-	rouletteId,
 	{ winningNumber, expiresAt, expiresInSeconds },
 	adminUser = {}
 ) => {
 	try {
-		const roulette = await Roulette.findById(rouletteId).exec();
-
-		if (!roulette) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Roulette game not found',
-				},
-			};
-		}
-
-		if (roulette.status !== 'SCHEDULED') {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Temporary winning number can only be set for scheduled roulettes',
-				},
-			};
-		}
-
 		const now = new Date();
 		let message = 'Temporary winning number cleared';
 
 		if (winningNumber === null || winningNumber === undefined) {
-			roulette.temporaryWinningNumber = null;
-			roulette.temporaryWinningNumberExpiresAt = null;
-			roulette.temporaryWinningNumberSetBy = null;
-			roulette.temporaryWinningNumberSetAt = null;
+			await RouletteConfig.updateOne(
+				{ key: 'global' },
+				{
+					$set: {
+						temporaryWinningNumber: null,
+						temporaryWinningNumberExpiresAt: null,
+						temporaryWinningNumberSetBy: null,
+						temporaryWinningNumberSetAt: null,
+					},
+				},
+				{ upsert: true }
+			);
 		} else {
 			const parsedWinningNumber = Number(winningNumber);
 			if (!validateWinningNumber(parsedWinningNumber)) {
@@ -90,26 +76,34 @@ export const setTemporaryWinningNumber = async (
 				expiresAtDate = new Date(now.getTime() + parsedDuration * 1000);
 			}
 
-			roulette.temporaryWinningNumber = parsedWinningNumber;
-			roulette.temporaryWinningNumberExpiresAt = expiresAtDate;
-			roulette.temporaryWinningNumberSetBy =
-				adminUser?._id || adminUser?.id || null;
-			roulette.temporaryWinningNumberSetAt = now;
+			await RouletteConfig.updateOne(
+				{ key: 'global' },
+				{
+					$set: {
+						temporaryWinningNumber: parsedWinningNumber,
+						temporaryWinningNumberExpiresAt: expiresAtDate,
+						temporaryWinningNumberSetBy:
+							adminUser?._id || adminUser?.id || null,
+						temporaryWinningNumberSetAt: now,
+					},
+				},
+				{ upsert: true }
+			);
 			message = 'Temporary winning number set';
 		}
 
-		await roulette.save();
+		const config = await RouletteConfig.getGlobalConfig();
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				message,
-				temporaryWinningNumber: roulette.temporaryWinningNumber,
+				temporaryWinningNumber: config.temporaryWinningNumber,
 				temporaryWinningNumberExpiresAt:
-					roulette.temporaryWinningNumberExpiresAt,
-				temporaryWinningNumberSetAt: roulette.temporaryWinningNumberSetAt,
-				temporaryWinningNumberSetBy: roulette.temporaryWinningNumberSetBy,
+					config.temporaryWinningNumberExpiresAt,
+				temporaryWinningNumberSetAt: config.temporaryWinningNumberSetAt,
+				temporaryWinningNumberSetBy: config.temporaryWinningNumberSetBy,
 			},
 		};
 	} catch (error) {

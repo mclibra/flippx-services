@@ -44,22 +44,19 @@ router.get(
 );
 
 /**
- * POST /api/admin/roulette-management/:id/temporary-winning-number
- * Set or clear a temporary winning number for a scheduled roulette game
+ * POST /api/admin/roulette-management/temporary-winning-number
+ * Set or clear a temporary winning number that applies to all roulettes
  * Body:
  * - winningNumber: number (0-36). Omit or set to null to clear.
  * - expiresAt: ISO date string or timestamp (optional)
  * - expiresInSeconds: number of seconds until expiry (optional)
  */
 router.post(
-	'/:id/temporary-winning-number',
+	'/temporary-winning-number',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
-		done(
-			res,
-			await setTemporaryWinningNumber(req.params.id, req.body, req.user)
-		)
+		done(res, await setTemporaryWinningNumber(req.body, req.user))
 );
 
 export default router;

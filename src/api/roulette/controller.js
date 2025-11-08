@@ -5,6 +5,7 @@ import {
 	updatePlacedBet,
 	getTotalWinningAmount,
 } from '../roulette_ticket/controller';
+import { RouletteConfig } from './config.model';
 
 export const list = async ({
 	offset,
@@ -292,25 +293,34 @@ const generateRouletteResult = async roulette => {
 	roulette.status = 'COMPLETED';
 
 	const now = new Date();
-	const hasTemporaryWinningNumber =
-		typeof roulette.temporaryWinningNumber === 'number' &&
-		!Number.isNaN(roulette.temporaryWinningNumber);
-	const isTemporaryNotExpired =
-		!roulette.temporaryWinningNumberExpiresAt ||
-		roulette.temporaryWinningNumberExpiresAt >= now;
+	let overrideNumber = null;
 
-	if (hasTemporaryWinningNumber && isTemporaryNotExpired) {
-		roulette.winningNumber = roulette.temporaryWinningNumber;
-	} else {
-		roulette.winningNumber = Math.floor(Math.random() * 37);
+	try {
+		const config = await RouletteConfig.getGlobalConfig();
+		const hasTemporaryWinningNumber =
+			typeof config.temporaryWinningNumber === 'number' &&
+			!Number.isNaN(config.temporaryWinningNumber);
+		const isExpired =
+			config.temporaryWinningNumberExpiresAt &&
+			config.temporaryWinningNumberExpiresAt < now;
+
+		if (isExpired) {
+			config.temporaryWinningNumber = null;
+			config.temporaryWinningNumberExpiresAt = null;
+			config.temporaryWinningNumberSetBy = null;
+			config.temporaryWinningNumberSetAt = null;
+			await config.save();
+		} else if (hasTemporaryWinningNumber) {
+			overrideNumber = config.temporaryWinningNumber;
+		}
+	} catch (error) {
+		console.error('Failed to load roulette global config:', error);
 	}
 
-	if (hasTemporaryWinningNumber || roulette.temporaryWinningNumberExpiresAt) {
-		roulette.temporaryWinningNumber = null;
-		roulette.temporaryWinningNumberExpiresAt = null;
-		roulette.temporaryWinningNumberSetBy = null;
-		roulette.temporaryWinningNumberSetAt = null;
-	}
+	roulette.winningNumber =
+		overrideNumber !== null && overrideNumber !== undefined
+			? overrideNumber
+			: Math.floor(Math.random() * 37);
 	// let winningNumber1 = Math.floor(Math.random() * 37),
 	// 	winningNumber2 = Math.floor(Math.random() * 37);
 	// if (winningNumber2 === winningNumber1) {
