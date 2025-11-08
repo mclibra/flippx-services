@@ -33,7 +33,7 @@ router.get('/me', xApi(), token({ required: true }), async (req, res) =>
 );
 
 router.get(
-	'/image/signedurl',
+	'/media/signedurl',
 	xApi(),
 	token({ required: true }),
 	async (req, res) => done(res, await getSignedUrl(req.user, req.query))

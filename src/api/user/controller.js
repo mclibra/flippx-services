@@ -1,4 +1,4 @@
-import moment from 'moment';
+import crypto from 'crypto';
 import AWS from 'aws-sdk';
 import { jwtSign, jwtVerify } from '../../services/jwt/';
 import { generateToken } from '../../services/crypto';
@@ -7,7 +7,6 @@ import {
 	sendVerificationCode,
 	verifyVerificationCode,
 } from '../text/controller';
-import { makeTransaction } from '../transaction/controller';
 import { User } from './model';
 import { Wallet } from '../wallet/model';
 import { getUserBalance } from '../wallet/controller';
@@ -158,7 +157,7 @@ export const create = async body => {
 							`Failed to process referral qualification for user ${user._id}:`,
 							referralResult.error
 						);
-				}
+					}
 				} catch (referralError) {
 					console.error(
 						`Error processing referral qualification for user ${user._id}:`,
@@ -516,12 +515,35 @@ export const getSignedUrl = async (user, { fileType }) => {
 		const S3_BUCKET = config.aws.s3BucketName;
 		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
-		const fileName = `${user._id}_profile_pic.${fileType}`;
+		const normalizedFileType = (fileType || '').toLowerCase();
+		const mimeTypeMap = {
+			jpg: 'image/jpeg',
+			jpeg: 'image/jpeg',
+			png: 'image/png',
+			gif: 'image/gif',
+			webp: 'image/webp',
+			bmp: 'image/bmp',
+			svg: 'image/svg+xml',
+			heic: 'image/heic',
+			heif: 'image/heif',
+			mp4: 'video/mp4',
+			mov: 'video/quicktime',
+			avi: 'video/x-msvideo',
+			flv: 'video/x-flv',
+			mkv: 'video/x-matroska',
+			webm: 'video/webm',
+		};
+		const contentType = mimeTypeMap[normalizedFileType];
+		if (!contentType) {
+			throw `Unsupported file type: ${fileType}`;
+		}
+		const randomKey = crypto.randomBytes(16).toString('hex');
+		const fileName = `${user._id}_${randomKey}.${normalizedFileType}`;
 		const s3Params = {
 			Bucket: S3_BUCKET,
 			Key: fileName,
 			Expires: 60,
-			ContentType: `image/${fileType}`,
+			ContentType: contentType,
 			ACL: 'public-read',
 		};
 		const signedUrl = s3.getSignedUrl('putObject', s3Params);
