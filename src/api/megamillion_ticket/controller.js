@@ -299,7 +299,7 @@ export const listAllByLottery = async (
 
 export const placeBet = async ({ id }, body, user) => {
 	try {
-		const { cashType = 'VIRTUAL' } = body;
+		const { cashType = 'VIRTUAL', tickets: ticketsFromRequest } = body;
 
 		// Validate cash type
 		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
@@ -326,128 +326,72 @@ export const placeBet = async ({ id }, body, user) => {
 			};
 		}
 
+		// Normalize ticket payload to support single and multiple ticket purchases
+		let normalizedTickets = [];
+		if (Array.isArray(ticketsFromRequest)) {
+			normalizedTickets = ticketsFromRequest;
+		} else if (body && Array.isArray(body.numbers)) {
+			normalizedTickets = [
+				{
+					numbers: body.numbers,
+					megaBall:
+						body.megaBall === undefined ? null : body.megaBall,
+				},
+			];
+		}
+
+		if (!normalizedTickets.length) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'At least one ticket must be provided.',
+				},
+			};
+		}
+
+		const invalidTicketIndex = normalizedTickets.findIndex(
+			ticket =>
+				!ticket ||
+				!Array.isArray(ticket.numbers) ||
+				!ticket.numbers.length
+		);
+
+		if (invalidTicketIndex !== -1) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Ticket ${
+						invalidTicketIndex + 1
+					} is invalid. Each ticket must include at least one number.`,
+				},
+			};
+		}
+
+		const ticketCount = normalizedTickets.length;
+		const totalAmountPlayed = ticketCount * MEGAMILLION_TICKET_AMOUNT;
+
 		// Get the appropriate balance based on cash type
 		const balanceToCheck =
 			cashType === 'REAL'
 				? walletData.realBalance
 				: walletData.virtualBalance;
 
-		if (balanceToCheck >= MEGAMILLION_TICKET_AMOUNT) {
-			const lottery = await Lottery.findById(id);
-			if (lottery._id && lottery.scheduledTime > moment.now()) {
-				// Check if lottery is within 15 minutes of scheduled time
-				const currentTime = moment();
-				const scheduledTime = moment(lottery.scheduledTime);
-				const minutesUntilDraw = scheduledTime.diff(
-					currentTime,
-					'minutes'
-				);
+		if (balanceToCheck < totalAmountPlayed) {
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: `Insufficient ${cashType.toLowerCase()} balance for ${ticketCount} ticket${
+						ticketCount > 1 ? 's' : ''
+					}.`,
+				},
+			};
+		}
 
-				if (minutesUntilDraw <= 15) {
-					return {
-						status: 400,
-						entity: {
-							success: false,
-							error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
-								'MM/DD/YYYY h:mm A'
-							)}).`,
-						},
-					};
-				}
-				body.user = user._id;
-				body.lottery = id;
-				body.amountPlayed = MEGAMILLION_TICKET_AMOUNT;
-				body.purchasedOn = moment.now();
-				body.purchasedBy = user.role;
-				body.cashType = cashType;
-
-				const megaMillionTicket = await MegaMillionTicket.create(body);
-				if (megaMillionTicket._id) {
-					// Process transaction
-					await makeTransaction(
-						user._id,
-						user.role,
-						'TICKET_MEGAMILLION',
-						megaMillionTicket.amountPlayed,
-						megaMillionTicket._id,
-						cashType // Pass cash type to transaction function
-					);
-
-					// **NEW: Record play activity for loyalty tracking**
-					try {
-						const loyaltyResult =
-							await LoyaltyService.recordUserPlayActivity(
-								user._id
-							);
-						if (!loyaltyResult.success) {
-							console.warn(
-								`Failed to record play activity for user ${user._id}:`,
-								loyaltyResult.error
-							);
-						} else {
-							console.log(
-								`Play activity recorded for user ${user._id} - Megamillion ticket purchase`
-							);
-						}
-					} catch (loyaltyError) {
-						console.error(
-							`Error recording play activity for user ${user._id}:`,
-							loyaltyError
-						);
-						// Don't fail ticket creation if loyalty tracking fails
-					}
-
-					// **NEW: Award XP for ticket purchase**
-					try {
-						// Calculate XP for Megamillion (fixed $2 amount)
-						const baseXP = 10; // Base XP for Megamillion ticket
-						const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
-						const totalXP = baseXP * cashTypeMultiplier;
-
-						const xpResult = await LoyaltyService.awardUserXP(
-							user._id,
-							totalXP,
-							'GAME_ACTIVITY',
-							`Megamillion ticket purchase - Amount: $${MEGAMILLION_TICKET_AMOUNT} (${cashType})`,
-							{
-								gameType: 'MEGAMILLION',
-								ticketId: megaMillionTicket._id,
-								amountPlayed: MEGAMILLION_TICKET_AMOUNT,
-								cashType,
-								baseXP,
-								multiplier: cashTypeMultiplier,
-								numbers: body.numbers,
-								megaBall: body.megaBall,
-							}
-						);
-
-						if (!xpResult.success) {
-							console.warn(
-								`Failed to award XP for user ${user._id}:`,
-								xpResult.error
-							);
-						} else {
-							console.log(
-								`Awarded ${totalXP} XP to user ${user._id} for Megamillion ticket purchase`
-							);
-						}
-					} catch (xpError) {
-						console.error(
-							`Error awarding XP for user ${user._id}:`,
-							xpError
-						);
-						// Don't fail ticket creation if XP awarding fails
-					}
-
-					return {
-						status: 200,
-						entity: {
-							success: true,
-							megaMillionTicket: megaMillionTicket,
-						},
-					};
-				}
-			}
+		const lottery = await Lottery.findById(id);
+		if (!lottery || !lottery._id || lottery.scheduledTime <= moment.now()) {
 			return {
 				status: 500,
 				entity: {
@@ -455,15 +399,150 @@ export const placeBet = async ({ id }, body, user) => {
 					error: 'Invalid parameters.',
 				},
 			};
-		} else {
+		}
+
+		// Check if lottery is within 15 minutes of scheduled time
+		const currentTime = moment();
+		const scheduledTime = moment(lottery.scheduledTime);
+		const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
+
+		if (minutesUntilDraw <= 15) {
 			return {
-				status: 500,
+				status: 400,
 				entity: {
 					success: false,
-					error: `Insufficient ${cashType.toLowerCase()} balance.`,
+					error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
+						'MM/DD/YYYY h:mm A'
+					)}).`,
 				},
 			};
 		}
+
+		const purchaseTimestamp = moment.now();
+		const ticketsToCreate = normalizedTickets.map(ticket => ({
+			...ticket,
+			user: user._id,
+			lottery: id,
+			amountPlayed: MEGAMILLION_TICKET_AMOUNT,
+			purchasedOn: purchaseTimestamp,
+			purchasedBy: user.role,
+			cashType,
+		}));
+
+		const createdTicketsRaw =
+			await MegaMillionTicket.create(ticketsToCreate);
+		const createdTickets = Array.isArray(createdTicketsRaw)
+			? createdTicketsRaw
+			: [createdTicketsRaw];
+
+		// Process individual transactions for each ticket to maintain referential integrity
+		for (const ticket of createdTickets) {
+			await makeTransaction(
+				user._id,
+				user.role,
+				'TICKET_MEGAMILLION',
+				ticket.amountPlayed,
+				ticket._id,
+				cashType
+			);
+		}
+
+		// **NEW: Record play activity for loyalty tracking (aggregate amount)**
+		try {
+			const loyaltyResult = await LoyaltyService.recordUserPlayActivity(
+				user._id,
+				totalAmountPlayed
+			);
+			if (!loyaltyResult.success) {
+				console.warn(
+					`Failed to record play activity for user ${user._id}:`,
+					loyaltyResult.error
+				);
+			} else {
+				console.log(
+					`Play activity recorded for user ${
+						user._id
+					} - Megamillion ticket purchase (${ticketCount} ticket${
+						ticketCount > 1 ? 's' : ''
+					})`
+				);
+			}
+		} catch (loyaltyError) {
+			console.error(
+				`Error recording play activity for user ${user._id}:`,
+				loyaltyError
+			);
+			// Don't fail ticket creation if loyalty tracking fails
+		}
+
+		// **NEW: Award XP for ticket purchase (aggregate for multiple tickets)**
+		try {
+			const baseXPPerTicket = 10; // Base XP for each Megamillion ticket
+			const cashTypeMultiplier = cashType === 'REAL' ? 2 : 1; // Real cash gives more XP
+			const totalXP = baseXPPerTicket * cashTypeMultiplier * ticketCount;
+			const xpDescription =
+				ticketCount === 1
+					? `Megamillion ticket purchase - Amount: $${MEGAMILLION_TICKET_AMOUNT} (${cashType})`
+					: `Megamillion ticket purchase (${ticketCount} tickets) - Amount: $${totalAmountPlayed} (${cashType})`;
+
+			const xpReference = {
+				gameType: 'MEGAMILLION',
+				ticketIds: createdTickets.map(ticket => ticket._id),
+				amountPlayedPerTicket: MEGAMILLION_TICKET_AMOUNT,
+				totalAmountPlayed,
+				cashType,
+				baseXPPerTicket,
+				multiplier: cashTypeMultiplier,
+			};
+
+			if (ticketCount === 1) {
+				xpReference.ticketId = createdTickets[0]._id;
+				xpReference.numbers = createdTickets[0].numbers;
+				xpReference.megaBall = createdTickets[0].megaBall;
+			}
+
+			const xpResult = await LoyaltyService.awardUserXP(
+				user._id,
+				totalXP,
+				'GAME_ACTIVITY',
+				xpDescription,
+				xpReference
+			);
+
+			if (!xpResult.success) {
+				console.warn(
+					`Failed to award XP for user ${user._id}:`,
+					xpResult.error
+				);
+			} else {
+				console.log(
+					`Awarded ${totalXP} XP to user ${
+						user._id
+					} for Megamillion ticket purchase (${ticketCount} ticket${
+						ticketCount > 1 ? 's' : ''
+					})`
+				);
+			}
+		} catch (xpError) {
+			console.error(`Error awarding XP for user ${user._id}:`, xpError);
+			// Don't fail ticket creation if XP awarding fails
+		}
+
+		const responseEntity = {
+			success: true,
+			megaMillionTicket: createdTickets[0],
+			totalTicketsPurchased: ticketCount,
+			totalAmountPlayed,
+		};
+
+		if (ticketCount > 1) {
+			responseEntity.megaMillionTickets = createdTickets;
+		}
+
+		return {
+			status: 200,
+			entity: responseEntity,
+		};
 	} catch (error) {
 		console.log(error);
 		return {
