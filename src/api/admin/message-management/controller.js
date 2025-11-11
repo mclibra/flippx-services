@@ -100,7 +100,7 @@ export const listMessages = async query => {
 
 		const [messages, total] = await Promise.all([
 			Message.find(filter)
-				.populate('user', 'name.firstName name.lastName email phone')
+				.populate('user', 'name.firstName name.lastName email phone role')
 				.sort(sort)
 				.limit(parseInt(limit))
 				.skip(parseInt(offset)),
@@ -146,7 +146,11 @@ export const getMessageDetails = async ({ messageId }) => {
 
 		const message = await Message.findById(messageId)
 			.populate('user', 'name.firstName name.lastName email phone role')
-			.populate('replies.repliedBy', 'name.firstName name.lastName email role');
+			.populate('replies.repliedBy', 'name.firstName name.lastName email role')
+			.populate(
+				'statusHistory.changedBy',
+				'name.firstName name.lastName email role'
+			);
 
 		if (!message) {
 			return {
@@ -212,13 +216,12 @@ export const updateMessageStatus = async ({ messageId }, body, admin) => {
 			};
 		}
 
-		const updatedMessage = await Message.findByIdAndUpdate(
-			messageId,
-			{ status: normalizedStatus },
-			{ new: true }
-		).populate('user', 'name.firstName name.lastName email phone');
+		const message = await Message.findById(messageId).populate(
+			'user',
+			'name.firstName name.lastName email phone role'
+		);
 
-		if (!updatedMessage) {
+		if (!message) {
 			return {
 				status: 404,
 				entity: {
@@ -228,11 +231,28 @@ export const updateMessageStatus = async ({ messageId }, body, admin) => {
 			};
 		}
 
+		if (message.status !== normalizedStatus) {
+			message.status = normalizedStatus;
+			message.statusHistory.push({
+				status: normalizedStatus,
+				changedAt: new Date(),
+				changedBy: admin?._id || null,
+			});
+			await message.save();
+		}
+
+		const populatedMessage = await Message.findById(messageId)
+			.populate('user', 'name.firstName name.lastName email phone role')
+			.populate(
+				'statusHistory.changedBy',
+				'name.firstName name.lastName email role'
+			);
+
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				message: updatedMessage,
+				message: populatedMessage,
 			},
 		};
 	} catch (error) {
@@ -281,41 +301,18 @@ export const replyToMessage = async ({ messageId }, body, admin) => {
 			};
 		}
 
-		const update = {
-			$push: {
-				replies: {
-					body: reply.trim(),
-					media: normalizeMedia(media),
-					repliedBy: admin._id,
-				},
-			},
-			lastRepliedAt: new Date(),
-		};
+		const message = await Message.findById(messageId)
+			.populate('user', 'name.firstName name.lastName email phone role')
+			.populate(
+				'replies.repliedBy',
+				'name.firstName name.lastName email role'
+			)
+			.populate(
+				'statusHistory.changedBy',
+				'name.firstName name.lastName email role'
+			);
 
-		if (status) {
-			const normalizedStatus = status.toUpperCase();
-			if (!messageStatuses.includes(normalizedStatus)) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'Invalid status value',
-					},
-				};
-			}
-			update.status = normalizedStatus;
-		} else {
-			update.status = 'IN_PROGRESS';
-		}
-
-		const updatedMessage = await Message.findByIdAndUpdate(messageId, update, {
-			new: true,
-		}).populate([
-			{ path: 'user', select: 'name.firstName name.lastName email phone' },
-			{ path: 'replies.repliedBy', select: 'name.firstName name.lastName email role' },
-		]);
-
-		if (!updatedMessage) {
+		if (!message) {
 			return {
 				status: 404,
 				entity: {
@@ -324,6 +321,48 @@ export const replyToMessage = async ({ messageId }, body, admin) => {
 				},
 			};
 		}
+
+		const targetStatus = status ? status.toUpperCase() : 'IN_PROGRESS';
+
+		if (!messageStatuses.includes(targetStatus)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid status value',
+				},
+			};
+		}
+
+		const normalizedMedia = normalizeMedia(media);
+
+		message.replies.push({
+			body: reply.trim(),
+			media: normalizedMedia,
+			repliedBy: admin._id,
+		});
+
+		message.lastRepliedAt = new Date();
+
+		if (message.status !== targetStatus) {
+			message.status = targetStatus;
+			message.statusHistory.push({
+				status: targetStatus,
+				changedAt: new Date(),
+				changedBy: admin._id,
+			});
+		}
+
+		await message.save();
+
+		const updatedMessage = await Message.findById(messageId).populate([
+			{ path: 'user', select: 'name.firstName name.lastName email phone role' },
+			{ path: 'replies.repliedBy', select: 'name.firstName name.lastName email role' },
+			{
+				path: 'statusHistory.changedBy',
+				select: 'name.firstName name.lastName email role',
+			},
+		]);
 
 		return {
 			status: 200,

@@ -43,6 +43,24 @@ const MessageSchema = new Schema(
 		},
 		replies: [MessageReplySchema],
 		lastRepliedAt: { type: Date, default: null },
+		statusHistory: {
+			type: [
+				{
+					status: {
+						type: String,
+						enum: messageStatuses,
+						required: true,
+					},
+					changedAt: { type: Date, required: true },
+					changedBy: {
+						type: Schema.Types.ObjectId,
+						ref: 'User',
+						default: null,
+					},
+				},
+			],
+			default: [],
+		},
 	},
 	{
 		timestamps: true,

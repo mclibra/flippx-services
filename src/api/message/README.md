@@ -154,7 +154,55 @@ Fetch full details for a specific message created by the authenticated user.
       "email": "jane@example.com",
       "phone": "+5095551234"
     }
-  }
+  },
+  "timeline": [
+    {
+      "type": "MESSAGE_CREATED",
+      "at": "2025-03-04T10:25:30.100Z",
+      "title": "Withdrawal issue",
+      "body": "I am unable to withdraw funds.",
+      "media": [],
+      "by": {
+        "id": "64f1f0e7b8e6b529af5a1bf9",
+        "name": {
+          "firstName": "Jane",
+          "lastName": "Doe"
+        },
+        "email": "jane@example.com",
+        "role": "USER",
+        "phone": "+5095551234"
+      }
+    },
+    {
+      "type": "STATUS_CHANGED",
+      "at": "2025-03-04T10:45:00.000Z",
+      "status": "IN_PROGRESS",
+      "by": {
+        "id": "64f1efc7b8e6b529af5a1bf1",
+        "name": {
+          "firstName": "Admin",
+          "lastName": "User"
+        },
+        "email": "support@example.com",
+        "role": "ADMIN"
+      }
+    },
+    {
+      "type": "REPLY_ADDED",
+      "at": "2025-03-04T11:00:30.100Z",
+      "body": "We are looking into this.",
+      "media": [],
+      "by": {
+        "id": "64f1efc7b8e6b529af5a1bf1",
+        "name": {
+          "firstName": "Admin",
+          "lastName": "User"
+        },
+        "email": "support@example.com",
+        "role": "ADMIN"
+      }
+    }
+  ]
 }
 ```
 

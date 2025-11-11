@@ -20,7 +20,12 @@ export const createMessage = async (body, user) => {
 			};
 		}
 
-		const { title, message: messageBody, body: legacyBody, media = [] } = body;
+		const {
+			title,
+			message: messageBody,
+			body: legacyBody,
+			media = [],
+		} = body;
 
 		const resolvedBody = messageBody || legacyBody;
 
@@ -34,17 +39,28 @@ export const createMessage = async (body, user) => {
 			};
 		}
 
+		const now = new Date();
+
 		const newMessage = await Message.create({
 			user: user._id,
 			title: title.trim(),
 			body: resolvedBody.trim(),
 			media: normalizeMedia(media),
+			statusHistory: [
+				{
+					status: 'OPEN',
+					changedAt: now,
+					changedBy: user._id,
+				},
+			],
 		});
 
-		const populatedMessage = await Message.findById(newMessage._id).populate(
-			'user',
-			'name.firstName name.lastName email phone'
-		);
+		const populatedMessage = await Message.findById(newMessage._id)
+			.populate('user', 'name.firstName name.lastName email phone role')
+			.populate(
+				'statusHistory.changedBy',
+				'name.firstName name.lastName email role'
+			);
 
 		return {
 			status: 201,
@@ -164,7 +180,16 @@ export const getMessageById = async ({ messageId }, user) => {
 		const message = await Message.findOne({
 			_id: messageId,
 			user: user._id,
-		}).populate('user', 'name.firstName name.lastName email phone');
+		})
+			.populate('user', 'name.firstName name.lastName email phone')
+			.populate(
+				'statusHistory.changedBy',
+				'name.firstName name.lastName email role'
+			)
+			.populate(
+				'replies.repliedBy',
+				'name.firstName name.lastName email role'
+			);
 
 		if (!message) {
 			return {
@@ -176,11 +201,88 @@ export const getMessageById = async ({ messageId }, user) => {
 			};
 		}
 
+		const timeline = [];
+
+		if (message.createdAt) {
+			timeline.push({
+				type: 'MESSAGE_CREATED',
+				at: message.createdAt,
+				body: message.body,
+				title: message.title,
+				media: message.media,
+				by: message.user
+					? {
+							id: message.user.id,
+							name: message.user.name,
+							email: message.user.email,
+							role: message.user.role,
+							phone: message.user.phone,
+						}
+					: null,
+			});
+		}
+
+		if (Array.isArray(message.statusHistory)) {
+			message.statusHistory.forEach((entry, index) => {
+				if (index === 0 && message.createdAt) {
+					return;
+				}
+
+				if (!entry?.changedAt) {
+					return;
+				}
+
+				timeline.push({
+					type: 'STATUS_CHANGED',
+					at: entry.changedAt,
+					status: entry.status,
+					by: entry.changedBy
+						? {
+								id: entry.changedBy.id,
+								name: entry.changedBy.name,
+								email: entry.changedBy.email,
+								role: entry.changedBy.role,
+							}
+						: null,
+				});
+			});
+		}
+
+		if (Array.isArray(message.replies)) {
+			message.replies.forEach(reply => {
+				if (!reply?.createdAt) {
+					return;
+				}
+
+				timeline.push({
+					type: 'REPLY_ADDED',
+					at: reply.createdAt,
+					body: reply.body,
+					media: reply.media,
+					by: reply.repliedBy
+						? {
+								id: reply.repliedBy.id,
+								name: reply.repliedBy.name,
+								email: reply.repliedBy.email,
+								role: reply.repliedBy.role,
+							}
+						: null,
+				});
+			});
+		}
+
+		timeline.sort((a, b) => {
+			const timeA = a.at ? new Date(a.at).getTime() : 0;
+			const timeB = b.at ? new Date(b.at).getTime() : 0;
+			return timeA - timeB;
+		});
+
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				message,
+				timeline,
 			},
 		};
 	} catch (error) {
@@ -194,4 +296,3 @@ export const getMessageById = async ({ messageId }, user) => {
 		};
 	}
 };
-
