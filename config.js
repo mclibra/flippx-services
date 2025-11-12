@@ -153,6 +153,13 @@ const baseConfig = {
 		initialPromoAmount: 100,
 	},
 
+	inviteConfig: {
+		defaultMessage: getEnv(
+			'INVITE_DEFAULT_MESSAGE',
+			'Join me on FlippX! Download the app and play with me today.'
+		),
+	},
+
 	transactionText: {
 		amountCredited: {
 			user: `Un montant de $amount gourdes a été ajouté sur votre compte MEGA PAY par $crediterName Votre solde actuel est $walletBalance`,
@@ -192,3 +199,4 @@ export const rapidAPI = config.rapidAPI;
 export const payoneerConfig = config.payoneerConfig;
 export const transactionText = config.transactionText;
 export const adminData = config.adminData;
+export const inviteConfig = config.inviteConfig;

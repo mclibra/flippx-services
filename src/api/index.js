@@ -26,6 +26,7 @@ import adminRouletteManagement from './admin/roulette-management';
 import adminGlobalChatManagement from './admin/global-chat-management';
 import adminMessageManagement from './admin/message-management';
 import globalChat from './global_chat';
+import invite from './invite';
 
 const router = new Router();
 
@@ -47,6 +48,7 @@ router.use('/loyalty', loyalty);
 router.use('/plan', plan);
 router.use('/payout-config', payoutConfig);
 router.use('/messages', message);
+router.use('/invite', invite);
 router.use('/admin/users', adminUserManagement);
 router.use('/admin/tiers', adminTierManagement);
 router.use('/admin/states', adminStateManagement);
