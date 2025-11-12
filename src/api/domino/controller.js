@@ -1,4 +1,10 @@
-import { DominoRoom, DominoGame, DominoChat, DominoGameConfig } from './model';
+import {
+	DominoRoom,
+	DominoGame,
+	DominoChat,
+	DominoGameConfig,
+	DominoRoomPrice,
+} from './model';
 import { DominoGameEngine } from '../../services/domino/gameEngine';
 import { User } from '../user/model';
 import { makeTransaction } from '../transaction/controller';
@@ -614,6 +620,63 @@ export const getGameConfig = async () => {
 		};
 	} catch (error) {
 		console.error('Error getting game config:', error);
+		return {
+			status: 500,
+			entity: { success: false, error: error.message },
+		};
+	}
+};
+
+export const getRoomPrices = async query => {
+	try {
+		const {
+			winRule,
+			roomType,
+			playerCount,
+			cashType,
+			targetPoints,
+			includeInactive,
+		} = query;
+
+		const filter = {};
+
+		if (!includeInactive || includeInactive === 'false') {
+			filter.isActive = true;
+		}
+
+		if (winRule) {
+			filter.winRule = winRule.toUpperCase();
+		}
+
+		if (roomType) {
+			filter.roomType = roomType.toUpperCase();
+		}
+
+		if (playerCount) {
+			filter.playerCount = Number(playerCount);
+		}
+
+		if (cashType) {
+			filter.cashType = cashType.toUpperCase();
+		}
+
+		if (targetPoints) {
+			filter.targetPoints = Number(targetPoints);
+		}
+
+		const prices = await DominoRoomPrice.find(filter)
+			.sort({ displayOrder: 1, entryFee: 1 })
+			.lean();
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				prices,
+			},
+		};
+	} catch (error) {
+		console.error('Error getting domino room prices:', error);
 		return {
 			status: 500,
 			entity: { success: false, error: error.message },

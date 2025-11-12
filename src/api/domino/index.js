@@ -8,6 +8,7 @@ import {
 	getGameConfig,
 	getUserGameResults,
 	getGameDetails,
+	getRoomPrices,
 } from './controller';
 
 const router = new Router();
@@ -30,6 +31,15 @@ router.get(
 	token({ required: true }),
 	async (req, res) =>
 		done(res, await getChatHistory(req.params, req.query, req.user))
+);
+
+// ===================== ROOM PRICES =====================
+
+router.get(
+	'/room-prices',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await getRoomPrices(req.query))
 );
 
 // ===================== ADMIN CONFIGURATION =====================

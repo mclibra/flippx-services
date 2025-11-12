@@ -23,6 +23,51 @@ const DominoGameConfigSchema = new Schema(
 // No additional indexes needed for DominoGameConfig as it's a single-document collection
 // and findOne() uses the default _id index.
 
+// Domino Room Price Model
+const DominoRoomPriceSchema = new Schema(
+	{
+		winRule: {
+			type: String,
+			enum: ['STANDARD', 'POINTS'],
+			default: 'STANDARD',
+		},
+		roomType: {
+			type: String,
+			enum: ['PUBLIC', 'PRIVATE'],
+			default: 'PUBLIC',
+		},
+		playerCount: { type: Number, enum: [2, 3, 4], required: true },
+		cashType: {
+			type: String,
+			enum: ['REAL', 'VIRTUAL'],
+			required: true,
+		},
+		entryFee: { type: Number, required: true },
+		houseEdge: { type: Number, default: 0 },
+		targetPoints: { type: Number, default: 0 },
+		isActive: { type: Boolean, default: true },
+		displayOrder: { type: Number, default: 0 },
+		createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+		updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+	},
+	{
+		timestamps: true,
+	}
+);
+
+DominoRoomPriceSchema.index(
+	{
+		winRule: 1,
+		roomType: 1,
+		playerCount: 1,
+		cashType: 1,
+		entryFee: 1,
+		targetPoints: 1,
+	},
+	{ name: 'unique_domino_room_price', unique: true }
+);
+DominoRoomPriceSchema.index({ isActive: 1, displayOrder: 1 });
+
 // Domino Room Model
 const DominoRoomSchema = new Schema(
 	{
@@ -302,6 +347,10 @@ DominoTournamentSchema.index(
 export const DominoGameConfig = mongoose.model(
 	'DominoGameConfig',
 	DominoGameConfigSchema
+);
+export const DominoRoomPrice = mongoose.model(
+	'DominoRoomPrice',
+	DominoRoomPriceSchema
 );
 export const DominoRoom = mongoose.model('DominoRoom', DominoRoomSchema);
 export const DominoGame = mongoose.model('DominoGame', DominoGameSchema);
