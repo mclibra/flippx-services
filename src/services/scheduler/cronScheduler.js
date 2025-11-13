@@ -76,6 +76,24 @@ class CronScheduler {
 			this.runHealthCheck.bind(this)
 		);
 
+		// Add aggressive health check around midnight to catch timezone boundary issues
+		// Check at 23:55, 23:59, 00:01, and 00:05 (already covered by restart job)
+		this.createCronJob(
+			'55 23 * * *',
+			'cron-midnight-health-check-pre',
+			this.runHealthCheck.bind(this)
+		);
+		this.createCronJob(
+			'59 23 * * *',
+			'cron-midnight-health-check-edge',
+			this.runHealthCheck.bind(this)
+		);
+		this.createCronJob(
+			'1 0 * * *',
+			'cron-midnight-health-check-post',
+			this.runHealthCheck.bind(this)
+		);
+
 		console.log(
 			`✅ Cron scheduler initialized with ${this.activeCronJobs.size} jobs`
 		);
@@ -285,17 +303,39 @@ class CronScheduler {
 				schedule,
 				async () => {
 					if (this.isShuttingDown) {
+						console.log(
+							`⏸️  Skipping ${jobName} - shutdown in progress`
+						);
 						return;
 					}
 
+					const executionStart = new Date();
+					// Only log detailed execution for lottery jobs to help diagnose the issue
+					const isLotteryJob = jobName.includes('lottery');
+					if (isLotteryJob) {
+						console.log(
+							`🔄 Starting cron job ${jobName} at ${executionStart.toISOString()}`
+						);
+					}
+
 					try {
-						this.jobLastRun.set(jobName, new Date());
+						this.jobLastRun.set(jobName, executionStart);
 						await this.executeCronJob(jobName, jobFunction);
+						const executionEnd = new Date();
+						const duration = executionEnd - executionStart;
+						if (isLotteryJob) {
+							console.log(
+								`✅ Completed cron job ${jobName} in ${duration}ms at ${executionEnd.toISOString()}`
+							);
+						}
 					} catch (error) {
 						console.error(
 							`❌ Error in cron job ${jobName}:`,
 							error
 						);
+						console.error('Stack trace:', error.stack);
+						// Still update lastRun to prevent false positives in health check
+						this.jobLastRun.set(jobName, new Date());
 					}
 				},
 				{
@@ -371,7 +411,10 @@ class CronScheduler {
 		try {
 			await jobFunction();
 		} catch (error) {
-			console.error(`Error in cron job ${jobName}:`, error);
+			console.error(`Error executing cron job ${jobName}:`, error);
+			console.error('Stack trace:', error.stack);
+			// Re-throw to let the caller handle it
+			throw error;
 		}
 	}
 
@@ -400,62 +443,128 @@ class CronScheduler {
 	}
 
 	/**
+	 * Parse schedule to extract interval in minutes
+	 */
+	parseScheduleInterval(schedule) {
+		// Handle patterns like */12 * * * * (every 12 minutes)
+		if (
+			schedule.includes('*/') &&
+			schedule.match(/^\*\/(\d+) \* \* \* \*$/)
+		) {
+			const match = schedule.match(/^\*\/(\d+) \* \* \* \*$/);
+			if (match) {
+				return parseInt(match[1]);
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Run health check to detect stuck jobs
 	 */
 	async runHealthCheck() {
 		try {
 			const now = Date.now();
-			const fiveMinutesAgo = now - 5 * 60 * 1000;
 			const stuckJobs = [];
+			const missingJobs = [];
 
 			// Check if any job should have run but didn't
 			for (const [jobName, lastRun] of this.jobLastRun) {
 				// Skip health check and restart jobs themselves
 				if (
 					jobName === 'cron-health-check' ||
-					jobName === 'cron-restart-all-jobs'
+					jobName === 'cron-restart-all-jobs' ||
+					jobName.startsWith('cron-midnight-health-check')
 				) {
 					continue;
 				}
 
-				// If a job hasn't run in the expected interval, it might be stuck
-				if (!lastRun || lastRun.getTime() < fiveMinutesAgo) {
-					const definition = this.jobDefinitions.get(jobName);
-					if (definition) {
-						// Parse schedule to determine expected frequency
-						const schedule = definition.schedule;
+				const definition = this.jobDefinitions.get(jobName);
+				const cronInstance = this.jobNameToInstance.get(jobName);
 
-						// Check if this is a frequent job that should run often
-						if (
-							schedule.includes('*/') &&
-							schedule.includes('* * * * *')
-						) {
-							const minutes = parseInt(
-								schedule.match(/\*\/(\d+)/)?.[1]
+				// Check if cron job instance exists and is still scheduled
+				if (!cronInstance) {
+					console.warn(
+						`⚠️  Cron job instance missing for ${jobName}`
+					);
+					missingJobs.push(jobName);
+					continue;
+				}
+
+				// Check if the cron job instance has been destroyed or stopped
+				// node-cron doesn't expose a scheduled property, but we can check if it's in our active set
+				if (!this.activeCronJobs.has(cronInstance)) {
+					console.warn(
+						`⚠️  Cron job ${jobName} is not in active jobs set`
+					);
+					missingJobs.push(jobName);
+					continue;
+				}
+
+				if (!definition) {
+					continue;
+				}
+
+				const schedule = definition.schedule;
+				const intervalMinutes = this.parseScheduleInterval(schedule);
+
+				// For interval-based jobs (every X minutes), check if they should have run
+				if (intervalMinutes && intervalMinutes <= 30) {
+					if (!lastRun) {
+						// Job has never run but should have
+						console.warn(
+							`⚠️  Job ${jobName} has never run (interval: ${intervalMinutes} minutes)`
+						);
+						stuckJobs.push(jobName);
+					} else {
+						// Calculate when job should have last run
+						// Add buffer of interval + 50% to account for timing variations
+						const expectedIntervalMs = intervalMinutes * 60 * 1000;
+						const bufferMs = expectedIntervalMs * 0.5;
+						const maxAllowedGap = expectedIntervalMs + bufferMs;
+						const timeSinceLastRun = now - lastRun.getTime();
+
+						if (timeSinceLastRun > maxAllowedGap) {
+							console.warn(
+								`⚠️  Job ${jobName} hasn't run in ${Math.round(
+									timeSinceLastRun / 60000
+								)} minutes (expected every ${intervalMinutes} minutes)`
 							);
-							if (minutes && minutes <= 20) {
-								// This is a frequent job and hasn't run
-								stuckJobs.push(jobName);
-							}
+							stuckJobs.push(jobName);
 						}
 					}
 				}
 			}
 
-			if (stuckJobs.length > 0) {
+			// Log health check status
+			if (stuckJobs.length > 0 || missingJobs.length > 0) {
 				console.warn(
-					`⚠️  Detected potentially stuck jobs: ${stuckJobs.join(
-						', '
-					)}`
+					`⚠️  Health check detected issues: ${[
+						...(stuckJobs.length > 0
+							? [`stuck: ${stuckJobs.join(', ')}`]
+							: []),
+						...(missingJobs.length > 0
+							? [`missing: ${missingJobs.join(', ')}`]
+							: []),
+					].join(', ')}`
 				);
 				console.warn('🔄 Triggering emergency restart...');
 				await this.restartAllJobs();
+			} else {
+				// Only log health check status every 30 minutes to reduce noise
+				const nowDate = new Date();
+				if (nowDate.getMinutes() % 30 === 0) {
+					console.log(
+						`✅ Health check passed: ${this.jobLastRun.size} jobs monitored`
+					);
+				}
 			}
 
 			// Update health check's own last run time
 			this.jobLastRun.set('cron-health-check', new Date());
 		} catch (error) {
 			console.error('Error in health check:', error);
+			console.error('Stack trace:', error.stack);
 		}
 	}
 
@@ -469,6 +578,9 @@ class CronScheduler {
 		const systemJobs = new Set([
 			'cron-restart-all-jobs',
 			'cron-health-check',
+			'cron-midnight-health-check-pre',
+			'cron-midnight-health-check-edge',
+			'cron-midnight-health-check-post',
 		]);
 
 		// Determine which jobs should be restarted
@@ -921,8 +1033,6 @@ class CronScheduler {
 				...virtualRoomsNeedingBotsAI,
 				...virtualRoomsNeedingBotsHUMAN,
 			];
-
-			console.log(`VirtualRoomsNeedingBots ${virtualRoomsNeedingBots}`);
 
 			for (const room of virtualRoomsNeedingBots) {
 				try {

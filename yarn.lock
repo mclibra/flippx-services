@@ -5863,10 +5863,10 @@ nock@^9.0.2:
     qs "^6.5.1"
     semver "^5.5.0"
 
-node-cron@^4.0.3:
-  version "4.0.3"
-  resolved "https://registry.yarnpkg.com/node-cron/-/node-cron-4.0.3.tgz#923daba3e2c1b1d405da5da57d54eccdb3fcad2e"
-  integrity sha512-YPEUlbYGgpfN44OtCm4KkK4TXjeIB4arERbDWP7kJgM+QHFK9AdM6/3bp4M3oB1QBrL5INyTRLAPei87j49foA==
+node-cron@4.2.1:
+  version "4.2.1"
+  resolved "https://registry.yarnpkg.com/node-cron/-/node-cron-4.2.1.tgz#6979be4aee4702f06322d21220df8de252c8e265"
+  integrity sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==
 
 node-releases@^2.0.19:
   version "2.0.19"
