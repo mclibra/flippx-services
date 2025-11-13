@@ -354,7 +354,38 @@ export const resetPassword = async ({
 
 export const update = async (user, body) => {
 	try {
-		const updateResponse = await Object.assign(user, body).save();
+		// Handle address updates - merge with existing address if partial update
+		if (body.address) {
+			// If address is provided as an object, merge with existing address
+			user.address = {
+				...(user.address || {}),
+				...(body.address || {}),
+			};
+			delete body.address; // Remove from body to avoid double assignment
+		}
+
+		// Handle bank account updates
+		if (body.bankAccount !== undefined) {
+			// Replace entire bank account array
+			user.bankAccount = body.bankAccount;
+			delete body.bankAccount; // Remove from body to avoid double assignment
+		}
+
+		// Handle name updates - merge with existing name if partial update
+		if (body.name) {
+			user.name = {
+				...(user.name || {}),
+				...(body.name || {}),
+			};
+			delete body.name; // Remove from body to avoid double assignment
+		}
+
+		// Apply all other updates
+		Object.assign(user, body);
+
+		// Save the updated user
+		const updateResponse = await user.save();
+
 		if (updateResponse._id) {
 			return {
 				status: 200,
@@ -420,6 +451,36 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 				},
 			};
 		}
+	} catch (error) {
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const getMe = async userId => {
+	try {
+		const user = await User.findById(userId);
+		if (!user) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				user: user.view(true),
+			},
+		};
 	} catch (error) {
 		return {
 			status: 500,

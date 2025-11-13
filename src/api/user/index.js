@@ -8,6 +8,7 @@ import {
 	create,
 	update,
 	getUserInfo,
+	getMe,
 	getSelfImage,
 	verifyReset,
 	resetPassword,
@@ -26,10 +27,7 @@ router.post('/verify-otp', xApi(), async (req, res) =>
 );
 
 router.get('/me', xApi(), token({ required: true }), async (req, res) =>
-	done(res, {
-		status: 200,
-		entity: { success: true, user: req.user.view(true) },
-	})
+	done(res, await getMe(req.user._id))
 );
 
 router.get(

@@ -159,7 +159,6 @@ passport.use(
 		},
 		({ id }, done) => {
 			User.findById(id)
-				.select('-picture')
 				.exec((err, user) => {
 					if (err) {
 						done(err);
