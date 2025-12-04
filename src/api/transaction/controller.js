@@ -1336,7 +1336,7 @@ export const getTierBasedPayoutAnalytics = async (query, user) => {
 		]);
 
 		// Get payout configuration usage
-		const { PayoutConfig } = await import('../payout_config/model');
+		const { PayoutConfig } = await import('../admin/payout-config-management/model');
 		const configUsage = await PayoutConfig.aggregate([
 			{
 				$match: {

@@ -1,8 +1,8 @@
 import { PayoutConfig } from './model';
-import PayoutService from '../../services/payout/payoutService';
+import PayoutService from '../../../services/payout/payoutService';
 
 // Get current payout configurations
-export const getCurrentConfigurations = async (req, user) => {
+export const getCurrentConfigurations = async () => {
 	try {
 		const result = await PayoutService.getCurrentConfigurations();
 
@@ -149,7 +149,7 @@ export const setPayoutConfiguration = async (body, user) => {
 };
 
 // Update existing payout configuration
-export const updatePayoutConfiguration = async ({ id }, body, user) => {
+export const updatePayoutConfiguration = async ({ id }, body) => {
 	try {
 		const { percentage, description, isPromotional, validTo } = body;
 
@@ -236,7 +236,7 @@ export const updatePayoutConfiguration = async ({ id }, body, user) => {
 };
 
 // Deactivate payout configuration
-export const deactivateConfiguration = async ({ id }, user) => {
+export const deactivateConfiguration = async ({ id }) => {
 	try {
 		const result = await PayoutService.deactivateConfiguration(id);
 
@@ -270,7 +270,7 @@ export const deactivateConfiguration = async ({ id }, user) => {
 };
 
 // Get configuration history
-export const getConfigurationHistory = async (query, user) => {
+export const getConfigurationHistory = async query => {
 	try {
 		const { limit = 50, offset = 0, tier, gameType } = query;
 
@@ -312,7 +312,7 @@ export const getConfigurationHistory = async (query, user) => {
 };
 
 // Get payout analytics
-export const getPayoutAnalytics = async (query, user) => {
+export const getPayoutAnalytics = async query => {
 	try {
 		const { startDate, endDate } = query;
 
@@ -387,9 +387,7 @@ export const getPayoutAnalytics = async (query, user) => {
 	}
 };
 
-// ADD these validation functions to src/api/payout_config/controller.js
-
-// NEW: Validate tier-based payout system
+// Validate tier-based payout system
 export const validateTierPayoutSystem = async (query, user) => {
 	try {
 		if (!['ADMIN'].includes(user.role)) {
@@ -449,7 +447,7 @@ export const validateTierPayoutSystem = async (query, user) => {
 		// 2. Validate ticket tier assignments
 		console.log('Validating ticket tier assignments...');
 
-		const { BorletteTicket } = await import('../borlette_ticket/model');
+		const { BorletteTicket } = await import('../../borlette_ticket/model');
 
 		const ticketStats = await BorletteTicket.aggregate([
 			{
@@ -611,7 +609,7 @@ export const validateTierPayoutSystem = async (query, user) => {
 	}
 };
 
-// NEW: Test tier-based payout calculation
+// Test tier-based payout calculation
 export const testTierPayoutCalculation = async (body, user) => {
 	try {
 		if (!['ADMIN'].includes(user.role)) {
@@ -648,7 +646,7 @@ export const testTierPayoutCalculation = async (body, user) => {
 			{ numberPlayed: '1234', amountPlayed: 10, multiplier: 800 }, // Marriage number
 		];
 
-		const PayoutService = (await import('../../services/payout/index'))
+		const PayoutService = (await import('../../../services/payout/index'))
 			.default;
 
 		// Get current payout configuration for the tier

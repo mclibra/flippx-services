@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { done } from '../../services/response/';
-import { xApi, token } from '../../services/passport';
+import { done } from '../../../services/response/';
+import { xApi, token } from '../../../services/passport';
 import {
 	getCurrentConfigurations,
 	setPayoutConfiguration,

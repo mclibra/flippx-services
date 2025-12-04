@@ -1,4 +1,4 @@
-import { PayoutConfig } from '../../api/payout_config/model';
+import { PayoutConfig } from '../../api/admin/payout-config-management/model';
 
 // Default payout percentages (as per requirements)
 const DEFAULT_PAYOUT_PERCENTAGES = {
