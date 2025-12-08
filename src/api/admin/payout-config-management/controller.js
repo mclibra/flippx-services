@@ -1,5 +1,6 @@
 import { PayoutConfig } from './model';
 import PayoutService from '../../../services/payout/payoutService';
+import { TierRequirements } from '../tier-management/model';
 
 // Get current payout configurations
 export const getCurrentConfigurations = async () => {
@@ -41,7 +42,7 @@ export const getCurrentConfigurations = async () => {
 export const setPayoutConfiguration = async (body, user) => {
 	try {
 		const {
-			tier,
+			tierId,
 			gameType,
 			percentage,
 			description,
@@ -50,16 +51,30 @@ export const setPayoutConfiguration = async (body, user) => {
 			validTo,
 		} = body;
 
-		// Validation
-		if (!tier || !['SILVER', 'GOLD', 'VIP'].includes(tier)) {
+		// Validation - tierId is required
+		if (!tierId) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Valid tier (SILVER, GOLD, VIP) is required',
+					error: 'Tier ID is required',
 				},
 			};
 		}
+
+		// Look up tier by ID
+		const tier = await TierRequirements.findById(tierId);
+		if (!tier || !tier.isActive) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid or inactive tier ID',
+				},
+			};
+		}
+
+		const tierName = tier.name;
 
 		if (
 			!gameType ||
@@ -111,7 +126,7 @@ export const setPayoutConfiguration = async (body, user) => {
 		};
 
 		const result = await PayoutService.setPayoutConfiguration(
-			tier,
+			tierName,
 			gameType,
 			percentage,
 			user._id,
@@ -272,11 +287,22 @@ export const deactivateConfiguration = async ({ id }) => {
 // Get configuration history
 export const getConfigurationHistory = async query => {
 	try {
-		const { limit = 50, offset = 0, tier, gameType } = query;
+		const { limit = 50, offset = 0, tierId, gameType } = query;
 
 		let params = {};
-		if (tier) {
-			params.tier = tier.toUpperCase();
+		if (tierId) {
+			// Look up tier by ID
+			const tier = await TierRequirements.findById(tierId);
+			if (!tier) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Invalid tier ID',
+					},
+				};
+			}
+			params.tier = tier.name;
 		}
 		if (gameType) {
 			params.gameType = gameType.toUpperCase();
