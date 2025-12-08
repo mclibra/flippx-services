@@ -1,13 +1,11 @@
 import mongoose, { Schema } from 'mongoose';
 
-const tierTypes = ['SILVER', 'GOLD', 'VIP'];
 const gameTypes = ['BORLETTE', 'ROULETTE', 'DOMINOES'];
 
 const PayoutConfigSchema = new Schema(
 	{
 		tier: {
 			type: String,
-			enum: tierTypes,
 			required: true,
 		},
 		gameType: {

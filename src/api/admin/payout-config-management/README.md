@@ -83,7 +83,7 @@ Create a new payout configuration for a specific tier and game type. If an activ
 
 ```json
 {
-  "tier": "GOLD",
+  "tierId": "507f1f77bcf86cd799439011",
   "gameType": "BORLETTE",
   "percentage": 65,
   "description": "Gold tier borlette payout configuration",
@@ -97,7 +97,7 @@ Create a new payout configuration for a specific tier and game type. If an activ
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tier` | string | Yes | Tier name: `SILVER`, `GOLD`, or `VIP` |
+| `tierId` | string (ObjectId) | Yes | Tier ID from TierRequirements model |
 | `gameType` | string | Yes | Game type: `BORLETTE`, `ROULETTE`, or `DOMINOES` |
 | `percentage` | number | Yes | Payout percentage (0-200) |
 | `description` | string | No | Description of the configuration |
@@ -139,7 +139,7 @@ fetch('/api/admin/payout-config-management', {
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
-    tier: 'GOLD',
+    tierId: '507f1f77bcf86cd799439011',
     gameType: 'BORLETTE',
     percentage: 65,
     description: 'Gold tier borlette payout configuration',
@@ -152,7 +152,9 @@ fetch('/api/admin/payout-config-management', {
 
 **Error Responses:**
 
-- `400 Bad Request`: Invalid tier, gameType, or percentage
+- `400 Bad Request`: Tier ID is required
+- `400 Bad Request`: Invalid or inactive tier ID
+- `400 Bad Request`: Invalid gameType or percentage
 - `400 Bad Request`: Valid to date must be after valid from date
 - `500 Internal Server Error`: Failed to set payout configuration
 
@@ -293,7 +295,7 @@ Retrieve paginated history of all payout configurations (both active and inactiv
 |-----------|------|----------|---------|-------------|
 | `limit` | number | No | 50 | Number of configurations per page |
 | `offset` | number | No | 0 | Number of configurations to skip |
-| `tier` | string | No | - | Filter by tier: `SILVER`, `GOLD`, or `VIP` |
+| `tierId` | string (ObjectId) | No | - | Filter by tier ID from TierRequirements model |
 | `gameType` | string | No | - | Filter by game type: `BORLETTE`, `ROULETTE`, or `DOMINOES` |
 
 **Response (200 OK):**
@@ -328,7 +330,7 @@ Retrieve paginated history of all payout configurations (both active and inactiv
 **Example Request:**
 
 ```javascript
-fetch('/api/admin/payout-config-management/history?limit=20&offset=0&tier=GOLD&gameType=BORLETTE', {
+fetch('/api/admin/payout-config-management/history?limit=20&offset=0&tierId=507f1f77bcf86cd799439011&gameType=BORLETTE', {
   method: 'GET',
   headers: {
     'x-api-key': 'your-api-key',
@@ -339,6 +341,7 @@ fetch('/api/admin/payout-config-management/history?limit=20&offset=0&tier=GOLD&g
 
 **Error Responses:**
 
+- `400 Bad Request`: Invalid tier ID
 - `500 Internal Server Error`: Failed to retrieve configuration history
 
 ---
