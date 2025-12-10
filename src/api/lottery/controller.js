@@ -370,7 +370,7 @@ export const closestUpcomingByState = async type => {
 			lastWinningsMap[stateId] = lastWinning;
 		});
 
-		// Enhance results with last winning numbers
+		// Enhance results with last winning numbers for states with upcoming lotteries
 		const enhancedResults = closestLotteries.map(item => {
 			const stateId = item.state.id.toString();
 			const lastWinning = lastWinningsMap[stateId];
@@ -390,10 +390,10 @@ export const closestUpcomingByState = async type => {
 			};
 		});
 
-		// Handle states without upcoming lotteries
 		const statesWithLotteries = closestLotteries.map(item =>
 			item.state.id.toString()
 		);
+
 		const statesWithoutLotteries = activeStates
 			.filter(
 				state => !statesWithLotteries.includes(state._id.toString())
@@ -423,7 +423,6 @@ export const closestUpcomingByState = async type => {
 				};
 			});
 
-		// Combine results
 		const results = [...enhancedResults, ...statesWithoutLotteries];
 
 		return {
