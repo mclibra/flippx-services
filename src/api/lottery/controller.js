@@ -5,6 +5,20 @@ import { Lottery, LotteryRestriction } from './model';
 import { State } from '../admin/state-management/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
 import PayoutService from '../../services/payout/payoutService';
+import { LotteryDefaultConfig } from '../lottery-default-config/model';
+
+// Helper function to get default jackpot amount for MEGAMILLION
+const getDefaultJackpotAmount = async () => {
+	try {
+		const config = await LotteryDefaultConfig.findOne({
+			lotteryType: 'MEGAMILLION',
+		});
+		return config ? config.defaultJackpotAmount : 1000000; // Default to 1 million if not configured
+	} catch (error) {
+		console.error('Error getting default jackpot amount:', error);
+		return 1000000; // Fallback to 1 million on error
+	}
+};
 
 // Helper function to get the next draw date for a specific lottery configuration
 const getNextDrawDate = lotteryConfig => {
@@ -1197,6 +1211,15 @@ export const create = async (body, { _id }) => {
 		});
 
 		if (!existingLottery) {
+			// For MEGAMILLION, set default jackpot amount if not provided
+			if (
+				body.type === 'MEGAMILLION' &&
+				(body.jackpotAmount === undefined ||
+					body.jackpotAmount === null)
+			) {
+				body.jackpotAmount = await getDefaultJackpotAmount();
+			}
+
 			const lottery = await Lottery.create(body);
 			if (lottery._id) {
 				if (body.restrictions) {
@@ -1790,11 +1813,15 @@ export const createLotteriesForState = async state => {
 						megaMillions.drawTimezone
 					);
 
+					// Get the configured default jackpot amount
+					const defaultJackpotAmount =
+						await getDefaultJackpotAmount();
+
 					await Lottery.create({
 						title: 'Mega Millions',
 						type: 'MEGAMILLION',
 						scheduledTime: drawTime.valueOf(),
-						jackpotAmount: 1000000, // Default jackpot amount
+						jackpotAmount: defaultJackpotAmount,
 						state: state._id,
 						status: 'SCHEDULED',
 						createdBy: null,

@@ -601,6 +601,147 @@ fetch('/api/admin/megamillion-management/restrictions/507f1f77bcf86cd799439011',
 
 ---
 
+### 5. Get Default Jackpot Amount
+
+Get the current default jackpot amount that will be used when creating new MEGAMILLION lotteries.
+
+**Endpoint:** `GET /api/admin/megamillion-management/default-jackpot`
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "defaultJackpotAmount": 1000000,
+  "config": {
+    "_id": "string",
+    "lotteryType": "MEGAMILLION",
+    "defaultJackpotAmount": 1000000,
+    "updatedBy": "string",
+    "description": "Default jackpot amount set to $1,000,000",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-02T00:00:00.000Z"
+  }
+}
+```
+
+**Note:** If no configuration exists, `defaultJackpotAmount` will be `1000000` (1 million) and `config` will be `null`.
+
+**Example Request:**
+
+```javascript
+// Using fetch
+fetch('/api/admin/megamillion-management/default-jackpot', {
+  method: 'GET',
+  headers: {
+    'x-api-key': 'your-api-key',
+    'Authorization': 'Bearer your-jwt-token'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+**Error Responses:**
+
+- `500 Internal Server Error`: Server error
+```json
+{
+  "success": false,
+  "error": "Error message"
+}
+```
+
+---
+
+### 6. Set Default Jackpot Amount
+
+Set or update the default jackpot amount that will be used when creating new MEGAMILLION lotteries. This value will be automatically applied to all newly created MEGAMILLION lotteries unless a specific `jackpotAmount` is provided during creation.
+
+**Endpoint:** `PUT /api/admin/megamillion-management/default-jackpot`
+
+**Request Body:**
+
+```json
+{
+  "defaultJackpotAmount": 2000000,
+  "description": "Increased default jackpot to $2,000,000"
+}
+```
+
+**Request Body Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `defaultJackpotAmount` | number | Yes | The default jackpot amount (must be a positive number) |
+| `description` | string | No | Optional description for this configuration change |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Default jackpot amount for MEGAMILLION set to $2,000,000",
+  "config": {
+    "_id": "string",
+    "lotteryType": "MEGAMILLION",
+    "defaultJackpotAmount": 2000000,
+    "updatedBy": "string",
+    "description": "Increased default jackpot to $2,000,000",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-02T00:00:00.000Z"
+  }
+}
+```
+
+**Example Request:**
+
+```javascript
+// Using fetch
+fetch('/api/admin/megamillion-management/default-jackpot', {
+  method: 'PUT',
+  headers: {
+    'x-api-key': 'your-api-key',
+    'Authorization': 'Bearer your-jwt-token',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    defaultJackpotAmount: 2000000,
+    description: 'Increased default jackpot to $2,000,000'
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+**Error Responses:**
+
+- `400 Bad Request`: Missing or invalid defaultJackpotAmount
+```json
+{
+  "success": false,
+  "error": "Default jackpot amount is required"
+}
+```
+
+- `400 Bad Request`: Invalid jackpot amount value
+```json
+{
+  "success": false,
+  "error": "Default jackpot amount must be a positive number"
+}
+```
+
+- `500 Internal Server Error`: Server error
+```json
+{
+  "success": false,
+  "error": "Error message"
+}
+```
+
+---
+
 ## Status Values
 
 The following status values are used for lottery status:
@@ -651,6 +792,13 @@ The following status values are used for lottery status:
    - Megamillion tickets have a fixed price of $2 per ticket
    - Each ticket contains 5 numbers (from 1-70) and 1 mega ball number (from 1-25)
    - Winning numbers breakdown includes both regular numbers and mega ball numbers
+
+9. **Default Jackpot Amount**: 
+   - The default jackpot amount is used when creating new MEGAMILLION lotteries
+   - If no default is configured, the system uses 1,000,000 (1 million) as the default
+   - Admins can set/update the default jackpot amount using the default-jackpot endpoints
+   - When manually creating a lottery via the create endpoint, if `jackpotAmount` is not provided, the configured default will be used
+   - The default jackpot amount applies to all newly created MEGAMILLION lotteries automatically
 
 ---
 
@@ -739,6 +887,44 @@ const response = await fetch(
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(updateData)
+  }
+);
+const data = await response.json();
+```
+
+### Scenario 5: Get the current default jackpot amount
+
+```javascript
+const response = await fetch(
+  '/api/admin/megamillion-management/default-jackpot',
+  {
+    method: 'GET',
+    headers: {
+      'x-api-key': 'your-api-key',
+      'Authorization': 'Bearer your-jwt-token'
+    }
+  }
+);
+const data = await response.json();
+console.log(`Current default jackpot: $${data.entity.defaultJackpotAmount.toLocaleString()}`);
+```
+
+### Scenario 6: Set a new default jackpot amount
+
+```javascript
+const response = await fetch(
+  '/api/admin/megamillion-management/default-jackpot',
+  {
+    method: 'PUT',
+    headers: {
+      'x-api-key': 'your-api-key',
+      'Authorization': 'Bearer your-jwt-token',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      defaultJackpotAmount: 2500000,
+      description: 'Increased default jackpot to $2.5 million for promotional period'
+    })
   }
 );
 const data = await response.json();

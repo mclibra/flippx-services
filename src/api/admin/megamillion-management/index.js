@@ -6,6 +6,8 @@ import {
 	getMegamillionDetails,
 	createLotteryRestriction,
 	updateLotteryRestriction,
+	getDefaultJackpotAmount,
+	setDefaultJackpotAmount,
 } from './controller';
 
 const router = new Router();
@@ -102,6 +104,34 @@ router.put(
 				req.user
 			)
 		)
+);
+
+/**
+ * GET /api/admin/megamillion-management/default-jackpot
+ * Get the default jackpot amount for MEGAMILLION lotteries
+ */
+router.get(
+	'/default-jackpot',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await getDefaultJackpotAmount())
+);
+
+/**
+ * PUT /api/admin/megamillion-management/default-jackpot
+ * Set the default jackpot amount for MEGAMILLION lotteries
+ * Body: {
+ *   defaultJackpotAmount: number (required),
+ *   description: string (optional)
+ * }
+ */
+router.put(
+	'/default-jackpot',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await setDefaultJackpotAmount(req.body, req.user))
 );
 
 export default router;

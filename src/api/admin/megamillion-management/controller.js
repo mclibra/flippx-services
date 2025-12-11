@@ -1,6 +1,7 @@
 import moment from 'moment';
 import { Lottery, LotteryRestriction } from '../../lottery/model';
 import { MegaMillionTicket } from '../../megamillion_ticket/model';
+import { LotteryDefaultConfig } from '../../lottery-default-config/model';
 
 // ===== LIST MEGAMILLION LOTTERIES =====
 
@@ -596,6 +597,110 @@ export const updateLotteryRestriction = async (lotteryId, body) => {
 			entity: {
 				success: false,
 				error: error.message || 'Failed to update lottery restriction',
+			},
+		};
+	}
+};
+
+// ===== GET DEFAULT JACKPOT AMOUNT =====
+
+export const getDefaultJackpotAmount = async () => {
+	try {
+		const config = await LotteryDefaultConfig.findOne({
+			lotteryType: 'MEGAMILLION',
+		});
+
+		// If no config exists, return default value
+		const defaultJackpotAmount = config
+			? config.defaultJackpotAmount
+			: 1000000; // Default to 1 million
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				defaultJackpotAmount,
+				config: config || null,
+			},
+		};
+	} catch (error) {
+		console.error('Get default jackpot amount error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error:
+					error.message || 'Failed to retrieve default jackpot amount',
+			},
+		};
+	}
+};
+
+// ===== SET DEFAULT JACKPOT AMOUNT =====
+
+export const setDefaultJackpotAmount = async (body, user) => {
+	try {
+		const { defaultJackpotAmount, description } = body;
+
+		// Validation
+		if (
+			defaultJackpotAmount === undefined ||
+			defaultJackpotAmount === null
+		) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Default jackpot amount is required',
+				},
+			};
+		}
+
+		if (
+			typeof defaultJackpotAmount !== 'number' ||
+			defaultJackpotAmount < 0
+		) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Default jackpot amount must be a positive number',
+				},
+			};
+		}
+
+		// Find or create configuration
+		const config = await LotteryDefaultConfig.findOneAndUpdate(
+			{ lotteryType: 'MEGAMILLION' },
+			{
+				defaultJackpotAmount,
+				updatedBy: user._id,
+				description:
+					description ||
+					`Default jackpot amount set to $${defaultJackpotAmount.toLocaleString()}`,
+			},
+			{
+				new: true,
+				upsert: true,
+				runValidators: true,
+			}
+		);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: `Default jackpot amount for MEGAMILLION set to $${defaultJackpotAmount.toLocaleString()}`,
+				config,
+			},
+		};
+	} catch (error) {
+		console.error('Set default jackpot amount error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to set default jackpot amount',
 			},
 		};
 	}
