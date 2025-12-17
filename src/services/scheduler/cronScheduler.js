@@ -1063,19 +1063,21 @@ class CronScheduler {
 	async handleHumanTimeouts() {
 		try {
 			const config = await DominoGameConfig.findOne().lean();
-			const timeoutSeconds = config?.turnTimeLimit || 30;
-			const timeoutThreshold = new Date(
-				Date.now() - timeoutSeconds * 1000
+			const baseTimeoutSeconds = config?.turnTimeLimit || 30;
+			// Use extended timeout (4x) as the query threshold to catch all potential timeouts
+			const extendedTimeoutSeconds = baseTimeoutSeconds * 4;
+			const extendedTimeoutThreshold = new Date(
+				Date.now() - extendedTimeoutSeconds * 1000
 			);
 
-			const timedOutGames = await DominoGame.find({
+			const potentialTimedOutGames = await DominoGame.find({
 				gameState: 'ACTIVE',
-				turnStartTime: { $lt: timeoutThreshold },
+				turnStartTime: { $lt: extendedTimeoutThreshold },
 			})
 				.limit(50)
 				.populate('room');
 
-			for (const game of timedOutGames) {
+			for (const game of potentialTimedOutGames) {
 				try {
 					if (this.processingGames.has(game._id.toString())) {
 						continue;
@@ -1085,17 +1087,41 @@ class CronScheduler {
 						continue;
 					}
 
-					this.processingGames.add(game._id.toString());
-
 					const currentPlayer = game.players[game.currentPlayer];
 
 					if (
-						currentPlayer &&
-						currentPlayer.playerType === 'HUMAN' &&
-						currentPlayer.user
+						!currentPlayer ||
+						currentPlayer.playerType !== 'HUMAN' ||
+						!currentPlayer.user
 					) {
-						await handleTurnTimeout(game._id, currentPlayer);
+						continue;
 					}
+
+					// Check if current player has playable tiles
+					const hasPlayableTiles = DominoGameEngine.hasValidMoves(
+						currentPlayer.hand,
+						game.board
+					);
+
+					// Determine the appropriate timeout based on player's situation
+					let timeoutSeconds = baseTimeoutSeconds;
+					if (!hasPlayableTiles && game.drawPile.length > 0) {
+						timeoutSeconds = baseTimeoutSeconds * 4;
+					}
+
+					// Check if the game has actually timed out with the appropriate timeout
+					const timeoutThreshold = new Date(
+						Date.now() - timeoutSeconds * 1000
+					);
+
+					if (game.turnStartTime >= timeoutThreshold) {
+						// Game hasn't timed out yet with the appropriate timeout
+						continue;
+					}
+
+					this.processingGames.add(game._id.toString());
+
+					await handleTurnTimeout(game._id, currentPlayer);
 				} catch (error) {
 					console.error(
 						`Error handling timeout for game ${game._id}:`,
