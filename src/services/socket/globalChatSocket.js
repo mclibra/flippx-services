@@ -155,8 +155,7 @@ export const initializeGlobalChatSocket = io => {
 					if (!widthValid || !heightValid) {
 						socket.emit('message-error', {
 							success: false,
-							error:
-								'Media width and height must be positive numbers',
+							error: 'Media width and height must be positive numbers',
 						});
 						return;
 					}
@@ -169,8 +168,7 @@ export const initializeGlobalChatSocket = io => {
 					message: messageType === 'TEXT' ? message.trim() : '',
 					messageType: messageType,
 					mediaUrl: messageType !== 'TEXT' ? mediaUrl : undefined,
-					mediaWidth:
-						messageType !== 'TEXT' ? mediaWidth : undefined,
+					mediaWidth: messageType !== 'TEXT' ? mediaWidth : undefined,
 					mediaHeight:
 						messageType !== 'TEXT' ? mediaHeight : undefined,
 				});
@@ -445,4 +443,3 @@ export const notifyUserMuted = (userId, muteInfo) => {
 		});
 	}
 };
-

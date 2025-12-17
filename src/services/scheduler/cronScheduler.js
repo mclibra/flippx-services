@@ -1064,15 +1064,15 @@ class CronScheduler {
 		try {
 			const config = await DominoGameConfig.findOne().lean();
 			const baseTimeoutSeconds = config?.turnTimeLimit || 30;
-			// Use extended timeout (4x) as the query threshold to catch all potential timeouts
-			const extendedTimeoutSeconds = baseTimeoutSeconds * 4;
-			const extendedTimeoutThreshold = new Date(
-				Date.now() - extendedTimeoutSeconds * 1000
+			// Query for games that have been waiting at least the base timeout
+			// We'll check each game individually to determine the appropriate timeout
+			const baseTimeoutThreshold = new Date(
+				Date.now() - baseTimeoutSeconds * 1000
 			);
 
 			const potentialTimedOutGames = await DominoGame.find({
 				gameState: 'ACTIVE',
-				turnStartTime: { $lt: extendedTimeoutThreshold },
+				turnStartTime: { $lt: baseTimeoutThreshold },
 			})
 				.limit(50)
 				.populate('room');

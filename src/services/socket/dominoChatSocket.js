@@ -36,13 +36,11 @@ export const initializeDominoChatSocket = io => {
 	});
 
 	chatNamespace.on('connection', socket => {
-
 		// Join chat room when user joins domino room
 		socket.on('join-chat-room', async data => {
 			try {
 				const { roomId } = data;
 				const { userId, userName } = socket;
-
 
 				// Validate room and user membership
 				const validation = await validateUserInRoom(roomId, userId);
@@ -72,7 +70,6 @@ export const initializeDominoChatSocket = io => {
 					userName: userName,
 					timestamp: new Date(),
 				});
-
 			} catch (error) {
 				console.error('Error joining chat room:', error);
 				socket.emit('join-chat-room-error', {
@@ -86,8 +83,7 @@ export const initializeDominoChatSocket = io => {
 		socket.on('send-message', async data => {
 			try {
 				const { roomId, message } = data;
-				const { userId, userName } = socket;
-
+				const { userId } = socket;
 
 				// Validate message
 				if (!message || typeof message !== 'string') {
@@ -148,7 +144,6 @@ export const initializeDominoChatSocket = io => {
 
 				// Send to room including sender
 				chatNamespace.to(roomId).emit('new-message', messageData);
-
 			} catch (error) {
 				console.error('Error sending message:', error);
 				socket.emit('message-error', {
@@ -213,7 +208,6 @@ export const initializeDominoChatSocket = io => {
 				const { roomId } = data;
 				const { userId, userName } = socket;
 
-
 				// Leave socket room
 				socket.leave(roomId);
 				socket.roomId = null;
@@ -231,7 +225,6 @@ export const initializeDominoChatSocket = io => {
 					userName: userName,
 					timestamp: new Date(),
 				});
-
 			} catch (error) {
 				console.error('Error leaving chat room:', error);
 				socket.emit('leave-chat-room-error', {
@@ -245,7 +238,6 @@ export const initializeDominoChatSocket = io => {
 		socket.on('disconnect', async () => {
 			const { roomId, userId, userName } = socket;
 
-
 			if (roomId) {
 				// Broadcast to other players in the room
 				socket.to(roomId).emit('player-disconnected-chat', {
@@ -253,7 +245,6 @@ export const initializeDominoChatSocket = io => {
 					userName: userName,
 					timestamp: new Date(),
 				});
-
 			}
 		});
 
@@ -306,7 +297,6 @@ export const forceDisconnectFromChat = userId => {
 		userSockets.forEach(socket => {
 			// Only leave the room, don't disconnect the socket entirely
 			if (socket.roomId) {
-				const roomId = socket.roomId;
 				socket.leave(socket.roomId);
 				socket.roomId = null;
 			}
