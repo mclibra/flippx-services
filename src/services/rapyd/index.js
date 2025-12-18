@@ -8,6 +8,34 @@ const RAPYD_API_BASE_URL =
 	rapydConfig.apiBaseUrl || 'https://sandboxapi.rapyd.net';
 
 /**
+ * Recursively convert all numbers in an object to strings
+ * Rapyd requires numbers to be strings to avoid signature issues
+ */
+const convertNumbersToStrings = obj => {
+	if (obj === null || obj === undefined) {
+		return obj;
+	}
+
+	if (typeof obj === 'number') {
+		return String(obj);
+	}
+
+	if (Array.isArray(obj)) {
+		return obj.map(item => convertNumbersToStrings(item));
+	}
+
+	if (typeof obj === 'object') {
+		const result = {};
+		for (const [key, value] of Object.entries(obj)) {
+			result[key] = convertNumbersToStrings(value);
+		}
+		return result;
+	}
+
+	return obj;
+};
+
+/**
  * Format JSON body for Rapyd signature
  * Rapyd requires: no whitespace, no trailing zeros, proper number formatting
  * The body string must match exactly what will be sent in the HTTP request
@@ -28,10 +56,19 @@ const formatBodyForSignature = body => {
 	// 2. NO trailing zeros or decimal points (or wrap numbers in strings)
 	// 3. The exact string used for signature MUST match the request body exactly
 
+	// Convert all numbers to strings as per Rapyd's error message:
+	// "Remove trailing zeroes and decimal points, or wrap numbers in a string"
+	const bodyWithStringNumbers = convertNumbersToStrings(body);
+
+	console.log(
+		'[Rapyd Body Format] Body after number conversion:',
+		JSON.stringify(bodyWithStringNumbers, null, 2)
+	);
+
 	// JSON.stringify() produces compact JSON with no whitespace by default
 	// This exact string will be used for both signature AND request body
 	// We must ensure no additional formatting is applied
-	const bodyString = JSON.stringify(body);
+	const bodyString = JSON.stringify(bodyWithStringNumbers);
 
 	console.log('[Rapyd Body Format] Stringified body:', {
 		bodyString,
@@ -323,9 +360,11 @@ export const createCheckoutPage = async ({
 	try {
 		const path = '/v1/checkout';
 
-		// Build body object - ensure numbers are proper numbers, not strings
+		// Build body object
+		// CRITICAL: Rapyd requires numbers to be strings to avoid signature issues
+		// Error message says: "Remove trailing zeroes and decimal points, or wrap numbers in a string"
 		const body = {
-			amount: Number(amount), // Ensure it's a number, not string
+			amount: String(amount), // Convert to string as per Rapyd requirements
 			currency: String(currency),
 			description: String(description),
 			complete_payment_url: String(completePaymentUrl),
@@ -333,8 +372,18 @@ export const createCheckoutPage = async ({
 		};
 
 		// Only add metadata if it has content (Rapyd may reject empty objects)
+		// Convert all numeric values in metadata to strings
 		if (metadata && Object.keys(metadata).length > 0) {
-			body.metadata = metadata;
+			const stringifiedMetadata = {};
+			for (const [key, value] of Object.entries(metadata)) {
+				// Convert numbers to strings, keep other types as-is
+				if (typeof value === 'number') {
+					stringifiedMetadata[key] = String(value);
+				} else {
+					stringifiedMetadata[key] = value;
+				}
+			}
+			body.metadata = stringifiedMetadata;
 		}
 
 		// Add optional parameters
