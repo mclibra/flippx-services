@@ -194,10 +194,12 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	});
 
 	// Generate HMAC-SHA256 signature
-	// CRITICAL: Use secretKey as the HMAC key, and hash the toSign string
+	// CRITICAL: Rapyd requires BASE64 encoding of the HMAC-SHA256 hash
+	// Format: BASE64(HMAC-SHA256(secret_key, toSign))
 	const hmac = crypto.createHmac('sha256', secretKey);
 	hmac.update(toSign);
-	const signature = hmac.digest('hex');
+	// Convert hex digest to BASE64 as per Rapyd documentation
+	const signature = Buffer.from(hmac.digest('hex')).toString('base64');
 
 	console.log('[Rapyd Signature] Generated signature:', {
 		signature: signature.substring(0, 20) + '...',
