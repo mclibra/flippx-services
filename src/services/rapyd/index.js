@@ -1,5 +1,6 @@
-import axios from 'axios';
 import crypto from 'crypto';
+import https from 'https';
+import { URL } from 'url';
 import { rapydConfig } from '../../../config';
 
 // Rapyd API base URL
@@ -76,6 +77,7 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 
 /**
  * Make authenticated request to Rapyd API
+ * Uses native https module to ensure exact body string matching for signature
  */
 const makeRapydRequest = async (method, path, body = null) => {
 	const salt = crypto.randomBytes(16).toString('hex');
@@ -97,48 +99,88 @@ const makeRapydRequest = async (method, path, body = null) => {
 		bodyString
 	);
 
+	// Parse URL to get hostname and path
+	const url = new URL(`${RAPYD_API_BASE_URL}${path}`);
+	const hostname = url.hostname;
+	const requestPath = url.pathname + url.search;
+
 	const headers = {
 		'Content-Type': 'application/json',
+		Accept: 'application/json',
 		access_key: rapydConfig.accessKey,
 		salt: salt,
 		timestamp: timestamp,
 		signature: signature,
+		'User-Agent': 'Node.js',
 	};
 
-	try {
-		// Build config - CRITICAL: body must be sent exactly as formatted for signature
-		const config = {
-			method,
-			url: `${RAPYD_API_BASE_URL}${path}`,
-			headers,
+	// Add Content-Length if there's a body
+	if (bodyString) {
+		headers['Content-Length'] = Buffer.byteLength(bodyString, 'utf8');
+	}
+
+	return new Promise((resolve, reject) => {
+		const options = {
+			hostname: hostname,
+			port: 443,
+			path: requestPath,
+			method: method.toUpperCase(),
+			headers: headers,
 		};
 
-		if (
-			body &&
-			(method === 'POST' || method === 'PUT' || method === 'PATCH')
-		) {
-			// CRITICAL: Send body exactly as formatted for signature
-			// The bodyString was already formatted with JSON.stringify() (compact, no whitespace)
-			// We must send this exact string - any transformation will break the signature
-			// Set transformRequest BEFORE setting data to ensure axios doesn't transform it
-			config.transformRequest = [
-				data => {
-					// If data is a string, return it as-is (no JSON.stringify, no transformation)
-					// This ensures the exact string used for signature is sent
-					if (typeof data === 'string') {
-						return data;
+		const req = https.request(options, res => {
+			let responseData = '';
+
+			res.on('data', chunk => {
+				responseData += chunk;
+			});
+
+			res.on('end', () => {
+				try {
+					const parsedData = JSON.parse(responseData);
+
+					if (res.statusCode >= 200 && res.statusCode < 300) {
+						resolve(parsedData);
+					} else {
+						const error = new Error(
+							parsedData.status?.message ||
+								`Request failed with status code ${res.statusCode}`
+						);
+						error.response = {
+							status: res.statusCode,
+							data: parsedData,
+						};
+						reject(error);
 					}
-					// For other types, let axios handle it (shouldn't happen)
-					return data;
-				},
-			];
-			// Set data as the pre-formatted string
-			config.data = bodyString;
+				} catch (parseError) {
+					const error = new Error(
+						`Failed to parse response: ${parseError.message}`
+					);
+					error.response = {
+						status: res.statusCode,
+						data: responseData,
+					};
+					reject(error);
+				}
+			});
+		});
+
+		req.on('error', error => {
+			console.error('Rapyd API request error:', {
+				path,
+				method,
+				message: error.message,
+			});
+			reject(error);
+		});
+
+		// Write the exact body string (no transformation)
+		if (bodyString) {
+			req.write(bodyString, 'utf8');
 		}
 
-		const response = await axios(config);
-		return response.data;
-	} catch (error) {
+		req.end();
+	}).catch(error => {
 		console.error('Rapyd API error:', {
 			path,
 			method,
@@ -147,7 +189,7 @@ const makeRapydRequest = async (method, path, body = null) => {
 			message: error.message,
 		});
 		throw error;
-	}
+	});
 };
 
 /**
