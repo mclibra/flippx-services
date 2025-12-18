@@ -6,13 +6,39 @@ import { rapydConfig } from '../../../config';
 const RAPYD_API_BASE_URL = rapydConfig.apiBaseUrl || 'https://sandboxapi.rapyd.net';
 
 /**
+ * Format JSON body for Rapyd signature
+ * Rapyd requires: no whitespace, no trailing zeros, proper number formatting
+ * The body string must match exactly what axios will send
+ */
+const formatBodyForSignature = (body) => {
+	if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
+		return '';
+	}
+	
+	// Stringify without any whitespace (compact JSON)
+	// This must match exactly what axios sends when Content-Type is application/json
+	return JSON.stringify(body);
+};
+
+/**
  * Generate Rapyd API signature
  * Rapyd requires HMAC-SHA256 signature for all API requests
+ * Signature format: method + path + salt + timestamp + access_key + secret_key + body_string
  */
-const generateSignature = (method, path, salt, timestamp, body = '') => {
+const generateSignature = (method, path, salt, timestamp, body = null) => {
 	const accessKey = rapydConfig.accessKey;
 	const secretKey = rapydConfig.secretKey;
 
+	// Validate credentials are set
+	if (!accessKey || !secretKey) {
+		throw new Error('Rapyd access key and secret key must be configured');
+	}
+
+	// Format body for signature (no whitespace, proper number handling)
+	// Empty body should be empty string, not '{}' or 'null'
+	const bodyString = body ? formatBodyForSignature(body) : '';
+
+	// Construct the string to sign exactly as Rapyd expects
 	const toSign =
 		method.toLowerCase() +
 		path +
@@ -20,8 +46,9 @@ const generateSignature = (method, path, salt, timestamp, body = '') => {
 		timestamp +
 		accessKey +
 		secretKey +
-		(body ? JSON.stringify(body) : '');
+		bodyString;
 
+	// Generate HMAC-SHA256 signature
 	return crypto.createHmac('sha256', secretKey).update(toSign).digest('hex');
 };
 
@@ -31,6 +58,10 @@ const generateSignature = (method, path, salt, timestamp, body = '') => {
 const makeRapydRequest = async (method, path, body = null) => {
 	const salt = crypto.randomBytes(16).toString('hex');
 	const timestamp = Math.floor(Date.now() / 1000).toString();
+	
+	// Generate signature - body must be formatted exactly as it will be sent
+	// The signature uses the body object, and formatBodyForSignature ensures
+	// it matches what axios will send (compact JSON, no whitespace)
 	const signature = generateSignature(method, path, salt, timestamp, body);
 
 	const headers = {
@@ -49,6 +80,8 @@ const makeRapydRequest = async (method, path, body = null) => {
 		};
 
 		if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+			// Send body as object - axios will stringify it automatically
+			// The signature was calculated using the same body object
 			config.data = body;
 		}
 
@@ -83,18 +116,24 @@ export const createCheckoutPage = async ({
 }) => {
 	try {
 		const path = '/v1/checkout';
+		
+		// Build body object - ensure numbers are proper numbers, not strings
 		const body = {
-			amount,
-			currency,
-			description,
-			complete_payment_url: completePaymentUrl,
-			error_payment_url: errorPaymentUrl,
-			metadata,
+			amount: Number(amount), // Ensure it's a number, not string
+			currency: String(currency),
+			description: String(description),
+			complete_payment_url: String(completePaymentUrl),
+			error_payment_url: String(errorPaymentUrl),
 		};
+
+		// Only add metadata if it has content (Rapyd may reject empty objects)
+		if (metadata && Object.keys(metadata).length > 0) {
+			body.metadata = metadata;
+		}
 
 		// Add optional parameters
 		if (customerId) {
-			body.customer = customerId;
+			body.customer = String(customerId);
 		}
 
 		if (paymentMethodTypesInclude.length > 0) {
