@@ -405,6 +405,7 @@ export const createCheckoutPage = async ({
 	customerId,
 	paymentMethodTypesInclude = [],
 	paymentMethodTypesExclude = [],
+	country = null,
 }) => {
 	try {
 		const path = '/v1/checkout';
@@ -418,6 +419,8 @@ export const createCheckoutPage = async ({
 			description: String(description),
 			complete_payment_url: String(completePaymentUrl),
 			error_payment_url: String(errorPaymentUrl),
+			// Country is required by Rapyd API
+			country: String(country || rapydConfig.defaultCountry || 'US'),
 		};
 
 		// Only add metadata if it has content (Rapyd may reject empty objects)
