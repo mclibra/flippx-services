@@ -160,7 +160,9 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		},
 		// Log the full toSign string (be careful with secrets in production)
 		toSignFull: toSign,
-		toSignHex: Buffer.from(toSign, 'utf8').toString('hex').substring(0, 200),
+		toSignHex: Buffer.from(toSign, 'utf8')
+			.toString('hex')
+			.substring(0, 200),
 		toSignHasNewlines: toSign.includes('\n') || toSign.includes('\r'),
 	});
 
