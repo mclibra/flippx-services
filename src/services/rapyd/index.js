@@ -3,18 +3,19 @@ import crypto from 'crypto';
 import { rapydConfig } from '../../../config';
 
 // Rapyd API base URL
-const RAPYD_API_BASE_URL = rapydConfig.apiBaseUrl || 'https://sandboxapi.rapyd.net';
+const RAPYD_API_BASE_URL =
+	rapydConfig.apiBaseUrl || 'https://sandboxapi.rapyd.net';
 
 /**
  * Format JSON body for Rapyd signature
  * Rapyd requires: no whitespace, no trailing zeros, proper number formatting
  * The body string must match exactly what axios will send
  */
-const formatBodyForSignature = (body) => {
+const formatBodyForSignature = body => {
 	if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
 		return '';
 	}
-	
+
 	// Stringify without any whitespace (compact JSON)
 	// This must match exactly what axios sends when Content-Type is application/json
 	return JSON.stringify(body);
@@ -24,8 +25,14 @@ const formatBodyForSignature = (body) => {
  * Generate Rapyd API signature
  * Rapyd requires HMAC-SHA256 signature for all API requests
  * Signature format: method + path + salt + timestamp + access_key + secret_key + body_string
+ *
+ * @param {string} method - HTTP method (lowercase)
+ * @param {string} path - API path
+ * @param {string} salt - Random salt
+ * @param {string} timestamp - Unix timestamp
+ * @param {string} bodyString - Body as JSON string (already stringified)
  */
-const generateSignature = (method, path, salt, timestamp, body = null) => {
+const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	const accessKey = rapydConfig.accessKey;
 	const secretKey = rapydConfig.secretKey;
 
@@ -34,9 +41,8 @@ const generateSignature = (method, path, salt, timestamp, body = null) => {
 		throw new Error('Rapyd access key and secret key must be configured');
 	}
 
-	// Format body for signature (no whitespace, proper number handling)
-	// Empty body should be empty string, not '{}' or 'null'
-	const bodyString = body ? formatBodyForSignature(body) : '';
+	// bodyString is already formatted - use it directly
+	// Empty body should be empty string
 
 	// Construct the string to sign exactly as Rapyd expects
 	const toSign =
@@ -58,11 +64,22 @@ const generateSignature = (method, path, salt, timestamp, body = null) => {
 const makeRapydRequest = async (method, path, body = null) => {
 	const salt = crypto.randomBytes(16).toString('hex');
 	const timestamp = Math.floor(Date.now() / 1000).toString();
-	
-	// Generate signature - body must be formatted exactly as it will be sent
-	// The signature uses the body object, and formatBodyForSignature ensures
-	// it matches what axios will send (compact JSON, no whitespace)
-	const signature = generateSignature(method, path, salt, timestamp, body);
+
+	// Stringify body exactly as it will be sent to ensure signature matches
+	// This is critical - the signature body MUST match the request body exactly
+	let bodyString = '';
+	if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+		bodyString = formatBodyForSignature(body);
+	}
+
+	// Generate signature using the exact body string that will be sent
+	const signature = generateSignature(
+		method,
+		path,
+		salt,
+		timestamp,
+		bodyString
+	);
 
 	const headers = {
 		'Content-Type': 'application/json',
@@ -79,10 +96,13 @@ const makeRapydRequest = async (method, path, body = null) => {
 			headers,
 		};
 
-		if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-			// Send body as object - axios will stringify it automatically
-			// The signature was calculated using the same body object
-			config.data = body;
+		if (
+			body &&
+			(method === 'POST' || method === 'PUT' || method === 'PATCH')
+		) {
+			// Send body as stringified JSON to ensure exact match with signature
+			// This guarantees the signature body matches the request body exactly
+			config.data = bodyString;
 		}
 
 		const response = await axios(config);
@@ -116,7 +136,7 @@ export const createCheckoutPage = async ({
 }) => {
 	try {
 		const path = '/v1/checkout';
-		
+
 		// Build body object - ensure numbers are proper numbers, not strings
 		const body = {
 			amount: Number(amount), // Ensure it's a number, not string
@@ -180,7 +200,9 @@ export const getPaymentStatus = async paymentId => {
 			return response.data;
 		}
 
-		throw new Error(response.status?.message || 'Failed to get payment status');
+		throw new Error(
+			response.status?.message || 'Failed to get payment status'
+		);
 	} catch (error) {
 		console.error('Rapyd get payment status error:', error);
 		throw new Error(
@@ -217,7 +239,9 @@ export const createCustomer = async ({
 			return response.data;
 		}
 
-		throw new Error(response.status?.message || 'Failed to create customer');
+		throw new Error(
+			response.status?.message || 'Failed to create customer'
+		);
 	} catch (error) {
 		console.error('Rapyd create customer error:', error);
 		throw new Error(
@@ -264,7 +288,8 @@ export const createBeneficiary = async ({
 				name: bankAccountDetails.accountHolderName,
 				account_number: bankAccountDetails.accountNumber,
 				routing_number: bankAccountDetails.routingNumber,
-				account_type: bankAccountDetails.accountType?.toLowerCase() || 'checking',
+				account_type:
+					bankAccountDetails.accountType?.toLowerCase() || 'checking',
 				bank_name: bankAccountDetails.bankName,
 				country: bankAccountDetails.country || country,
 			};
@@ -287,7 +312,9 @@ export const createBeneficiary = async ({
 			return response.data;
 		}
 
-		throw new Error(response.status?.message || 'Failed to create beneficiary');
+		throw new Error(
+			response.status?.message || 'Failed to create beneficiary'
+		);
 	} catch (error) {
 		console.error('Rapyd create beneficiary error:', error);
 		throw new Error(
@@ -358,7 +385,9 @@ export const getPayoutStatus = async payoutId => {
 			return response.data;
 		}
 
-		throw new Error(response.status?.message || 'Failed to get payout status');
+		throw new Error(
+			response.status?.message || 'Failed to get payout status'
+		);
 	} catch (error) {
 		console.error('Rapyd get payout status error:', error);
 		throw new Error(
@@ -460,4 +489,3 @@ export default {
 	mapPaymentStatus,
 	mapPayoutStatus,
 };
-
