@@ -10,7 +10,7 @@ const RAPYD_API_BASE_URL =
 /**
  * Format JSON body for Rapyd signature
  * Rapyd requires: no whitespace, no trailing zeros, proper number formatting
- * The body string must match exactly what axios will send
+ * The body string must match exactly what will be sent in the HTTP request
  */
 const formatBodyForSignature = body => {
 	if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
@@ -83,6 +83,13 @@ const makeRapydRequest = async (method, path, body = null) => {
 	const salt = crypto.randomBytes(16).toString('hex');
 	const timestamp = Math.floor(Date.now() / 1000).toString();
 
+	// CRITICAL: Parse URL first to get the exact path that will be used in the request
+	// The path used in signature MUST match the path in the actual HTTP request
+	const url = new URL(`${RAPYD_API_BASE_URL}${path}`);
+	const hostname = url.hostname;
+	// Use the exact path from URL (pathname + search) for both signature and request
+	const requestPath = url.pathname + url.search;
+
 	// Stringify body exactly as it will be sent to ensure signature matches
 	// This is critical - the signature body MUST match the request body exactly
 	let bodyString = '';
@@ -90,19 +97,28 @@ const makeRapydRequest = async (method, path, body = null) => {
 		bodyString = formatBodyForSignature(body);
 	}
 
-	// Generate signature using the exact body string that will be sent
+	// Generate signature using the exact path and body string that will be sent
+	// CRITICAL: Use requestPath (not path) to ensure signature matches actual request
 	const signature = generateSignature(
 		method,
-		path,
+		requestPath, // Use requestPath instead of path to ensure exact match
 		salt,
 		timestamp,
 		bodyString
 	);
 
-	// Parse URL to get hostname and path
-	const url = new URL(`${RAPYD_API_BASE_URL}${path}`);
-	const hostname = url.hostname;
-	const requestPath = url.pathname + url.search;
+	// Debug logging (remove in production or make conditional)
+	if (process.env.NODE_ENV !== 'production') {
+		console.log('Rapyd Request Debug:', {
+			method: method.toUpperCase(),
+			path: requestPath,
+			bodyString,
+			bodyStringLength: bodyString.length,
+			salt,
+			timestamp,
+			signature: signature.substring(0, 20) + '...',
+		});
+	}
 
 	const headers = {
 		'Content-Type': 'application/json',
@@ -167,8 +183,8 @@ const makeRapydRequest = async (method, path, body = null) => {
 
 		req.on('error', error => {
 			console.error('Rapyd API request error:', {
-				path,
-				method,
+				path: requestPath,
+				method: method.toUpperCase(),
 				message: error.message,
 			});
 			reject(error);
@@ -181,13 +197,34 @@ const makeRapydRequest = async (method, path, body = null) => {
 
 		req.end();
 	}).catch(error => {
-		console.error('Rapyd API error:', {
-			path,
-			method,
+		// Enhanced error logging for debugging signature issues
+		const errorDetails = {
+			path: requestPath,
+			method: method.toUpperCase(),
 			status: error.response?.status,
 			data: error.response?.data,
 			message: error.message,
-		});
+		};
+
+		// If it's a signature error, log the details used for signature calculation
+		if (
+			error.response?.status === 401 ||
+			error.response?.data?.status?.error_code ===
+				'UNAUTHENTICATED_API_CALL'
+		) {
+			errorDetails.signatureDebug = {
+				method: method.toLowerCase(),
+				path: requestPath,
+				salt,
+				timestamp,
+				bodyStringLength: bodyString.length,
+				bodyStringPreview:
+					bodyString.substring(0, 100) +
+					(bodyString.length > 100 ? '...' : ''),
+			};
+		}
+
+		console.error('Rapyd API error:', errorDetails);
 		throw error;
 	});
 };
