@@ -258,6 +258,9 @@ const makeRapydRequest = async (method, path, body = null) => {
 		signature: signature.substring(0, 20) + '...',
 	});
 
+	// Generate idempotency key (timestamp-based unique identifier)
+	const idempotency = Date.now().toString();
+
 	const headers = {
 		'Content-Type': 'application/json',
 		Accept: 'application/json',
@@ -265,6 +268,7 @@ const makeRapydRequest = async (method, path, body = null) => {
 		salt: salt,
 		timestamp: timestamp,
 		signature: signature,
+		idempotency: idempotency,
 		'User-Agent': 'Node.js',
 	};
 
