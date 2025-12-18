@@ -118,16 +118,15 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	// Empty body should be empty string
 
 	// Construct the string to sign exactly as Rapyd expects
-	// CRITICAL: Based on Rapyd documentation, the format is:
-	// method + uri_path + salt + timestamp + access_key + secret_key + body_string
-	// Note: secret_key IS included in the string to sign (unusual but required by Rapyd)
+	// CRITICAL: Testing without secretKey in the string (standard HMAC format)
+	// Format: method + uri_path + salt + timestamp + access_key + body_string
+	// The secret_key is used as the HMAC key, not in the message
 	const toSign =
 		method.toLowerCase() +
 		path +
 		salt +
 		timestamp +
 		accessKey +
-		secretKey +
 		bodyString;
 
 	// Detailed logging for signature calculation
