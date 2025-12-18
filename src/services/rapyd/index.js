@@ -118,6 +118,9 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	// Empty body should be empty string
 
 	// Construct the string to sign exactly as Rapyd expects
+	// CRITICAL: Based on Rapyd documentation, the format is:
+	// method + uri_path + salt + timestamp + access_key + secret_key + body_string
+	// Note: secret_key IS included in the string to sign (unusual but required by Rapyd)
 	const toSign =
 		method.toLowerCase() +
 		path +
@@ -145,18 +148,31 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		bodyStringHasSpaces: bodyString.includes('  '), // double spaces
 		toSignLength: toSign.length,
 		toSignPreview: toSign.substring(0, 100) + '...',
+		// Log the exact components being concatenated
+		toSignComponents: {
+			method: method.toLowerCase(),
+			path,
+			salt,
+			timestamp,
+			accessKey,
+			secretKey: secretKey.substring(0, 10) + '...',
+			bodyString: bodyString.substring(0, 50) + '...',
+		},
+		// Log the full toSign string (be careful with secrets in production)
+		toSignFull: toSign,
 	});
 
 	// Generate HMAC-SHA256 signature
-	const signature = crypto
-		.createHmac('sha256', secretKey)
-		.update(toSign)
-		.digest('hex');
+	// CRITICAL: Use secretKey as the HMAC key, and hash the toSign string
+	const hmac = crypto.createHmac('sha256', secretKey);
+	hmac.update(toSign);
+	const signature = hmac.digest('hex');
 
-	console.log(
-		'[Rapyd Signature] Generated signature:',
-		signature.substring(0, 20) + '...'
-	);
+	console.log('[Rapyd Signature] Generated signature:', {
+		signature: signature.substring(0, 20) + '...',
+		signatureLength: signature.length,
+		signatureFull: signature,
+	});
 
 	return signature;
 };
