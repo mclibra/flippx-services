@@ -160,10 +160,25 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		},
 		// Log the full toSign string (be careful with secrets in production)
 		toSignFull: toSign,
-		toSignHex: Buffer.from(toSign, 'utf8')
-			.toString('hex')
-			.substring(0, 200),
+		toSignHex: Buffer.from(toSign, 'utf8').toString('hex'),
+		toSignHexLength: Buffer.from(toSign, 'utf8').toString('hex').length,
 		toSignHasNewlines: toSign.includes('\n') || toSign.includes('\r'),
+		// Log each component's hex to verify exact bytes
+		componentsHex: {
+			method: Buffer.from(method.toLowerCase(), 'utf8').toString('hex'),
+			path: Buffer.from(path, 'utf8').toString('hex'),
+			salt: Buffer.from(salt, 'utf8').toString('hex'),
+			timestamp: Buffer.from(timestamp, 'utf8').toString('hex'),
+			accessKey: Buffer.from(accessKey, 'utf8').toString('hex'),
+			secretKey:
+				Buffer.from(secretKey, 'utf8')
+					.toString('hex')
+					.substring(0, 50) + '...',
+			bodyString:
+				Buffer.from(bodyString, 'utf8')
+					.toString('hex')
+					.substring(0, 100) + '...',
+		},
 	});
 
 	// Generate HMAC-SHA256 signature
