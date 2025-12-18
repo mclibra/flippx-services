@@ -118,15 +118,16 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	// Empty body should be empty string
 
 	// Construct the string to sign exactly as Rapyd expects
-	// CRITICAL: Testing without secretKey in the string (standard HMAC format)
-	// Format: method + uri_path + salt + timestamp + access_key + body_string
-	// The secret_key is used as the HMAC key, not in the message
+	// CRITICAL: Rapyd requires secretKey in the string to sign (unusual but required)
+	// Format: method + uri_path + salt + timestamp + access_key + secret_key + body_string
+	// Then: HMAC-SHA256(secret_key, toSign)
 	const toSign =
 		method.toLowerCase() +
 		path +
 		salt +
 		timestamp +
 		accessKey +
+		secretKey +
 		bodyString;
 
 	// Detailed logging for signature calculation
@@ -159,6 +160,8 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		},
 		// Log the full toSign string (be careful with secrets in production)
 		toSignFull: toSign,
+		toSignHex: Buffer.from(toSign, 'utf8').toString('hex').substring(0, 200),
+		toSignHasNewlines: toSign.includes('\n') || toSign.includes('\r'),
 	});
 
 	// Generate HMAC-SHA256 signature
