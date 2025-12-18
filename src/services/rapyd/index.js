@@ -14,8 +14,14 @@ const RAPYD_API_BASE_URL =
  */
 const formatBodyForSignature = body => {
 	if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
+		console.log('[Rapyd Body Format] Empty body, returning empty string');
 		return '';
 	}
+
+	console.log(
+		'[Rapyd Body Format] Input body:',
+		JSON.stringify(body, null, 2)
+	);
 
 	// CRITICAL: Rapyd signature requirements:
 	// 1. NO whitespace (except inside strings)
@@ -26,6 +32,19 @@ const formatBodyForSignature = body => {
 	// This exact string will be used for both signature AND request body
 	// We must ensure no additional formatting is applied
 	const bodyString = JSON.stringify(body);
+
+	console.log('[Rapyd Body Format] Stringified body:', {
+		bodyString,
+		bodyStringLength: bodyString.length,
+		bodyStringBytes: Buffer.from(bodyString, 'utf8')
+			.toString('hex')
+			.substring(0, 200),
+		hasNewlines: bodyString.includes('\n') || bodyString.includes('\r'),
+		hasTabs: bodyString.includes('\t'),
+		hasDoubleSpaces: bodyString.includes('  '),
+		firstChar: bodyString.charCodeAt(0),
+		lastChar: bodyString.charCodeAt(bodyString.length - 1),
+	});
 
 	// Verify it's compact (no newlines or extra spaces)
 	// This is a sanity check - JSON.stringify should already produce compact JSON
@@ -71,8 +90,38 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		secretKey +
 		bodyString;
 
+	// Detailed logging for signature calculation
+	console.log('[Rapyd Signature] Calculating signature:', {
+		method: method.toLowerCase(),
+		path,
+		pathLength: path.length,
+		salt,
+		timestamp,
+		accessKey: accessKey.substring(0, 10) + '...',
+		secretKeyLength: secretKey.length,
+		bodyStringLength: bodyString.length,
+		bodyStringHex: Buffer.from(bodyString, 'utf8')
+			.toString('hex')
+			.substring(0, 100),
+		bodyStringHasNewlines:
+			bodyString.includes('\n') || bodyString.includes('\r'),
+		bodyStringHasSpaces: bodyString.includes('  '), // double spaces
+		toSignLength: toSign.length,
+		toSignPreview: toSign.substring(0, 100) + '...',
+	});
+
 	// Generate HMAC-SHA256 signature
-	return crypto.createHmac('sha256', secretKey).update(toSign).digest('hex');
+	const signature = crypto
+		.createHmac('sha256', secretKey)
+		.update(toSign)
+		.digest('hex');
+
+	console.log(
+		'[Rapyd Signature] Generated signature:',
+		signature.substring(0, 20) + '...'
+	);
+
+	return signature;
 };
 
 /**
@@ -107,18 +156,21 @@ const makeRapydRequest = async (method, path, body = null) => {
 		bodyString
 	);
 
-	// Debug logging (remove in production or make conditional)
-	if (process.env.NODE_ENV !== 'production') {
-		console.log('Rapyd Request Debug:', {
-			method: method.toUpperCase(),
-			path: requestPath,
-			bodyString,
-			bodyStringLength: bodyString.length,
-			salt,
-			timestamp,
-			signature: signature.substring(0, 20) + '...',
-		});
-	}
+	// Debug logging - show what we're about to sign and send
+	console.log('[Rapyd Request] Request preparation:', {
+		method: method.toUpperCase(),
+		path: requestPath,
+		bodyStringLength: bodyString.length,
+		bodyStringPreview:
+			bodyString.substring(0, 100) +
+			(bodyString.length > 100 ? '...' : ''),
+		bodyStringHex: Buffer.from(bodyString, 'utf8')
+			.toString('hex')
+			.substring(0, 100),
+		salt,
+		timestamp,
+		signature: signature.substring(0, 20) + '...',
+	});
 
 	const headers = {
 		'Content-Type': 'application/json',
@@ -192,8 +244,32 @@ const makeRapydRequest = async (method, path, body = null) => {
 
 		// Write the exact body string (no transformation)
 		if (bodyString) {
+			console.log('[Rapyd Request] Writing body to request:', {
+				bodyString,
+				bodyStringLength: bodyString.length,
+				bodyStringBytes: Buffer.from(bodyString, 'utf8')
+					.toString('hex')
+					.substring(0, 200),
+				hasNewlines:
+					bodyString.includes('\n') || bodyString.includes('\r'),
+				hasTabs: bodyString.includes('\t'),
+				hasDoubleSpaces: bodyString.includes('  '),
+				contentLength: Buffer.byteLength(bodyString, 'utf8'),
+			});
 			req.write(bodyString, 'utf8');
+			console.log('[Rapyd Request] Body written successfully');
 		}
+
+		console.log('[Rapyd Request] Request options:', {
+			hostname,
+			port: 443,
+			path: requestPath,
+			method: method.toUpperCase(),
+			headers: {
+				...headers,
+				signature: headers.signature.substring(0, 20) + '...',
+			},
+		});
 
 		req.end();
 	}).catch(error => {
