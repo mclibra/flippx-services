@@ -114,6 +114,18 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		throw new Error('Rapyd access key and secret key must be configured');
 	}
 
+	// Verify credential format (access key should start with 'rak_', secret with 'rsk_')
+	if (!accessKey.startsWith('rak_')) {
+		console.warn(
+			'[Rapyd Warning] Access key format may be incorrect. Expected format: rak_...'
+		);
+	}
+	if (!secretKey.startsWith('rsk_')) {
+		console.warn(
+			'[Rapyd Warning] Secret key format may be incorrect. Expected format: rsk_...'
+		);
+	}
+
 	// bodyString is already formatted - use it directly
 	// Empty body should be empty string
 
