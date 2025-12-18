@@ -1,623 +1,1151 @@
-# FlippX Platform API
-
-A comprehensive online platform featuring lottery games, casino games, and skill-based games with real-time gameplay, dual cash systems, and loyalty rewards.
-
-## 🎮 Overview
-
-This Node.js/Express.js API service powers a multi-state gaming platform that offers:
-- **Lottery Games**: Borlette (Pick 3/4), Mega Million
-- **Casino Games**: Roulette with real-time betting
-- **Skill Games**: Domino tournaments and competitions
-- **Dual Cash System**: Real cash (withdrawable/non-withdrawable) and virtual cash
-- **Loyalty Program**: Tier-based rewards (NONE, SILVER, GOLD, VIP) with XP system
-- **Multi-state Support**: Different lottery configurations per state
-- **Real-time Features**: Live game updates via Socket.io and moderated global chat
-
-## 🏗️ Architecture
-
-```
-src/
-├── api/                          # API endpoints and controllers
-│   ├── admin/                   # Admin management modules
-│   │   ├── tier-management/     # Loyalty tier configuration
-│   │   ├── user-management/     # User administration
-│   │   └── state-management/    # State configuration
-│   ├── lottery/                 # Lottery game logic
-│   ├── borlette_ticket/         # Borlette ticket management
-│   ├── megamillion_ticket/      # Mega Million ticket management
-│   ├── roulette/                # Roulette game logic
-│   ├── roulette_ticket/         # Roulette betting
-│   ├── domino/                  # Domino game management
-│   ├── global_chat/             # Global lobby chat APIs
-│   ├── wallet/                  # Wallet and balance operations
-│   ├── transaction/             # Transaction processing
-│   ├── user/                    # User management
-│   ├── oauth/                   # Authentication
-│   ├── plan/                    # Payment plans
-│   ├── loyalty/                 # Loyalty and rewards
-│   └── payout_config/           # Payout configuration
-├── services/                    # Business logic services
-│   ├── express/                 # Express.js configuration
-│   ├── mongoose/                # MongoDB connection
-│   ├── passport/                # Authentication strategies
-│   ├── socket/                  # Real-time communication
-│   ├── cron/                    # Automated tasks
-│   ├── tier/                    # Tier management service
-│   ├── lottery/                 # Lottery processing
-│   └── migrations/              # Database migrations
-└── seedDb.js                    # Database seeding
-```
-
-## 🚀 Tech Stack
-
-### **Backend Framework**
-- **Node.js** with **Express.js** 4.16.2
-- **MongoDB** with **Mongoose** 5.1.0
-- **Socket.io** 4.8.1 for real-time features
-
-### **Authentication & Security**
-- **JWT** (jsonwebtoken 8.1.0) for token-based authentication
-- **Passport.js** with multiple strategies (Local, Bearer, API Key)
-- **bcryptjs** for password hashing
-- Role-based access control (USER, AGENT, DEALER, ADMIN, SYSTEM)
-
-### **Key Dependencies**
-- **moment-timezone** 0.5.48 - Date/time management
-- **node-cron** 4.0.3 - Automated lottery scheduling
-- **aws-sdk** 2.579.0 - AWS integration
-- **plivo** 4.1.3 - SMS notifications
-- **request-promise** 4.2.2 - HTTP requests
-- **pm2** 5.3.0 - Process management
-
-### **Development Tools**
-- **Babel** 7.x for ES6+ transpilation
-- **ESLint** with Prettier for code formatting
-- **Nodemon** for development
-
-## 🎯 Core Features
-
-### **Gaming Systems**
-1. **Lottery Games**
-   - Borlette (Pick 3/4) with marriage number support
-   - Mega Million with jackpot system
-   - State-specific configurations
-   - Automated draw scheduling and result publishing
-
-2. **Casino Games**
-   - Real-time Roulette with multiple betting options
-   - Live spin scheduling and result calculation
-   - Interactive betting interface
-
-3. **Skill Games**
-   - Domino tournaments with entry fees
-   - Competitive gameplay with rankings
-   - Prize pool distribution
-
-### **Financial System**
-- **Dual Cash System**: Real cash (withdrawable/non-withdrawable) and virtual cash
-- **Secure Transactions**: Comprehensive transaction logging and validation
-- **Payment Integration**: Multiple payment gateways support
-- **Withdrawal Management**: Bank account integration with admin approval
-- **Commission System**: Multi-level referral commissions
-
-### **Loyalty Program**
-- **Tier System**: NONE → SILVER → GOLD → VIP progression
-- **XP System**: Experience points for gameplay activities
-- **Tier Benefits**: Increased payouts, exclusive features, commission bonuses
-- **Configurable Requirements**: Admin-configurable tier advancement requirements
-
-### **Administration**
-- **User Management**: Account creation, verification, status management
-- **Game Configuration**: Lottery restrictions, payout percentages
-- **Financial Oversight**: Transaction monitoring, withdrawal approval
-- **Analytics Dashboard**: Revenue tracking, player statistics
-
-## 🔐 Authentication & Authorization
-
-### **Authentication Methods**
-```javascript
-// JWT Token Authentication
-Authorization: Bearer <jwt_token>
-
-// API Key Authentication
-x-api-key: <api_key>
-
-// Local Authentication (Login)
-POST /api/oauth
-{
-  "phone": "+1234567890",
-  "password": "userpassword",
-  "countryCode": "+1"
-}
-```
-
-### **User Roles**
-- **USER**: Standard player access
-- **AGENT**: User management, transaction processing
-- **DEALER**: Advanced user operations
-- **ADMIN**: Full system administration
-- **SYSTEM**: Automated system operations
-
-## 📡 API Endpoints
-
-### **Authentication**
-```
-POST   /api/oauth                 # User login
-GET    /api/oauth/token           # Token validation
-```
-
-### **User Management**
-```
-GET    /api/user                  # Get user profile
-PUT    /api/user/:id              # Update user profile
-POST   /api/user/verify           # Phone verification
-POST   /api/user/reset-password   # Password reset
-```
-
-### **Wallet Operations**
-```
-GET    /api/wallet                # Get wallet balance
-POST   /api/wallet/deposit        # Deposit funds
-POST   /api/wallet/withdraw       # Withdraw funds
-GET    /api/wallet/transactions   # Transaction history
-```
-
-### **Lottery Games**
-```
-GET    /api/lottery               # List lotteries
-GET    /api/lottery/next          # Next lottery info
-GET    /api/lottery/last          # Last lottery results
-POST   /api/ticket/borlette       # Place Borlette bet
-POST   /api/ticket/megamillion    # Place Mega Million bet
-```
-
-### **Casino Games**
-```
-GET    /api/roulette              # Active roulette games
-POST   /api/roulette-ticket       # Place roulette bet
-GET    /api/roulette/:id/results  # Game results
-```
-
-### **Global Chat**
-```
-GET    /api/global-chat                   # Fetch chat history
-GET    /api/global-chat/online            # Online user count
-POST   /api/global-chat/report/message    # Report a chat message
-POST   /api/global-chat/report/user       # Report a chat participant
-```
-
-### **Loyalty System**
-```
-GET    /api/loyalty/profile       # User loyalty status
-GET    /api/loyalty/rewards       # Available rewards
-POST   /api/loyalty/redeem        # Redeem rewards
-```
-
-### **Admin Endpoints**
-```
-GET    /api/admin/users           # User management
-PUT    /api/admin/users/:id       # Update user
-GET    /api/admin/tiers           # Tier management
-POST   /api/admin/tiers           # Create/update tiers
-GET    /api/admin/states          # State management
-POST   /api/payout-config         # Payout configuration
-```
-
-## 💾 Database Models
-
-### **User Model**
-```javascript
-{
-  _id: ObjectId,
-  phone: String,
-  countryCode: String,
-  password: String (hashed),
-  role: Enum['USER', 'AGENT', 'DEALER', 'ADMIN', 'SYSTEM'],
-  isActive: Boolean,
-  loyaltyTier: Enum['NONE', 'SILVER', 'GOLD', 'VIP'],
-  xpPoints: Number,
-  verification: {
-    phoneVerified: Boolean,
-    idProof: { status: String, document: String },
-    addressProof: { status: String, document: String }
-  },
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### **Wallet Model**
-```javascript
-{
-  _id: ObjectId,
-  user: ObjectId (ref: User),
-  virtualBalance: Number,
-  realBalanceWithdrawable: Number,
-  realBalanceNonWithdrawable: Number,
-  pendingWithdrawals: Number,
-  active: Boolean,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### **Transaction Model**
-```javascript
-{
-  _id: ObjectId,
-  user: ObjectId (ref: User),
-  cashType: Enum['REAL', 'VIRTUAL'],
-  transactionType: Enum['CREDIT', 'DEBIT', 'PENDING_DEBIT', 'COMPLETED_DEBIT'],
-  transactionIdentifier: String,
-  transactionAmount: Number,
-  previousBalance: Number,
-  newBalance: Number,
-  referenceIndex: String,
-  transactionData: Object,
-  status: Enum['PENDING', 'COMPLETED', 'CANCELLED'],
-  createdAt: Date
-}
-```
-
-### **Lottery Model**
-```javascript
-{
-  _id: ObjectId,
-  title: String,
-  type: Enum['BORLETTE', 'MEGAMILLION'],
-  state: ObjectId (ref: State),
-  scheduledTime: Number,
-  drawTime: Number,
-  status: Enum['SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED'],
-  results: {
-    numbers: [String],
-    megaBall: String,
-    jackpotAmount: Number
-  },
-  metadata: String,
-  externalGameIds: Object,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-## 🛠️ Installation & Setup
-
-### **Prerequisites**
-- Node.js 14+ and npm
-- MongoDB 4.0+
-- Redis (for session management)
-
-### **Environment Variables**
-Create a `.env` file in the root directory:
-```env
-NODE_ENV=development
-PORT=3000
-MONGODB_URI=mongodb://localhost:27017/gaming_platform
-JWT_SECRET=your_jwt_secret_here
-X_API_KEY=your_api_key_here
-
-# AWS Configuration
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
-
-# SMS Configuration (Plivo)
-PLIVO_AUTH_ID=your_plivo_auth_id
-PLIVO_AUTH_TOKEN=your_plivo_auth_token
-
-# Admin Configuration
-ADMIN_PHONE=+1234567890
-ADMIN_PASSWORD=admin_password
-ADMIN_COUNTRY_CODE=+1
-```
-
-### **Installation Steps**
-
-1. **Clone and install dependencies**
-```bash
-git clone <repository-url>
-cd gaming-platform-api
-npm install
-```
-
-2. **Database setup**
-```bash
-# Start MongoDB
-mongod
-
-# Run database migrations
-npm run tier:migrate
-```
-
-3. **Start the application**
-```bash
-# Development mode
-npm run dev
-
-# Production mode
-npm start
-```
-
-4. **Verify installation**
-```bash
-# Check API health
-curl http://localhost:3000/api/user
-
-# Should return authentication required error
-```
-
-## 🎮 Usage Examples
-
-### **User Registration & Login**
-```javascript
-// Register new user
-const registerUser = async (userData) => {
-  const response = await fetch('/api/user', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phone: '+1234567890',
-      countryCode: '+1',
-      password: 'securepassword',
-      name: {
-        firstName: 'John',
-        lastName: 'Doe'
-      }
-    })
-  });
-  return response.json();
-};
-
-// Login user
-const loginUser = async (credentials) => {
-  const response = await fetch('/api/oauth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phone: '+1234567890',
-      password: 'securepassword',
-      countryCode: '+1'
-    })
-  });
-  return response.json();
-};
-```
-
-### **Place Lottery Bet**
-```javascript
-// Place Borlette bet
-const placeBoletteBet = async (lotteryId, betData, token) => {
-  const response = await fetch(`/api/ticket/borlette/${lotteryId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      cashType: 'REAL', // or 'VIRTUAL'
-      numbers: [
-        { numberPlayed: 123, amountPlayed: 10 },
-        { numberPlayed: 456, amountPlayed: 5 }
-      ],
-      totalAmountPlayed: 15
-    })
-  });
-  return response.json();
-};
-```
-
-### **Check Wallet Balance**
-```javascript
-const getWalletBalance = async (token) => {
-  const response = await fetch('/api/wallet', {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  });
-  return response.json();
-};
-```
-
-### **Admin: Manage User Tiers**
-```javascript
-// Update tier requirements
-const updateTierRequirements = async (tier, requirements, adminToken) => {
-  const response = await fetch(`/api/admin/tiers/requirements/${tier}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminToken}`
-    },
-    body: JSON.stringify({
-      tier: tier,
-      requirements: {
-        minimumXP: 1000,
-        minimumPlayAmount: 500,
-        minimumReferrals: 5
-      },
-      benefits: {
-        payoutMultiplier: 1.2,
-        commissionRate: 0.05,
-        exclusiveGames: true
-      }
-    })
-  });
-  return response.json();
-};
-```
-
-## 🔧 Configuration
-
-### **Loyalty Tier Configuration**
-Tiers can be configured via the admin panel or database:
-```javascript
-// Example tier configuration
-const tierConfig = {
-  SILVER: {
-    requirements: {
-      minimumXP: 1000,
-      minimumPlayAmount: 500,
-      minimumReferrals: 3
-    },
-    benefits: {
-      payoutMultiplier: 1.1,
-      commissionRate: 0.03,
-      exclusiveGames: false
-    }
-  },
-  GOLD: {
-    requirements: {
-      minimumXP: 5000,
-      minimumPlayAmount: 2000,
-      minimumReferrals: 10
-    },
-    benefits: {
-      payoutMultiplier: 1.2,
-      commissionRate: 0.05,
-      exclusiveGames: true
-    }
-  }
-};
-```
-
-### **State Configuration**
-Each state can have different lottery configurations:
-```javascript
-const stateConfig = {
-  name: "Florida",
-  code: "FL",
-  isActive: true,
-  lotteries: {
-    borlette: {
-      morning: { drawTime: "10:00", drawDays: [1,2,3,4,5,6,7] },
-      evening: { drawTime: "22:00", drawDays: [1,2,3,4,5,6,7] }
-    },
-    megaMillions: {
-      drawTime: "23:00",
-      drawDays: [3,6], // Tuesday, Friday
-      jackpotAmount: 1000000
-    }
-  }
-};
-```
-
-## 📊 Monitoring & Analytics
-
-### **Key Metrics**
-- **Revenue Tracking**: Real-time revenue by game type
-- **User Analytics**: Registration, activity, tier progression
-- **Game Performance**: Bet volumes, payout ratios
-- **Financial Health**: Cash flow, withdrawal patterns
-
-### **Logging**
-The application uses comprehensive logging:
-- Transaction logs for all financial operations
-- Game activity logs for betting and results
-- User activity logs for authentication and actions
-- Error logs for system monitoring
-
-## 🔒 Security Features
-
-### **Financial Security**
-- Dual cash system prevents unauthorized withdrawals
-- Transaction validation and audit trails
-- Bank account verification for withdrawals
-- Admin approval for large transactions
-
-### **Data Protection**
-- Password hashing with bcrypt
-- JWT token expiration and refresh
-- API rate limiting and input validation
-- Role-based access control
-
-### **Game Integrity**
-- External lottery result integration
-- Tamper-proof result storage
-- Automated payout calculations
-- Bet validation and restrictions
-
-## 🚀 Deployment
-
-### **Production Deployment**
-```bash
-# Install PM2 globally
-npm install -g pm2
-
-# Start with PM2
-npm start
-
-# Monitor processes
-pm2 logs
-pm2 monit
-```
-
-### **Docker Deployment**
-```dockerfile
-FROM node:14-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### **Environment Setup**
-- Configure production environment variables
-- Set up MongoDB replica set for high availability
-- Configure AWS services for file storage and SMS
-- Set up monitoring and alerting
-
-## 📝 Scripts
-
-```bash
-# Development
-npm run dev              # Start development server
-
-# Production
-npm start               # Start production server with PM2
-npm run poststart       # View PM2 logs
-
-# Database
-npm run tier:migrate    # Run tier migration scripts
-
-# Code Quality
-npm run eslint          # Run ESLint
-```
-
-## 🤝 Contributing
-
-### **Development Workflow**
-1. Create feature branch from main
-2. Follow existing code patterns and naming conventions
-3. Write tests for new features
-4. Update documentation
-5. Submit pull request
-
-### **Code Standards**
-- Use ESLint with Prettier for consistent formatting
-- Follow existing service patterns and architecture
-- Maintain backward compatibility
-- Document all new API endpoints
-
-### **Testing**
-- Write unit tests for new controller functions
-- Test API endpoints with integration tests
-- Validate transaction flows thoroughly
-- Test real-time features with Socket.io
-
-## 📞 Support
-
-For technical support or questions:
-- **Documentation**: Check this README and inline code comments
-- **Issues**: Create GitHub issues for bugs and feature requests
-- **Architecture**: Review service patterns before making changes
-
-## 📄 License
-
-This project is proprietary software. All rights reserved.
+# Payment APIs Documentation
+
+This document provides comprehensive documentation for all payment-related APIs in the system. The payment system integrates with Rapyd Collect for payment processing and payouts.
+
+## Table of Contents
+
+- [Authentication](#authentication)
+- [Wallet APIs](#wallet-apis)
+- [Payment Collection APIs](#payment-collection-apis)
+- [Withdrawal/Payout APIs](#withdrawalpayout-apis)
+- [Webhook APIs](#webhook-apis)
+- [Manual Payment APIs (Admin)](#manual-payment-apis-admin)
+- [Error Responses](#error-responses)
 
 ---
 
-**Built with ❤️ for the gaming community**
+## Authentication
+
+All APIs require authentication using Bearer token in the Authorization header:
+
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+Additionally, all requests require an API key header:
+
+```
+x-api-key: <your_api_key>
+```
+
+---
+
+## Wallet APIs
+
+### Get User Balance
+
+Retrieve the current wallet balance for the authenticated user.
+
+**Endpoint:** `GET /api/wallet/balance`
+
+**Authentication:** Required (User)
+
+**Request:**
+```http
+GET /api/wallet/balance
+Authorization: Bearer <token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "balance": {
+    "virtual": 100.50,
+    "realWithdrawable": 250.00,
+    "realNonWithdrawable": 50.00,
+    "totalReal": 300.00
+  }
+}
+```
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "error": "Failed to fetch balance"
+}
+```
+
+---
+
+### Get Wallet Summary (Admin)
+
+Get aggregated wallet statistics across all users. Admin only.
+
+**Endpoint:** `GET /api/wallet/summary`
+
+**Authentication:** Required (Admin)
+
+**Request:**
+```http
+GET /api/wallet/summary
+Authorization: Bearer <admin_token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "summary": {
+    "wallets": {
+      "totalUsers": 150,
+      "totalVirtualBalance": 50000.00,
+      "totalRealWithdrawable": 75000.00,
+      "totalRealNonWithdrawable": 10000.00,
+      "totalPendingWithdrawals": 5000.00
+    },
+    "payments": {
+      "PENDING": {
+        "count": 5,
+        "totalAmount": 250.00
+      },
+      "COMPLETED": {
+        "count": 1200,
+        "totalAmount": 50000.00
+      },
+      "FAILED": {
+        "count": 10,
+        "totalAmount": 500.00
+      }
+    }
+  }
+}
+```
+
+---
+
+## Payment Collection APIs
+
+### Initiate Plan Purchase
+
+Create a payment session for purchasing a plan or adding virtual/real cash to wallet.
+
+**Endpoint:** `POST /api/wallet/purchase/initiate`
+
+**Authentication:** Required (User)
+
+**Request Body:**
+```json
+{
+  "amount": 100.00,
+  "currency": "USD",
+  "planId": "507f1f77bcf86cd799439011",
+  "virtualCashAmount": 80.00,
+  "realCashAmount": 20.00
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | number | Yes | Total payment amount |
+| `currency` | string | No | Currency code (default: "USD") |
+| `planId` | string | No | Plan ID if purchasing a plan |
+| `virtualCashAmount` | number | No | Amount to credit as virtual cash (required if no planId) |
+| `realCashAmount` | number | No | Amount to credit as real cash (required if no planId) |
+
+**Note:** If `planId` is provided, `virtualCashAmount` and `realCashAmount` are taken from the plan. If not provided, `virtualCashAmount + realCashAmount` must equal `amount`.
+
+**Response:**
+```json
+{
+  "success": true,
+  "paymentUrl": "https://checkout.rapyd.net/checkout/...",
+  "sessionId": "vcash_507f1f77bcf86cd799439011_1234567890",
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "amount": 100.00,
+    "currency": "USD",
+    "plan": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "Premium Plan"
+    },
+    "virtualCashAmount": 80.00,
+    "realCashAmount": 20.00
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// Invalid amount
+{
+  "success": false,
+  "error": "Valid amount is required"
+}
+
+// Plan not found
+{
+  "success": false,
+  "error": "Plan not found"
+}
+
+// Plan not available
+{
+  "success": false,
+  "error": "Plan is not available for purchase"
+}
+
+// Amount mismatch
+{
+  "success": false,
+  "error": "Amount mismatch. Provided: $100, Expected: $99.99"
+}
+
+// Already has active plan
+{
+  "success": false,
+  "error": "You already have an active subscription to this plan"
+}
+
+// Cash amounts don't sum
+{
+  "success": false,
+  "error": "Virtual and real cash amounts must sum to total amount"
+}
+
+// Payment service error
+{
+  "success": false,
+  "error": "Payment service temporarily unavailable. Please try again later."
+}
+```
+
+---
+
+### Handle Purchase Success
+
+Callback endpoint called when user successfully completes payment. This is called by Rapyd after payment completion.
+
+**Endpoint:** `GET /api/wallet/purchase/success`
+
+**Authentication:** Not required (Public callback)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | Session ID from payment initiation |
+
+**Request:**
+```http
+GET /api/wallet/purchase/success?session_id=vcash_507f1f77bcf86cd799439011_1234567890
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Payment processed successfully",
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "amount": 100.00,
+    "virtualCashAmount": 80.00,
+    "realCashAmount": 20.00,
+    "plan": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "Premium Plan"
+    },
+    "status": "COMPLETED"
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// Missing session ID
+{
+  "success": false,
+  "error": "Session ID is required"
+}
+
+// Payment not found
+{
+  "success": false,
+  "error": "Payment session not found"
+}
+
+// Already processed
+{
+  "success": true,
+  "message": "Payment already processed",
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "amount": 100.00,
+    "status": "COMPLETED"
+  }
+}
+```
+
+---
+
+### Handle Purchase Cancel
+
+Callback endpoint called when user cancels payment.
+
+**Endpoint:** `GET /api/wallet/purchase/cancel`
+
+**Authentication:** Not required (Public callback)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | Session ID from payment initiation |
+
+**Request:**
+```http
+GET /api/wallet/purchase/cancel?session_id=vcash_507f1f77bcf86cd799439011_1234567890
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Payment cancelled successfully",
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "amount": 100.00,
+    "status": "CANCELLED"
+  }
+}
+```
+
+---
+
+## Withdrawal/Payout APIs
+
+### Initiate Withdrawal
+
+Request a withdrawal to bank account. Amount is deducted from withdrawable balance immediately and status is set to PENDING.
+
+**Endpoint:** `POST /api/withdrawal`
+
+**Authentication:** Required (User)
+
+**Request Body:**
+```json
+{
+  "amount": 100.00,
+  "bankAccountId": "507f1f77bcf86cd799439020"
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | number | Yes | Withdrawal amount (must be positive) |
+| `bankAccountId` | string | Yes | Bank account ID to withdraw to |
+
+**Response:**
+```json
+{
+  "success": true,
+  "withdrawal": {
+    "id": "507f1f77bcf86cd799439021",
+    "user": "507f1f77bcf86cd799439010",
+    "bankAccount": "507f1f77bcf86cd799439020",
+    "amount": 100.00,
+    "fee": 0.00,
+    "netAmount": 100.00,
+    "status": "PENDING",
+    "requestDate": "2024-01-15T10:30:00.000Z",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  },
+  "message": "Withdrawal initiated and pending approval"
+}
+```
+
+**Error Responses:**
+
+```json
+// Invalid amount
+{
+  "success": false,
+  "error": "Invalid withdrawal amount"
+}
+
+// Missing bank account
+{
+  "success": false,
+  "error": "Bank account is required"
+}
+
+// Insufficient balance
+{
+  "success": false,
+  "error": "Insufficient withdrawable real cash balance",
+  "availableWithdrawable": 50.00,
+  "totalReal": 150.00
+}
+
+// Invalid bank account
+{
+  "success": false,
+  "error": "Invalid bank account"
+}
+
+// Withdrawal limit exceeded
+{
+  "success": false,
+  "error": "Withdrawal amount exceeds your weekly limit. Available: $50, Requested: $100",
+  "availableAmount": 50.00,
+  "weeklyLimit": 200.00,
+  "usedAmount": 150.00,
+  "resetDate": "2024-01-22T00:00:00.000Z"
+}
+```
+
+---
+
+### Get User Withdrawals
+
+Get list of withdrawals for the authenticated user.
+
+**Endpoint:** `GET /api/withdrawal`
+
+**Authentication:** Required (User)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | number | No | Number of results per page (default: 10) |
+| `offset` | number | No | Number of results to skip (default: 0) |
+| `status` | string | No | Filter by status (PENDING, APPROVED, REJECTED, PROCESSING, COMPLETED, FAILED) |
+
+**Request:**
+```http
+GET /api/withdrawal?limit=10&offset=0&status=PENDING
+Authorization: Bearer <token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "withdrawals": [
+    {
+      "id": "507f1f77bcf86cd799439021",
+      "user": "507f1f77bcf86cd799439010",
+      "bankAccount": {
+        "id": "507f1f77bcf86cd799439020",
+        "bankName": "Chase Bank",
+        "maskedAccountNumber": "****1234",
+        "accountHolderName": "John Doe"
+      },
+      "amount": 100.00,
+      "fee": 0.00,
+      "netAmount": 100.00,
+      "status": "PENDING",
+      "requestDate": "2024-01-15T10:30:00.000Z",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "total": 1,
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "hasMore": false
+  }
+}
+```
+
+---
+
+### Approve Withdrawal (Admin)
+
+Approve a withdrawal request and initiate payout via Rapyd. Creates beneficiary if needed and processes payout.
+
+**Endpoint:** `POST /api/withdrawal/:id/approve`
+
+**Authentication:** Required (Admin)
+
+**URL Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Withdrawal ID |
+
+**Request:**
+```http
+POST /api/withdrawal/507f1f77bcf86cd799439021/approve
+Authorization: Bearer <admin_token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "withdrawal": {
+    "id": "507f1f77bcf86cd799439021",
+    "user": {
+      "id": "507f1f77bcf86cd799439010",
+      "name": {
+        "firstName": "John",
+        "lastName": "Doe"
+      },
+      "email": "john@example.com"
+    },
+    "bankAccount": {
+      "id": "507f1f77bcf86cd799439020",
+      "bankName": "Chase Bank",
+      "accountHolderName": "John Doe",
+      "accountNumber": "1234567890",
+      "routingNumber": "021000021"
+    },
+    "amount": 100.00,
+    "fee": 0.00,
+    "netAmount": 100.00,
+    "status": "PROCESSING",
+    "paymentReference": "payout_123456789",
+    "paymentDetails": {
+      "rapydBeneficiaryId": "beneficiary_123456",
+      "rapydPayoutId": "payout_123456789",
+      "rapydPayoutData": { ... }
+    },
+    "approvedBy": "507f1f77bcf86cd799439099",
+    "processedDate": "2024-01-15T11:00:00.000Z"
+  },
+  "message": "Withdrawal approved and payout initiated successfully",
+  "payoutId": "payout_123456789"
+}
+```
+
+**Error Responses:**
+
+```json
+// Unauthorized
+{
+  "success": false,
+  "error": "Unauthorized"
+}
+
+// Withdrawal not found
+{
+  "success": false,
+  "error": "Withdrawal not found"
+}
+
+// Invalid status
+{
+  "success": false,
+  "error": "Withdrawal is not in pending status"
+}
+
+// Rapyd payout error
+{
+  "success": false,
+  "error": "Failed to create payout with Rapyd. Please try again."
+}
+```
+
+---
+
+### Reject Withdrawal (Admin)
+
+Reject a withdrawal request. Amount is refunded to user's wallet.
+
+**Endpoint:** `POST /api/withdrawal/:id/reject`
+
+**Authentication:** Required (Admin)
+
+**URL Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Withdrawal ID |
+
+**Request Body:**
+```json
+{
+  "reason": "Insufficient verification documents"
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | string | No | Rejection reason (default: "Rejected by admin") |
+
+**Response:**
+```json
+{
+  "success": true,
+  "withdrawal": {
+    "id": "507f1f77bcf86cd799439021",
+    "status": "REJECTED",
+    "rejectionReason": "Insufficient verification documents",
+    "approvedBy": "507f1f77bcf86cd799439099",
+    "processedDate": "2024-01-15T11:00:00.000Z"
+  },
+  "message": "Withdrawal rejected and amount refunded"
+}
+```
+
+**Error Responses:**
+
+```json
+// Unauthorized
+{
+  "success": false,
+  "error": "Unauthorized"
+}
+
+// Withdrawal not found
+{
+  "success": false,
+  "error": "Withdrawal not found"
+}
+
+// Invalid status
+{
+  "success": false,
+  "error": "Withdrawal is not in pending status"
+}
+```
+
+---
+
+### Get Admin Withdrawals
+
+Get all withdrawals with filtering options. Admin only.
+
+**Endpoint:** `GET /api/withdrawal/admin`
+
+**Authentication:** Required (Admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | number | No | Number of results per page (default: 20) |
+| `offset` | number | No | Number of results to skip (default: 0) |
+| `status` | string | No | Filter by status |
+| `userId` | string | No | Filter by user ID |
+
+**Request:**
+```http
+GET /api/withdrawal/admin?limit=20&offset=0&status=PENDING&userId=507f1f77bcf86cd799439010
+Authorization: Bearer <admin_token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "withdrawals": [
+    {
+      "id": "507f1f77bcf86cd799439021",
+      "user": {
+        "id": "507f1f77bcf86cd799439010",
+        "name": {
+          "firstName": "John",
+          "lastName": "Doe"
+        },
+        "phone": "+1234567890",
+        "email": "john@example.com"
+      },
+      "bankAccount": { ... },
+      "amount": 100.00,
+      "fee": 0.00,
+      "netAmount": 100.00,
+      "status": "PENDING",
+      "approvedBy": null,
+      "requestDate": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "total": 1,
+  "pagination": {
+    "limit": 20,
+    "offset": 0,
+    "hasMore": false
+  }
+}
+```
+
+---
+
+## Webhook APIs
+
+### Rapyd Webhook Handler
+
+Receive and process webhook events from Rapyd for payment and payout status updates.
+
+**Endpoint:** `POST /api/wallet/webhook/rapyd`
+
+**Authentication:** Not required (Webhook signature verification)
+
+**Headers:**
+
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| `signature` | string | Yes | HMAC signature from Rapyd |
+| `timestamp` | string | Yes | Timestamp from Rapyd |
+| `salt` | string | Yes | Salt from Rapyd |
+
+**Request Body:**
+```json
+{
+  "type": "PAYMENT_COMPLETED",
+  "data": {
+    "id": "payment_123456789",
+    "status": "CLO",
+    "amount": 100.00,
+    "currency": "USD",
+    "metadata": {
+      "userId": "507f1f77bcf86cd799439010",
+      "sessionId": "vcash_507f1f77bcf86cd799439011_1234567890"
+    }
+  }
+}
+```
+
+**Webhook Event Types:**
+
+- `PAYMENT_COMPLETED` / `PAYMENT_SUCCEEDED` - Payment completed successfully
+- `PAYMENT_FAILED` - Payment failed
+- `PAYMENT_CANCELLED` - Payment cancelled
+- `PAYOUT_COMPLETED` / `PAYOUT_SUCCEEDED` - Payout completed successfully
+- `PAYOUT_FAILED` - Payout failed
+- `PAYOUT_CANCELLED` - Payout cancelled
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Webhook processed successfully"
+}
+```
+
+**Error Responses:**
+
+```json
+// Invalid signature
+{
+  "success": false,
+  "error": "Invalid webhook signature"
+}
+
+// Missing payment ID
+{
+  "success": false,
+  "error": "Payment ID or session ID not found in webhook"
+}
+
+// Payment not found
+{
+  "success": false,
+  "error": "Payment not found"
+}
+```
+
+---
+
+## Manual Payment APIs (Admin)
+
+### Create Payment Record
+
+Create a payment record manually (admin only). Does not process payment, just creates record.
+
+**Endpoint:** `POST /api/wallet/payments`
+
+**Authentication:** Required (Admin)
+
+**Request Body:**
+```json
+{
+  "userId": "507f1f77bcf86cd799439010",
+  "amount": 100.00,
+  "paymentMethod": "CREDIT_CARD",
+  "planId": "507f1f77bcf86cd799439011",
+  "description": "Manual payment entry"
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | Yes | User ID to credit |
+| `amount` | number | Yes | Payment amount |
+| `paymentMethod` | string | Yes | Payment method (CREDIT_CARD, DEBIT_CARD, BANK_TRANSFER, RAPYD_CHECKOUT) |
+| `planId` | string | No | Associated plan ID |
+| `description` | string | No | Payment description |
+
+**Response:**
+```json
+{
+  "success": true,
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "user": "507f1f77bcf86cd799439010",
+    "amount": 100.00,
+    "currency": "USD",
+    "method": "CREDIT_CARD",
+    "status": "PENDING",
+    "plan": "507f1f77bcf86cd799439011",
+    "createdAt": "2024-01-15T10:00:00.000Z"
+  },
+  "message": "Payment created successfully"
+}
+```
+
+---
+
+### Create Manual Bank Transfer Payment
+
+Create a manual payment record for bank transfer with detailed information.
+
+**Endpoint:** `POST /api/wallet/payments/manual`
+
+**Authentication:** Required (Admin)
+
+**Request Body:**
+```json
+{
+  "userId": "507f1f77bcf86cd799439010",
+  "amount": 100.00,
+  "bankTransferReference": "TXN123456789",
+  "bankName": "Chase Bank",
+  "transferDate": "2024-01-15T10:00:00.000Z",
+  "depositorName": "John Doe",
+  "notes": "Bank transfer received",
+  "planId": "507f1f77bcf86cd799439011"
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `userId` | string | Yes | User ID to credit |
+| `amount` | number | Conditional | Payment amount (required if no planId) |
+| `bankTransferReference` | string | Yes | Bank transaction reference/ID |
+| `bankName` | string | No | Bank name |
+| `transferDate` | string | No | Transfer date (ISO 8601) |
+| `depositorName` | string | No | Name of depositor |
+| `notes` | string | No | Additional notes |
+| `planId` | string | No | Plan ID (if provided, amount taken from plan) |
+
+**Response:**
+```json
+{
+  "success": true,
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "user": "507f1f77bcf86cd799439010",
+    "amount": 100.00,
+    "currency": "USD",
+    "method": "BANK_TRANSFER",
+    "status": "PENDING",
+    "isManual": true,
+    "bankTransferReference": "TXN123456789",
+    "bankName": "Chase Bank",
+    "transferDate": "2024-01-15T10:00:00.000Z",
+    "depositorName": "John Doe",
+    "notes": "Bank transfer received",
+    "plan": "507f1f77bcf86cd799439011",
+    "createdAt": "2024-01-15T10:00:00.000Z"
+  },
+  "message": "Manual payment record created successfully with amount $100 from plan \"Premium Plan\""
+}
+```
+
+---
+
+### Confirm Payment
+
+Confirm a pending payment and credit wallet. Used for manual payments.
+
+**Endpoint:** `POST /api/wallet/payments/confirm`
+
+**Authentication:** Required (Admin or Payment Owner)
+
+**Request Body:**
+```json
+{
+  "paymentId": "507f1f77bcf86cd799439012"
+}
+```
+
+**Request Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `paymentId` | string | Yes | Payment ID to confirm |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Payment confirmed and wallet credited successfully",
+  "payment": {
+    "id": "507f1f77bcf86cd799439012",
+    "amount": 100.00,
+    "virtualCashAmount": 80.00,
+    "realCashAmount": 20.00,
+    "plan": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "Premium Plan"
+    },
+    "status": "COMPLETED"
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// Payment not found
+{
+  "success": false,
+  "error": "Payment not found"
+}
+
+// Unauthorized
+{
+  "success": false,
+  "error": "Unauthorized to confirm this payment"
+}
+
+// Already processed
+{
+  "success": false,
+  "error": "Payment is already completed"
+}
+```
+
+---
+
+### Get All Payments (Admin)
+
+Get all payments with filtering and pagination. Admin only.
+
+**Endpoint:** `GET /api/wallet/payments/admin`
+
+**Authentication:** Required (Admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | number | No | Page number (default: 1) |
+| `limit` | number | No | Results per page (default: 20) |
+| `status` | string | No | Filter by status |
+| `method` | string | No | Filter by payment method |
+| `userId` | string | No | Filter by user ID |
+
+**Request:**
+```http
+GET /api/wallet/payments/admin?page=1&limit=20&status=COMPLETED&method=RAPYD_CHECKOUT
+Authorization: Bearer <admin_token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "payments": [
+    {
+      "id": "507f1f77bcf86cd799439012",
+      "user": {
+        "id": "507f1f77bcf86cd799439010",
+        "name": {
+          "firstName": "John",
+          "lastName": "Doe"
+        },
+        "phone": "+1234567890",
+        "email": "john@example.com"
+      },
+      "amount": 100.00,
+      "currency": "USD",
+      "method": "RAPYD_CHECKOUT",
+      "status": "COMPLETED",
+      "plan": {
+        "id": "507f1f77bcf86cd799439011",
+        "name": "Premium Plan",
+        "price": 100.00
+      },
+      "virtualCashAmount": 80.00,
+      "realCashAmount": 20.00,
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "confirmedBy": {
+        "id": "507f1f77bcf86cd799439099",
+        "name": {
+          "firstName": "Admin",
+          "lastName": "User"
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 150,
+    "pages": 8
+  }
+}
+```
+
+---
+
+### Get User Payments
+
+Get payments for the authenticated user.
+
+**Endpoint:** `GET /api/wallet/payments`
+
+**Authentication:** Required (User)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | number | No | Page number (default: 1) |
+| `limit` | number | No | Results per page (default: 10) |
+| `status` | string | No | Filter by status |
+
+**Request:**
+```http
+GET /api/wallet/payments?page=1&limit=10&status=COMPLETED
+Authorization: Bearer <token>
+x-api-key: <api_key>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "payments": [
+    {
+      "id": "507f1f77bcf86cd799439012",
+      "user": "507f1f77bcf86cd799439010",
+      "amount": 100.00,
+      "currency": "USD",
+      "method": "RAPYD_CHECKOUT",
+      "status": "COMPLETED",
+      "plan": {
+        "id": "507f1f77bcf86cd799439011",
+        "name": "Premium Plan",
+        "price": 100.00
+      },
+      "virtualCashAmount": 80.00,
+      "realCashAmount": 20.00,
+      "createdAt": "2024-01-15T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 25,
+    "pages": 3
+  }
+}
+```
+
+---
+
+## Error Responses
+
+All APIs follow a consistent error response format:
+
+```json
+{
+  "success": false,
+  "error": "Error message describing what went wrong"
+}
+```
+
+### HTTP Status Codes
+
+| Code | Description |
+|------|-------------|
+| `200` | Success |
+| `400` | Bad Request - Invalid parameters |
+| `401` | Unauthorized - Invalid or missing authentication |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource not found |
+| `500` | Internal Server Error - Server error |
+
+### Common Error Messages
+
+- `"Valid amount is required"` - Amount is missing or invalid
+- `"Unauthorized"` - User doesn't have required permissions
+- `"Unauthorized - Admin access required"` - Admin role required
+- `"Payment not found"` - Payment ID doesn't exist
+- `"Withdrawal not found"` - Withdrawal ID doesn't exist
+- `"Insufficient withdrawable real cash balance"` - Not enough balance
+- `"Plan not found"` - Plan ID doesn't exist
+- `"Plan is not available for purchase"` - Plan is inactive
+- `"Invalid webhook signature"` - Webhook signature verification failed
+- `"Payment service temporarily unavailable"` - Rapyd API error
+
+---
+
+## Payment Status Values
+
+### Payment Statuses
+
+- `PENDING` - Payment initiated, awaiting completion
+- `COMPLETED` - Payment successful, wallet credited
+- `FAILED` - Payment failed
+- `CANCELLED` - Payment cancelled by user
+- `REFUNDED` - Payment refunded
+
+### Withdrawal Statuses
+
+- `PENDING` - Withdrawal requested, awaiting admin approval
+- `APPROVED` - Withdrawal approved (deprecated, use PROCESSING)
+- `REJECTED` - Withdrawal rejected by admin
+- `PROCESSING` - Payout initiated, being processed by Rapyd
+- `COMPLETED` - Payout completed successfully
+- `FAILED` - Payout failed
+
+### Payment Methods
+
+- `RAPYD_CHECKOUT` - Rapyd hosted checkout page
+- `CREDIT_CARD` - Credit card payment
+- `DEBIT_CARD` - Debit card payment
+- `BANK_TRANSFER` - Bank transfer payment
+
+---
+
+## Notes
+
+1. **Currency**: Currently supports USD. Other currencies can be added by updating Rapyd configuration.
+
+2. **Webhooks**: Configure webhook URL in Rapyd dashboard: `https://yourdomain.com/api/wallet/webhook/rapyd`
+
+3. **Payout Method Types**: Currently defaults to `us_standard_bank_account`. Update based on supported countries and payment methods.
+
+4. **Session IDs**: Session IDs are unique identifiers for tracking payments. Format: `vcash_{userId}_{timestamp}` for purchases, `manual_{userId}_{timestamp}_{random}` for manual payments.
+
+5. **Idempotency**: Payment and withdrawal operations are idempotent. Duplicate requests with same parameters will return existing records.
+
+6. **Rate Limiting**: Consider implementing rate limiting for production use.
+
+7. **Testing**: Use Rapyd sandbox environment (`https://sandboxapi.rapyd.net`) for testing. Update `RAPYD_API_URL` to `https://api.rapyd.net` for production.
+
+---
+
+## Support
+
+For issues or questions:
+- Check Rapyd documentation: https://docs.rapyd.net
+- Review server logs for detailed error messages
+- Contact system administrator for access issues

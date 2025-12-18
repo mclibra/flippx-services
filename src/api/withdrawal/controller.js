@@ -4,6 +4,13 @@ import { BankAccount } from '../bank_account/model';
 import { Transaction } from '../transaction/model';
 import { LoyaltyService } from '../loyalty/service';
 import { makeTransaction } from '../transaction/controller';
+import {
+	createBeneficiary,
+	createPayout,
+	getPayoutStatus,
+	mapPayoutStatus,
+} from '../../services/rapyd';
+import { User } from '../user/model';
 
 export const initiateWithdrawal = async req => {
 	try {
@@ -163,8 +170,10 @@ export const approveWithdrawal = async req => {
 			};
 		}
 
-		// Find the withdrawal
-		const withdrawal = await Withdrawal.findById(id).populate('user');
+		// Find the withdrawal with bank account and user details
+		const withdrawal = await Withdrawal.findById(id)
+			.populate('user')
+			.populate('bankAccount');
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -185,32 +194,128 @@ export const approveWithdrawal = async req => {
 			};
 		}
 
-		// Update withdrawal status
-		withdrawal.status = 'APPROVED';
+		// Get user details
+		const user = await User.findById(withdrawal.user._id || withdrawal.user);
+		if (!user) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+
+		// Update withdrawal status to processing
+		withdrawal.status = 'PROCESSING';
 		withdrawal.approvedBy = admin._id;
 		withdrawal.processedDate = new Date();
 		await withdrawal.save();
 
-		// Update transaction status
-		await Transaction.updateOne(
-			{
-				transactionIdentifier: 'WITHDRAWAL_PENDING',
-				'transactionData.withdrawalId': withdrawal._id,
-			},
-			{
-				status: 'COMPLETED',
-				transactionIdentifier: 'WITHDRAWAL_APPROVED',
-			}
-		);
+		try {
+			// Create beneficiary in Rapyd if not already created
+			let beneficiaryId = withdrawal.paymentDetails?.rapydBeneficiaryId;
 
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				withdrawal,
-				message: 'Withdrawal approved successfully',
-			},
-		};
+			if (!beneficiaryId) {
+				const beneficiary = await createBeneficiary({
+					firstName: user.name?.firstName || user.name?.first || 'User',
+					lastName: user.name?.lastName || user.name?.last || 'Name',
+					email: user.email,
+					phoneNumber: user.phone,
+					country: user.countryCode || 'US',
+					currency: 'USD',
+					payoutMethodType: 'us_standard_bank_account', // Default, can be made configurable
+					beneficiaryType: 'individual',
+					bankAccountDetails: {
+						accountHolderName: withdrawal.bankAccount.accountHolderName,
+						accountNumber: withdrawal.bankAccount.accountNumber,
+						routingNumber: withdrawal.bankAccount.routingNumber,
+						accountType: withdrawal.bankAccount.accountType,
+						bankName: withdrawal.bankAccount.bankName,
+						country: user.countryCode || 'US',
+					},
+					metadata: {
+						userId: user._id.toString(),
+						withdrawalId: withdrawal._id.toString(),
+						bankAccountId: withdrawal.bankAccount._id.toString(),
+					},
+				});
+
+				beneficiaryId = beneficiary.id;
+				withdrawal.paymentDetails = {
+					...withdrawal.paymentDetails,
+					rapydBeneficiaryId: beneficiaryId,
+				};
+				await withdrawal.save();
+			}
+
+			// Create payout in Rapyd
+			const payout = await createPayout({
+				beneficiaryId,
+				amount: withdrawal.netAmount, // Use net amount after fees
+				currency: 'USD',
+				description: `Withdrawal for user ${user.email}`,
+				reference: withdrawal._id.toString(),
+				payoutMethodType: 'us_standard_bank_account', // Should match beneficiary
+				metadata: {
+					userId: user._id.toString(),
+					withdrawalId: withdrawal._id.toString(),
+					bankAccountId: withdrawal.bankAccount._id.toString(),
+				},
+			});
+
+			// Update withdrawal with payout details
+			withdrawal.paymentReference = payout.id;
+			withdrawal.paymentDetails = {
+				...withdrawal.paymentDetails,
+				rapydPayoutId: payout.id,
+				rapydPayoutData: payout,
+			};
+			withdrawal.status = 'PROCESSING';
+			await withdrawal.save();
+
+			// Update transaction status
+			await Transaction.updateOne(
+				{
+					transactionIdentifier: 'WITHDRAWAL_PENDING',
+					'transactionData.withdrawalId': withdrawal._id,
+				},
+				{
+					status: 'COMPLETED',
+					transactionIdentifier: 'WITHDRAWAL_APPROVED',
+				}
+			);
+
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					withdrawal,
+					message: 'Withdrawal approved and payout initiated successfully',
+					payoutId: payout.id,
+				},
+			};
+		} catch (rapydError) {
+			console.error('Rapyd payout creation error:', rapydError);
+			
+			// Revert withdrawal status
+			withdrawal.status = 'PENDING';
+			withdrawal.errorMessage =
+				rapydError.response?.data?.status?.message ||
+				rapydError.message ||
+				'Failed to create payout';
+			await withdrawal.save();
+
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error:
+						rapydError.response?.data?.status?.message ||
+						'Failed to create payout with Rapyd. Please try again.',
+				},
+			};
+		}
 	} catch (error) {
 		console.log(error);
 		return {

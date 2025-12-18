@@ -7,7 +7,7 @@ import {
 	initiateVirtualCashPurchase,
 	handlePurchaseSuccess,
 	handlePurchaseCancel,
-	handlePayoneerWebhook,
+	handleRapydWebhook,
 	createPayment,
 	createManualPayment,
 	confirmPayment,
@@ -43,8 +43,8 @@ router.get('/purchase/cancel', xApi(), async (req, res) =>
 	done(res, await handlePurchaseCancel(req, res))
 );
 
-router.post('/webhook/payoneer', xApi(), async (req, res) =>
-	done(res, await handlePayoneerWebhook(req, res))
+router.post('/webhook/rapyd', xApi(), async (req, res) =>
+	done(res, await handleRapydWebhook(req, res))
 );
 
 // ===== MANUAL PAYMENT ROUTES (ADMIN) =====

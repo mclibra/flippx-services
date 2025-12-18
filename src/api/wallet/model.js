@@ -11,7 +11,7 @@ const paymentMethods = [
 	'CREDIT_CARD',
 	'DEBIT_CARD',
 	'BANK_TRANSFER',
-	'PAYONEER_BALANCE',
+	'RAPYD_CHECKOUT',
 ];
 
 const WalletSchema = new Schema(

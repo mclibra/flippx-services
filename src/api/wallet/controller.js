@@ -4,9 +4,13 @@ import { UserPlan } from '../plan/userPlanModel';
 import { Wallet, Payment } from './model';
 import { makeTransaction } from '../transaction/controller';
 import {
-	createPaymentSession,
+	createCheckoutPage,
+	getPaymentStatus,
 	verifyWebhookSignature,
-} from '../../services/payoneer';
+	mapPaymentStatus,
+	mapPayoutStatus,
+} from '../../services/rapyd';
+import { Withdrawal } from '../withdrawal/model';
 
 export const getUserBalance = async user => {
 	try {
@@ -228,9 +232,9 @@ export const initiateVirtualCashPurchase = async req => {
 		// Get base URL from environment or use default
 		const baseUrl = process.env.HOST_URL || 'http://localhost:3000';
 
-		// Prepare metadata for Payoneer
+		// Prepare metadata for Rapyd
 		const metadata = {
-			userId: user._id,
+			userId: user._id.toString(),
 			virtualCashAmount: finalVirtualCashAmount,
 			realCashAmount: finalRealCashAmount,
 			sessionId,
@@ -238,21 +242,21 @@ export const initiateVirtualCashPurchase = async req => {
 
 		// Add plan ID to metadata if present
 		if (planId) {
-			metadata.planId = planId;
+			metadata.planId = planId.toString();
 		}
 
-		let paymentSession;
+		let checkoutPage;
 		try {
-			paymentSession = await createPaymentSession({
+			checkoutPage = await createCheckoutPage({
 				amount,
 				currency,
 				description,
-				successUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
-				cancelUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
+				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
+				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
 			});
-		} catch (payoneerError) {
-			console.error('Payoneer session creation failed:', payoneerError);
+		} catch (rapydError) {
+			console.error('Rapyd checkout creation failed:', rapydError);
 			return {
 				status: 500,
 				entity: {
@@ -268,16 +272,17 @@ export const initiateVirtualCashPurchase = async req => {
 			sessionId,
 			amount,
 			currency,
-			method: 'PAYONEER_BALANCE',
+			method: 'RAPYD_CHECKOUT',
 			status: 'PENDING',
 			plan: planId || null,
 			virtualCashAmount: finalVirtualCashAmount,
 			realCashAmount: finalRealCashAmount,
-			providerResponse: paymentSession,
+			providerResponse: checkoutPage,
 			ipAddress: req.ip || req.connection.remoteAddress,
 			metadata: {
 				userAgent: req.get('User-Agent'),
-				payoneerSessionId: paymentSession.session_id,
+				rapydCheckoutId: checkoutPage.checkoutId,
+				rapydPaymentId: checkoutPage.paymentId,
 			},
 		});
 
@@ -285,7 +290,7 @@ export const initiateVirtualCashPurchase = async req => {
 			status: 200,
 			entity: {
 				success: true,
-				paymentUrl: paymentSession.checkout_url,
+				paymentUrl: checkoutPage.checkoutUrl,
 				sessionId,
 				payment: {
 					id: payment._id,
@@ -785,12 +790,37 @@ export const handlePurchaseSuccess = async req => {
 			};
 		}
 
-		// Update payment status
-		payment.status = 'COMPLETED';
+		// Verify payment status with Rapyd
+		try {
+			const rapydPaymentId =
+				payment.metadata?.rapydPaymentId ||
+				payment.providerResponse?.paymentId ||
+				payment.providerResponse?.rapyd_payment_id;
+
+			if (rapydPaymentId) {
+				const rapydPayment = await getPaymentStatus(rapydPaymentId);
+				const rapydStatus = rapydPayment?.status || 'ACT';
+				payment.status = mapPaymentStatus(rapydStatus);
+				payment.providerResponse = {
+					...payment.providerResponse,
+					rapyd_payment_data: rapydPayment,
+				};
+			} else {
+				// If no payment ID, assume completed (user reached success page)
+				payment.status = 'COMPLETED';
+			}
+		} catch (error) {
+			console.error('Error verifying payment with Rapyd:', error);
+			// Still mark as completed if user reached success page
+			payment.status = 'COMPLETED';
+		}
+
 		await payment.save();
 
-		// Process wallet credits and user plan creation
-		await processPaymentCompletion(payment);
+		// Process wallet credits and user plan creation if completed
+		if (payment.status === 'COMPLETED') {
+			await processPaymentCompletion(payment);
+		}
 
 		return {
 			status: 200,
@@ -878,14 +908,21 @@ export const handlePurchaseCancel = async req => {
 	}
 };
 
-export const handlePayoneerWebhook = async req => {
+export const handleRapydWebhook = async req => {
 	try {
-		const signature = req.get('X-Payoneer-Signature');
+		const signature = req.get('signature');
+		const timestamp = req.get('timestamp');
+		const salt = req.get('salt');
 		const payload = JSON.stringify(req.body);
 
 		// Verify webhook signature
-		if (!signature || !verifyWebhookSignature(payload, signature)) {
-			console.error('Invalid webhook signature');
+		if (
+			!signature ||
+			!timestamp ||
+			!salt ||
+			!verifyWebhookSignature(payload, signature, timestamp, salt)
+		) {
+			console.error('Invalid Rapyd webhook signature');
 			return {
 				status: 401,
 				entity: {
@@ -895,70 +932,77 @@ export const handlePayoneerWebhook = async req => {
 			};
 		}
 
-		const { event_type, data } = req.body;
+		const { type, data } = req.body;
 
-		console.log(`Payoneer webhook received: ${event_type}`, data);
+		console.log(`Rapyd webhook received: ${type}`, data);
 
-		switch (event_type) {
-			case 'checkout.session.completed':
-			case 'payment.completed': {
-				const sessionId = data.client_reference_id || data.session_id;
+		// Handle payment events
+		if (type === 'PAYMENT_COMPLETED' || type === 'PAYMENT_SUCCEEDED') {
+			const paymentId = data?.id || data?.payment?.id;
+			const metadata = data?.metadata || {};
 
-				if (!sessionId) {
-					console.error('No session ID found in webhook data');
-					return {
-						status: 400,
-						entity: {
-							success: false,
-							error: 'Session ID not found in webhook',
-						},
-					};
-				}
-
-				// Find payment by session ID
-				const payment = await Payment.findOne({
-					$or: [
-						{ sessionId: sessionId },
-						{ 'providerResponse.session_id': sessionId },
-					],
-				}).populate('plan');
-
-				if (!payment) {
-					console.error(
-						`Payment not found for session ID: ${sessionId}`
-					);
-					return {
-						status: 404,
-						entity: {
-							success: false,
-							error: 'Payment not found',
-						},
-					};
-				}
-
-				// Only process if payment is still pending
-				if (payment.status !== 'PENDING') {
-					console.log(
-						`Payment ${payment._id} already processed with status: ${payment.status}`
-					);
-					return {
-						status: 200,
-						entity: {
-							success: true,
-							message: 'Payment already processed',
-						},
-					};
-				}
-
-				// Update payment status
-				payment.status = 'COMPLETED';
-				payment.providerResponse = {
-					...payment.providerResponse,
-					webhook_data: data,
+			if (!paymentId && !metadata.sessionId) {
+				console.error('No payment ID or session ID found in webhook data');
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Payment ID or session ID not found in webhook',
+					},
 				};
-				await payment.save();
+			}
 
-				// Process wallet credits and user plan creation
+			// Find payment by session ID from metadata or payment ID
+			const payment = await Payment.findOne({
+				$or: [
+					{ sessionId: metadata.sessionId },
+					{ 'metadata.rapydPaymentId': paymentId },
+					{ 'providerResponse.paymentId': paymentId },
+				],
+			}).populate('plan');
+
+			if (!payment) {
+				console.error(
+					`Payment not found for payment ID: ${paymentId} or session ID: ${metadata.sessionId}`
+				);
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'Payment not found',
+					},
+				};
+			}
+
+			// Only process if payment is still pending
+			if (payment.status !== 'PENDING') {
+				console.log(
+					`Payment ${payment._id} already processed with status: ${payment.status}`
+				);
+				return {
+					status: 200,
+					entity: {
+						success: true,
+						message: 'Payment already processed',
+					},
+				};
+			}
+
+			// Map Rapyd status to internal status
+			const rapydStatus = data?.status || 'ACT';
+			const internalStatus = mapPaymentStatus(rapydStatus);
+
+			// Update payment status
+			payment.status = internalStatus;
+			payment.providerResponse = {
+				...payment.providerResponse,
+				webhook_data: data,
+				rapyd_payment_id: paymentId,
+			};
+			await payment.save();
+
+			// Process wallet credits and user plan creation if completed
+			if (internalStatus === 'COMPLETED') {
 				try {
 					await processPaymentCompletion(payment);
 					console.log(
@@ -974,41 +1018,115 @@ export const handlePayoneerWebhook = async req => {
 					payment.errorMessage = transactionError.message;
 					await payment.save();
 				}
-
-				break;
 			}
+		} else if (
+			type === 'PAYMENT_FAILED' ||
+			type === 'PAYMENT_CANCELLED' ||
+			type === 'PAYMENT_ERROR'
+		) {
+			const paymentId = data?.id || data?.payment?.id;
+			const metadata = data?.metadata || {};
 
-			case 'checkout.session.failed':
-			case 'payment.failed': {
-				const sessionId = data.client_reference_id || data.session_id;
+			if (paymentId || metadata.sessionId) {
+				const payment = await Payment.findOne({
+					$or: [
+						{ sessionId: metadata.sessionId },
+						{ 'metadata.rapydPaymentId': paymentId },
+						{ 'providerResponse.paymentId': paymentId },
+					],
+				});
 
-				if (sessionId) {
-					const payment = await Payment.findOne({
-						$or: [
-							{ sessionId: sessionId },
-							{ 'providerResponse.session_id': sessionId },
-						],
-					});
-
-					if (payment && payment.status === 'PENDING') {
-						payment.status = 'FAILED';
-						payment.errorMessage =
-							data.failure_reason || 'Payment failed';
-						payment.providerResponse = {
-							...payment.providerResponse,
-							webhook_data: data,
-						};
-						await payment.save();
-						console.log(
-							`Payment ${payment._id} marked as failed via webhook`
-						);
-					}
+				if (payment && payment.status === 'PENDING') {
+					const rapydStatus = data?.status || 'ERR';
+					payment.status = mapPaymentStatus(rapydStatus);
+					payment.errorMessage =
+						data?.failure_reason || data?.message || 'Payment failed';
+					payment.providerResponse = {
+						...payment.providerResponse,
+						webhook_data: data,
+					};
+					await payment.save();
+					console.log(
+						`Payment ${payment._id} marked as ${payment.status} via webhook`
+					);
 				}
-				break;
+			}
+		} else {
+			console.log(`Unhandled Rapyd webhook event type: ${type}`);
+		}
+
+		// Handle payout events
+		if (type === 'PAYOUT_COMPLETED' || type === 'PAYOUT_SUCCEEDED') {
+			const payoutId = data?.id;
+			const metadata = data?.metadata || {};
+
+			if (!payoutId && !metadata.withdrawalId) {
+				console.error('No payout ID or withdrawal ID found in webhook data');
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Payout ID or withdrawal ID not found in webhook',
+					},
+				};
 			}
 
-			default:
-				console.log(`Unhandled webhook event type: ${event_type}`);
+			// Find withdrawal by payout ID or withdrawal ID from metadata
+			const withdrawal = await Withdrawal.findOne({
+				$or: [
+					{ paymentReference: payoutId },
+					{ _id: metadata.withdrawalId },
+					{ 'paymentDetails.rapydPayoutId': payoutId },
+				],
+			}).populate('user');
+
+			if (withdrawal && withdrawal.status === 'PROCESSING') {
+				const rapydStatus = data?.status || 'CLO';
+				const internalStatus = mapPayoutStatus(rapydStatus);
+
+				withdrawal.status = internalStatus;
+				withdrawal.paymentDetails = {
+					...withdrawal.paymentDetails,
+					webhook_data: data,
+				};
+				await withdrawal.save();
+
+				console.log(
+					`Withdrawal ${withdrawal._id} updated to ${internalStatus} via webhook`
+				);
+			}
+		} else if (
+			type === 'PAYOUT_FAILED' ||
+			type === 'PAYOUT_CANCELLED' ||
+			type === 'PAYOUT_ERROR'
+		) {
+			const payoutId = data?.id;
+			const metadata = data?.metadata || {};
+
+			if (payoutId || metadata.withdrawalId) {
+				const withdrawal = await Withdrawal.findOne({
+					$or: [
+						{ paymentReference: payoutId },
+						{ _id: metadata.withdrawalId },
+						{ 'paymentDetails.rapydPayoutId': payoutId },
+					],
+				});
+
+				if (withdrawal && withdrawal.status === 'PROCESSING') {
+					const rapydStatus = data?.status || 'ERR';
+					withdrawal.status = mapPayoutStatus(rapydStatus);
+					withdrawal.errorMessage =
+						data?.failure_reason || data?.message || 'Payout failed';
+					withdrawal.paymentDetails = {
+						...withdrawal.paymentDetails,
+						webhook_data: data,
+					};
+					await withdrawal.save();
+					console.log(
+						`Withdrawal ${withdrawal._id} marked as ${withdrawal.status} via webhook`
+					);
+				}
+			}
 		}
 
 		return {
@@ -1019,7 +1137,7 @@ export const handlePayoneerWebhook = async req => {
 			},
 		};
 	} catch (error) {
-		console.error('Payoneer webhook error:', error);
+		console.error('Rapyd webhook error:', error);
 		return {
 			status: 500,
 			entity: {

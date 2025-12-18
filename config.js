@@ -141,11 +141,12 @@ const baseConfig = {
 		apiKey: getEnv('RAPID_API_KEY'),
 	},
 
-	payoneerConfig: {
-		apiBaseUrl: getEnv('PAYONEER_API_URL'),
-		apiKey: getEnv('PAYONEER_API_KEY'),
-		programId: getEnv('PAYONEER_PROGRAM_ID'),
-		webhookSecret: getEnv('PAYONEER_WEBHOOK_SECRET'),
+	rapydConfig: {
+		apiBaseUrl: getEnv('RAPYD_API_URL', 'https://sandboxapi.rapyd.net'),
+		accessKey: getEnv('RAPYD_ACCESS_KEY'),
+		secretKey: getEnv('RAPYD_SECRET_KEY'),
+		defaultCountry: getEnv('RAPYD_DEFAULT_COUNTRY', 'US'),
+		defaultCurrency: getEnv('RAPYD_DEFAULT_CURRENCY', 'USD'),
 		conversionRate: 0.2, // 20% of virtual cash becomes real cash
 		minPurchaseAmount: 20,
 		maxPurchaseAmount: 1000,
@@ -196,7 +197,7 @@ export const joiningBonus = config.joiningBonus;
 export const plivoConfig = config.plivoConfig;
 export const aws = config.aws;
 export const rapidAPI = config.rapidAPI;
-export const payoneerConfig = config.payoneerConfig;
+export const rapydConfig = config.rapydConfig;
 export const transactionText = config.transactionText;
 export const adminData = config.adminData;
 export const inviteConfig = config.inviteConfig;
