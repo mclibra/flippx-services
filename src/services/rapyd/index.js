@@ -17,7 +17,9 @@ const formatBodyForSignature = body => {
 	}
 
 	// Stringify without any whitespace (compact JSON)
-	// This must match exactly what axios sends when Content-Type is application/json
+	// CRITICAL: Must have NO whitespace, NO trailing zeros, proper number formatting
+	// JSON.stringify() by default produces compact JSON with no whitespace
+	// This exact string will be used for both signature AND request body
 	return JSON.stringify(body);
 };
 
@@ -94,6 +96,17 @@ const makeRapydRequest = async (method, path, body = null) => {
 			method,
 			url: `${RAPYD_API_BASE_URL}${path}`,
 			headers,
+			// Prevent axios from transforming the data - send raw string as-is
+			transformRequest: [
+				data => {
+					// If data is already a string, return it as-is (no transformation)
+					if (typeof data === 'string') {
+						return data;
+					}
+					// Otherwise, let axios handle it (shouldn't happen in our case)
+					return data;
+				},
+			],
 		};
 
 		if (
@@ -102,6 +115,7 @@ const makeRapydRequest = async (method, path, body = null) => {
 		) {
 			// Send body as stringified JSON to ensure exact match with signature
 			// This guarantees the signature body matches the request body exactly
+			// The transformRequest ensures axios doesn't reformat it
 			config.data = bodyString;
 		}
 
