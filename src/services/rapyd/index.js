@@ -16,11 +16,25 @@ const formatBodyForSignature = body => {
 		return '';
 	}
 
-	// Stringify without any whitespace (compact JSON)
-	// CRITICAL: Must have NO whitespace, NO trailing zeros, proper number formatting
-	// JSON.stringify() by default produces compact JSON with no whitespace
+	// CRITICAL: Rapyd signature requirements:
+	// 1. NO whitespace (except inside strings)
+	// 2. NO trailing zeros or decimal points (or wrap numbers in strings)
+	// 3. The exact string used for signature MUST match the request body exactly
+
+	// JSON.stringify() produces compact JSON with no whitespace by default
 	// This exact string will be used for both signature AND request body
-	return JSON.stringify(body);
+	// We must ensure no additional formatting is applied
+	const bodyString = JSON.stringify(body);
+
+	// Verify it's compact (no newlines or extra spaces)
+	// This is a sanity check - JSON.stringify should already produce compact JSON
+	if (bodyString.includes('\n') || bodyString.includes('\r')) {
+		throw new Error(
+			'Body string contains unexpected whitespace - this will break Rapyd signature'
+		);
+	}
+
+	return bodyString;
 };
 
 /**
@@ -92,30 +106,33 @@ const makeRapydRequest = async (method, path, body = null) => {
 	};
 
 	try {
+		// Build config - CRITICAL: body must be sent exactly as formatted for signature
 		const config = {
 			method,
 			url: `${RAPYD_API_BASE_URL}${path}`,
 			headers,
-			// Prevent axios from transforming the data - send raw string as-is
-			transformRequest: [
-				data => {
-					// If data is already a string, return it as-is (no transformation)
-					if (typeof data === 'string') {
-						return data;
-					}
-					// Otherwise, let axios handle it (shouldn't happen in our case)
-					return data;
-				},
-			],
 		};
 
 		if (
 			body &&
 			(method === 'POST' || method === 'PUT' || method === 'PATCH')
 		) {
-			// Send body as stringified JSON to ensure exact match with signature
-			// This guarantees the signature body matches the request body exactly
-			// The transformRequest ensures axios doesn't reformat it
+			// CRITICAL: Send body exactly as formatted for signature
+			// The bodyString was already formatted with JSON.stringify() (compact, no whitespace)
+			// We must send this exact string - any transformation will break the signature
+			// Set transformRequest BEFORE setting data to ensure axios doesn't transform it
+			config.transformRequest = [
+				data => {
+					// If data is a string, return it as-is (no JSON.stringify, no transformation)
+					// This ensures the exact string used for signature is sent
+					if (typeof data === 'string') {
+						return data;
+					}
+					// For other types, let axios handle it (shouldn't happen)
+					return data;
+				},
+			];
+			// Set data as the pre-formatted string
 			config.data = bodyString;
 		}
 
