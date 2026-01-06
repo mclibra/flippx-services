@@ -860,7 +860,7 @@ export const lastLottery = async ({
 		// If count > 1, return multiple lotteries
 		const lotteries = await Lottery.find(params)
 			.sort({
-				createdAt: 'desc',
+				drawTime: -1,
 			})
 			.populate('state', 'name code') // Populate state information
 			.skip(parseInt(offset))
