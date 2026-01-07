@@ -74,7 +74,33 @@ export const create = async body => {
 			}
 		}
 
-		const state = await State.create(body);
+		// Check if there's an existing state with the same code
+		const existingState = await State.findOne({
+			code: body.code,
+		});
+
+		let state;
+		if (existingState) {
+			if (existingState.isActive) {
+				// Active state with same code exists - this is a duplicate
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'State code already exists.',
+					},
+				};
+			} else {
+				// Inactive state exists - reactivate and update it
+				existingState.isActive = true;
+				Object.assign(existingState, body);
+				state = await existingState.save();
+			}
+		} else {
+			// Create a new state
+			state = await State.create(body);
+		}
+
 		if (state._id) {
 			// Fetch lottery games for this state
 			await fetchAndStoreLotteryGames(state);
