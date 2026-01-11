@@ -98,6 +98,12 @@ export const notifyTurnChange = async (
 			player => player.position == game.currentPlayer
 		);
 
+		// Check if current player has any playable tiles
+		const hasPlayableTiles = DominoGameEngine.hasValidMoves(
+			currentPlayer.hand,
+			game.board
+		);
+
 		for (const player of game.players) {
 			if (player.user && player.playerType === 'HUMAN') {
 				if (player.position == game.currentPlayer) {
@@ -128,6 +134,19 @@ export const notifyTurnChange = async (
 							turnStartTime: game.turnStartTime,
 						}
 					);
+					if (!hasPlayableTiles) {
+						sendDominoGameUpdateToUser(
+							player.user,
+							roomId,
+							'PASS',
+							{
+								gameId: game._id,
+								currentPlayerPosition: currentPlayer.position,
+								currentPlayerName: currentPlayer?.playerName,
+								message: `${currentPlayer?.playerName} has no playable tiles`,
+							}
+						);
+					}
 				}
 			}
 		}
