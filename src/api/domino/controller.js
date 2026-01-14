@@ -138,7 +138,7 @@ export const notifyTurnChange = async (
 						sendDominoGameUpdateToUser(
 							player.user,
 							roomId,
-							'PASS',
+							'pass',
 							{
 								gameId: game._id,
 								currentPlayerPosition: currentPlayer.position,
