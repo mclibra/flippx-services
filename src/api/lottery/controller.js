@@ -51,6 +51,37 @@ const getNextDrawDate = lotteryConfig => {
 	return now.clone().add(1, 'day').startOf('day');
 };
 
+// Helper function to get the next valid draw time for a lottery config
+// Returns the draw time (moment object) if valid (>3 hours away), null otherwise
+const getNextValidDrawTime = lotteryConfig => {
+	const now = moment();
+	const threeHoursFromNow = now.clone().add(3, 'hours');
+	const maxDaysToCheck = 7; // Check up to 7 days ahead
+
+	// Start checking from today
+	let checkDate = now.clone().startOf('day');
+
+	for (let i = 0; i < maxDaysToCheck; i++) {
+		const dayName = checkDate.format('dddd');
+		if (lotteryConfig.drawDays?.[dayName]) {
+			// Calculate the actual draw time for this date in the config's timezone
+			const drawDateTime = moment.tz(
+				`${checkDate.format('YYYY-MM-DD')} ${lotteryConfig.drawTime}`,
+				lotteryConfig.drawTimezone
+			);
+
+			// Check if draw time is more than 3 hours away
+			if (drawDateTime.isAfter(threeHoursFromNow)) {
+				return drawDateTime;
+			}
+		}
+		checkDate.add(1, 'day');
+	}
+
+	// If no valid draw time found within 7 days, return null
+	return null;
+};
+
 export const list = async ({
 	offset,
 	key,
@@ -1679,19 +1710,20 @@ export const createLotteriesForState = async state => {
 		const { externalLotteries, megaMillions } = state;
 		let lotteriesCreated = 0;
 
-		const existingActiveLottery = await Lottery.findOne({
+		// Check if any pending BORLETTE lottery exists (SCHEDULED or WAITING)
+		const existingPendingLottery = await Lottery.findOne({
 			state: state._id,
 			type: 'BORLETTE',
-			status: { $ne: 'COMPLETED' },
+			status: { $in: ['SCHEDULED', 'WAITING'] },
 		});
 
-		if (!existingActiveLottery) {
-			// Create BORLETTE lotteries based on flexible configuration
+		if (!existingPendingLottery) {
+			// Create BORLETTE lottery based on flexible configuration
+			// Only create ONE lottery - the one with closest upcoming schedule time
 			if (externalLotteries && externalLotteries.length > 0) {
-				// Check if there are any non-completed lotteries for this state
-				// If any exist, wait for them to complete before creating new ones
+				const validCandidates = [];
 
-				// All lotteries are completed, create new ones for all configs
+				// Collect all valid candidates (>3 hours away)
 				for (const lotteryConfig of externalLotteries) {
 					// Skip if missing required game IDs
 					if (!lotteryConfig.pick4GameId) {
@@ -1701,28 +1733,17 @@ export const createLotteriesForState = async state => {
 						continue;
 					}
 
-					// Get the next valid draw date for this specific lottery config
-					const nextDrawDate = getNextDrawDate(lotteryConfig);
-					const nextDrawDayName = nextDrawDate.format('dddd');
+					// Get the next valid draw time (>3 hours away)
+					const drawTime = getNextValidDrawTime(lotteryConfig);
 
-					// Double check that this day is valid for draws
-					if (!lotteryConfig.drawDays?.[nextDrawDayName]) {
+					if (!drawTime) {
 						console.log(
-							`BORLETTE lottery ${lotteryConfig.name} for ${state.name} does not run on ${nextDrawDayName}`
+							`BORLETTE lottery ${lotteryConfig.name} for ${state.name} has no valid draw time within 7 days`
 						);
 						continue;
 					}
 
-					// Calculate draw time for next draw date
-					const drawTime = moment.tz(
-						`${nextDrawDate.format('YYYY-MM-DD')} ${
-							lotteryConfig.drawTime
-						}`,
-						lotteryConfig.drawTimezone
-					);
-
-					// Check for unique index constraint to prevent duplicates
-					// Only check if pick3GameId exists
+					// Check for duplicate (unique index constraint)
 					let duplicateCheck = null;
 					if (lotteryConfig.pick3GameId) {
 						duplicateCheck = await Lottery.findOne({
@@ -1733,47 +1754,11 @@ export const createLotteriesForState = async state => {
 					}
 
 					if (!duplicateCheck) {
-						// Create a new lottery
-						const externalGameIds = {
-							pick4: lotteryConfig.pick4GameId,
-							pick3: lotteryConfig.pick3GameId || null,
-						};
-
-						try {
-							await Lottery.create({
-								title: lotteryConfig.name,
-								type: 'BORLETTE',
-								scheduledTime: drawTime.valueOf(),
-								metadata: lotteryConfig.name.toLowerCase(),
-								state: state._id,
-								status: 'SCHEDULED',
-								createdBy: null,
-								externalGameIds,
-								// Store whether this lottery supports marriage numbers
-								additionalData: {
-									hasMarriageNumbers:
-										lotteryConfig.hasMarriageNumbers,
-								},
-							});
-
-							console.log(
-								`Created new BORLETTE lottery for ${state.name} ${lotteryConfig.name}`
-							);
-							lotteriesCreated++;
-						} catch (createError) {
-							if (createError.code === 11000) {
-								console.log(
-									`Duplicate lottery creation prevented for ${state.name} ${lotteryConfig.name}:`,
-									createError.keyValue
-								);
-							} else {
-								console.error(
-									`Error creating lottery for ${state.name} ${lotteryConfig.name}:`,
-									createError
-								);
-								throw createError;
-							}
-						}
+						validCandidates.push({
+							config: lotteryConfig,
+							drawTime: drawTime,
+							scheduledTime: drawTime.valueOf(),
+						});
 					} else {
 						console.log(
 							`BORLETTE lottery for ${state.name} ${
@@ -1786,7 +1771,70 @@ export const createLotteriesForState = async state => {
 						);
 					}
 				}
+
+				// Select the candidate with closest scheduledTime to current time
+				if (validCandidates.length > 0) {
+					validCandidates.sort((a, b) => {
+						return a.scheduledTime - b.scheduledTime;
+					});
+
+					const selectedCandidate = validCandidates[0];
+					const { config: lotteryConfig, drawTime } =
+						selectedCandidate;
+
+					// Create only the selected lottery
+					const externalGameIds = {
+						pick4: lotteryConfig.pick4GameId,
+						pick3: lotteryConfig.pick3GameId || null,
+					};
+
+					try {
+						await Lottery.create({
+							title: lotteryConfig.name,
+							type: 'BORLETTE',
+							scheduledTime: selectedCandidate.scheduledTime,
+							metadata: lotteryConfig.name.toLowerCase(),
+							state: state._id,
+							status: 'SCHEDULED',
+							createdBy: null,
+							externalGameIds,
+							// Store whether this lottery supports marriage numbers
+							additionalData: {
+								hasMarriageNumbers:
+									lotteryConfig.hasMarriageNumbers,
+							},
+						});
+
+						console.log(
+							`Created new BORLETTE lottery for ${state.name} ${
+								lotteryConfig.name
+							} at ${drawTime.format('YYYY-MM-DD HH:mm:ss z')}`
+						);
+						lotteriesCreated++;
+					} catch (createError) {
+						if (createError.code === 11000) {
+							console.log(
+								`Duplicate lottery creation prevented for ${state.name} ${lotteryConfig.name}:`,
+								createError.keyValue
+							);
+						} else {
+							console.error(
+								`Error creating lottery for ${state.name} ${lotteryConfig.name}:`,
+								createError
+							);
+							throw createError;
+						}
+					}
+				} else {
+					console.log(
+						`No valid BORLETTE lottery candidates found for ${state.name}`
+					);
+				}
 			}
+		} else {
+			console.log(
+				`Pending BORLETTE lottery already exists for ${state.name}, skipping creation`
+			);
 		}
 
 		// Create for Mega Millions
