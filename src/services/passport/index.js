@@ -13,10 +13,17 @@ export const password = () => (req, res, next) => {
 		if (err && err.param) {
 			return res.status(400).json(err);
 		} else if (err || !user) {
-			return res.status(401).end();
+			return res.status(401).json({
+				success: false,
+				error: 'Invalid phone number and/or password.',
+			});
 		}
 		req.logIn(user, { session: false }, err => {
-			if (err) return res.status(401).end();
+			if (err)
+				return res.status(401).json({
+					success: false,
+					error: 'Invalid phone number and/or password.',
+				});
 			next();
 		});
 	})(req, res, next);

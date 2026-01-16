@@ -77,12 +77,31 @@ export const login = async user => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid login credentials. Please check your phone number and password.';
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						validationErrors ||
+						'Invalid login credentials. Please check your phone number and password.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to complete login. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -96,17 +115,25 @@ export const token = async query => {
 				status: 401,
 				entity: {
 					success: false,
-					error: 'Invalid token.',
+					error: 'Invalid or expired authentication token. Please login again.',
 				},
 			};
 		}
 
 		// Update last activity when refreshing token
 		const user = await User.findById(id);
-		if (user) {
-			user.sessionTracking.lastActivityDate = new Date();
-			await user.save();
+		if (!user) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User account not found. Please login again.',
+				},
+			};
 		}
+
+		user.sessionTracking.lastActivityDate = new Date();
+		await user.save();
 
 		return {
 			status: 200,
@@ -121,11 +148,24 @@ export const token = async query => {
 			},
 		};
 	} catch (error) {
+		if (error.name === 'CastError') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid authentication token format. Please login again.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Invalid or expired authentication token. Please login again.';
 		return {
 			status: 401,
 			entity: {
 				success: false,
-				error: error.errors || 'Invalid token.',
+				error: errorMessage,
 			},
 		};
 	}

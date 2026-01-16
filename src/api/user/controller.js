@@ -27,7 +27,7 @@ export const sendOtp = async body => {
 		const { countryCode, phone } = body;
 		const pattern = /^([0-9]){7,10}$/;
 		if (!pattern.test(phone)) {
-			throw 'Invalid phone number.';
+			throw 'Invalid phone number format. Please enter a valid phone number.';
 		}
 		const verificationCode = config.enableText
 			? generateRandomDigits(4)
@@ -49,10 +49,16 @@ export const sendOtp = async body => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Unable to send verification code. Please check your phone number and try again.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -77,10 +83,16 @@ export const verifyOtp = async body => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Invalid or expired verification code. Please request a new code.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -102,7 +114,7 @@ export const create = async body => {
 				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number or login.',
 				},
 			};
 		}
@@ -184,40 +196,59 @@ export const create = async body => {
 			status: 500,
 			entity: {
 				success: false,
-				error: 'Invalid parameters.',
+				error: 'Unable to create account. Please check your registration details and try again.',
 			},
 		};
 	} catch (error) {
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
-				status: 500,
+				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number or login.',
 				},
 			};
 		} else if (error.name === 'TokenExpiredError') {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Signup token has expired.',
+					error: 'Registration token has expired. Please complete the registration process again.',
 				},
 			};
 		} else if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid registration details provided. Please check all fields and try again.';
 			return {
-				status: 500,
+				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid parameters passed.',
+					error:
+						validationErrors ||
+						'Invalid registration details provided. Please check all fields and try again.',
+				},
+			};
+		} else if (error.name === 'CastError') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid data format. Please check your registration details and try again.',
 				},
 			};
 		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to create account. Please verify your information and try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -230,7 +261,7 @@ export const verifySecurePin = async (user, { securePin }) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: `Your account has been blocked due to 3 failed attempts. Please contact MegaPay support.`,
+					error: 'Account temporarily locked due to multiple failed attempts. Please contact support for assistance.',
 				},
 			};
 		}
@@ -254,28 +285,30 @@ export const verifySecurePin = async (user, { securePin }) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: `Invalid secure pin. Your account has been blocked due to 3 failed attempts. Please contact MegaPay support.`,
+					error: 'Invalid secure PIN. Account temporarily locked due to multiple failed attempts. Please contact support for assistance.',
 				},
 			};
 		}
+		const remainingAttempts = 3 - failedAttempts[user._id.toString()];
 		return {
 			status: 403,
 			entity: {
 				success: false,
-				error:
-					failedAttempts[user._id.toString()] > 2
-						? `Invalid secure pin. Your account has been blocked. Please contact MegaPay support.`
-						: `Invalid secure pin. You have ${
-								3 - failedAttempts[user._id.toString()]
-							} attempt left.`,
+				error: `Invalid secure PIN. ${remainingAttempts} ${
+					remainingAttempts === 1 ? 'attempt' : 'attempts'
+				} remaining before account lock.`,
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to verify secure PIN. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -291,10 +324,10 @@ export const resetPassword = async ({
 		const decodedToken = jwtVerify(verificationToken);
 		if (decodedToken.phone !== `${countryCode}${phone}`) {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Invalid token passed.',
+					error: 'Invalid or mismatched reset token. Please request a new password reset.',
 				},
 			};
 		}
@@ -318,35 +351,62 @@ export const resetPassword = async ({
 			};
 		}
 		return {
-			status: 500,
+			status: 404,
 			entity: {
 				success: false,
-				error: 'Invalid token passed.',
+				error: 'User account not found. Please verify your phone number and try again.',
 			},
 		};
 	} catch (error) {
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
-				status: 500,
+				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number.',
 				},
 			};
 		} else if (error.name === 'TokenExpiredError') {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Signup token has expired.',
+					error: 'Password reset token has expired. Please request a new password reset.',
+				},
+			};
+		} else if (error.name === 'JsonWebTokenError') {
+			return {
+				status: 401,
+				entity: {
+					success: false,
+					error: 'Invalid password reset token. Please request a new password reset.',
+				},
+			};
+		} else if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Password does not meet requirements. Please ensure your password meets all criteria.';
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						validationErrors ||
+						'Password does not meet requirements. Please ensure your password meets all criteria.',
 				},
 			};
 		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to reset password. Please verify your information and try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -399,15 +459,43 @@ export const update = async (user, body) => {
 			status: 400,
 			entity: {
 				success: false,
-				error: 'Invalid parameters.',
+				error: 'Unable to update profile. Please check your information and try again.',
 			},
 		};
 	} catch (error) {
+		if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid profile information provided. Please check all fields and try again.';
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						validationErrors ||
+						'Invalid profile information provided. Please check all fields and try again.',
+				},
+			};
+		} else if (error.name === 'MongoError' && error.code === 11000) {
+			return {
+				status: 409,
+				entity: {
+					success: false,
+					error: 'Profile information conflicts with an existing account. Please use different information.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to update profile. Please verify your information and try again.';
 		return {
-			status: 409,
+			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -420,6 +508,15 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 				phone: userPhone,
 				countryCode: countryCode,
 			});
+			if (!searchedUser) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'User account not found. Please verify the phone number and country code.',
+					},
+				};
+			}
 			if (searchedUser._id) {
 				const walletDataResponse = await getUserBalance({
 					_id: searchedUser._id,
@@ -436,27 +533,31 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 				};
 			}
 			return {
-				status: 500,
+				status: 404,
 				entity: {
 					success: false,
-					error: 'Invalid user.',
+					error: 'User account not found. Please verify the phone number and country code.',
 				},
 			};
 		} else {
 			return {
-				status: 500,
+				status: 403,
 				entity: {
 					success: false,
-					error: 'You are not authorized to perform this action.',
+					error: 'You do not have permission to access this information.',
 				},
 			};
 		}
 	} catch (error) {
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Failed to retrieve user information. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -470,7 +571,7 @@ export const getMe = async userId => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'User not found',
+					error: 'User account not found.',
 				},
 			};
 		}
@@ -482,11 +583,24 @@ export const getMe = async userId => {
 			},
 		};
 	} catch (error) {
+		if (error.name === 'CastError') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid user ID format. Please verify your account information.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to retrieve user information. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -512,11 +626,15 @@ export const getSelfImage = async user => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate profile image URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -527,7 +645,7 @@ export const verifyReset = async body => {
 		const { countryCode, phone } = body;
 		const pattern = /^([0-9]){7,10}$/;
 		if (!pattern.test(phone)) {
-			throw 'Invalid phone number.';
+			throw 'Invalid phone number format. Please enter a valid phone number.';
 		}
 		const user = await User.findOne({
 			countryCode: countryCode,
@@ -555,17 +673,23 @@ export const verifyReset = async body => {
 			};
 		}
 		return {
-			status: 500,
+			status: 404,
 			entity: {
 				success: false,
-				error: 'Invalid phone number.',
+				error: 'Phone number not found. Please verify your phone number and country code.',
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Unable to send password reset code. Please verify your phone number and try again.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -596,7 +720,13 @@ export const getSignedUrl = async (user, { fileType }) => {
 		};
 		const contentType = mimeTypeMap[normalizedFileType];
 		if (!contentType) {
-			throw `Unsupported file type: ${fileType}`;
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Unsupported file format. Please upload an image (JPG, PNG, GIF, WebP, BMP, SVG, HEIC, HEIF) or video (MP4, MOV, AVI, FLV, MKV, WebM) file.`,
+				},
+			};
 		}
 		const randomKey = crypto.randomBytes(16).toString('hex');
 		const fileName = `${user._id}_${randomKey}.${normalizedFileType}`;
@@ -617,11 +747,15 @@ export const getSignedUrl = async (user, { fileType }) => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate file upload URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -653,11 +787,24 @@ export const getSignedUrlForDocument = async (
 			},
 		};
 	} catch (error) {
+		if (!fileType || !documentType) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'File type and document type are required. Please provide both parameters.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate document upload URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
