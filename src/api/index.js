@@ -26,8 +26,10 @@ import adminRouletteManagement from './admin/roulette-management';
 import adminDominoManagement from './admin/domino-management';
 import adminGlobalChatManagement from './admin/global-chat-management';
 import adminMessageManagement from './admin/message-management';
+import adminBannerManagement from './admin/banner-management';
 import globalChat from './global_chat';
 import invite from './invite';
+import banner from './banner';
 
 const router = new Router();
 
@@ -59,6 +61,8 @@ router.use('/admin/roulette-management', adminRouletteManagement);
 router.use('/admin/domino-management', adminDominoManagement);
 router.use('/admin/global-chat-management', adminGlobalChatManagement);
 router.use('/admin/message-management', adminMessageManagement);
+router.use('/admin/banner-management', adminBannerManagement);
 router.use('/global-chat', globalChat);
+router.use('/banner', banner);
 
 export default router;
