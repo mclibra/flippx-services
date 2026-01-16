@@ -1706,13 +1706,21 @@ export const remove = async ({ id }) => {
 
 export const getPopularNumbers = async ({ stateId }) => {
 	try {
-		// Validate stateId is provided
+		// If stateId is not provided, return global popular numbers
 		if (!stateId) {
+			const globalPopularNumbers = await PopularNumbers.findOne({
+				state: null,
+			}).exec();
+
 			return {
-				status: 400,
+				status: 200,
 				entity: {
-					success: false,
-					error: 'State ID is required',
+					success: true,
+					popularNumbers: {
+						state: null,
+						numbers: globalPopularNumbers?.numbers || [],
+						isGlobal: true,
+					},
 				},
 			};
 		}
