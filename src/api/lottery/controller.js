@@ -1,7 +1,7 @@
 import moment from 'moment-timezone';
 import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { BorletteTicket } from '../borlette_ticket/model';
-import { Lottery, LotteryRestriction } from './model';
+import { Lottery, LotteryRestriction, PopularNumbers } from './model';
 import { State } from '../admin/state-management/model';
 import { publishResult } from '../../services/lottery/resultPublisher';
 import PayoutService from '../../services/payout/payoutService';
@@ -1699,6 +1699,109 @@ export const remove = async ({ id }) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const getPopularNumbers = async ({ stateId }) => {
+	try {
+		// Validate stateId is provided
+		if (!stateId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'State ID is required',
+				},
+			};
+		}
+
+		// Validate state exists
+		const state = await State.findById(stateId);
+		if (!state) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'State not found',
+				},
+			};
+		}
+
+		// Get popular numbers for the state first
+		let popularNumbers = await PopularNumbers.findOne({
+			state: stateId.toString(),
+		})
+			.populate('state', 'name code')
+			.exec();
+
+		// If no state-specific popular numbers exist, fallback to global (state: null)
+		if (!popularNumbers) {
+			popularNumbers = await PopularNumbers.findOne({
+				state: null,
+			}).exec();
+
+			if (!popularNumbers) {
+				// No popular numbers at all (neither state-specific nor global)
+				return {
+					status: 200,
+					entity: {
+						success: true,
+						popularNumbers: {
+							state: {
+								id: state._id,
+								name: state.name,
+								code: state.code,
+							},
+							numbers: [],
+							isGlobal: false,
+						},
+					},
+				};
+			}
+
+			// Return global popular numbers with state info
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					popularNumbers: {
+						state: {
+							id: state._id,
+							name: state.name,
+							code: state.code,
+						},
+						numbers: popularNumbers.numbers || [],
+						isGlobal: true,
+					},
+				},
+			};
+		}
+
+		// Return state-specific popular numbers
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				popularNumbers: {
+					state: {
+						id: popularNumbers.state._id || state._id,
+						name: popularNumbers.state.name || state.name,
+						code: popularNumbers.state.code || state.code,
+					},
+					numbers: popularNumbers.numbers || [],
+					isGlobal: false,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Get popular numbers error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to fetch popular numbers',
 			},
 		};
 	}

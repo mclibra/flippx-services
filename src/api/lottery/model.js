@@ -83,8 +83,48 @@ LotterySchema.index(
 	}
 );
 
+const PopularNumbersSchema = new Schema(
+	{
+		state: {
+			type: String,
+			ref: 'State',
+			default: null,
+			// null means global popular numbers
+		},
+		numbers: [
+			{
+				type: String,
+				required: true,
+				validate: {
+					validator: function (v) {
+						// Validate that number is 2 or 3 digits
+						return /^\d{2,3}$/.test(v);
+					},
+					message: 'Each number must be 2 or 3 digits',
+				},
+			},
+		],
+		updatedBy: { type: String, ref: 'User', default: null },
+	},
+	{
+		timestamps: true,
+		toJSON: {
+			virtuals: true,
+			transform: (obj, ret) => {
+				delete ret._id;
+			},
+		},
+	}
+);
+
+PopularNumbersSchema.index({ state: 1 }, { unique: true, sparse: true });
+
 export const Lottery = mongoose.model('Lottery', LotterySchema);
 export const LotteryRestriction = mongoose.model(
 	'LotteryRestriction',
 	LotteryRestrictionSchema
+);
+export const PopularNumbers = mongoose.model(
+	'PopularNumbers',
+	PopularNumbersSchema
 );

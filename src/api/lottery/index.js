@@ -18,6 +18,7 @@ import {
 	allStatesSummary,
 	getLotteryDashboard,
 	closestUpcomingByState,
+	getPopularNumbers,
 } from './controller';
 
 const router = new Router();
@@ -39,6 +40,14 @@ router.get(
 
 router.get('/last', xApi(), token({ required: true }), async (req, res) =>
 	done(res, await lastLottery(req.query, req.user))
+);
+
+// Get popular numbers for a state
+router.get(
+	'/popular-numbers',
+	xApi(),
+	token({ required: true }),
+	async (req, res) => done(res, await getPopularNumbers(req.query))
 );
 
 // New admin lottery dashboard route

@@ -1,5 +1,9 @@
 import moment from 'moment';
-import { Lottery, LotteryRestriction } from '../../lottery/model';
+import {
+	Lottery,
+	LotteryRestriction,
+	PopularNumbers,
+} from '../../lottery/model';
 import { BorletteTicket } from '../../borlette_ticket/model';
 import { State } from '../state-management/model';
 
@@ -358,6 +362,7 @@ export const getBorletteDetails = async lotteryId => {
 
 // ===== CREATE LOTTERY RESTRICTIONS =====
 
+// eslint-disable-next-line no-unused-vars
 export const createLotteryRestriction = async (body, adminUser) => {
 	try {
 		const {
@@ -472,7 +477,7 @@ export const createLotteryRestriction = async (body, adminUser) => {
 
 // ===== UPDATE LOTTERY RESTRICTIONS =====
 
-export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
+export const updateLotteryRestriction = async (lotteryId, body) => {
 	try {
 		const {
 			twoDigit,
@@ -576,6 +581,298 @@ export const updateLotteryRestriction = async (lotteryId, body, adminUser) => {
 			entity: {
 				success: false,
 				error: error.message || 'Failed to update lottery restriction',
+			},
+		};
+	}
+};
+
+// ===== CREATE POPULAR NUMBERS =====
+
+export const createPopularNumbers = async (body, adminUser) => {
+	try {
+		const { stateId, numbers } = body;
+
+		// Validate numbers array
+		if (!numbers || !Array.isArray(numbers)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Numbers array is required',
+				},
+			};
+		}
+
+		// If stateId is provided, validate state exists
+		// If stateId is null/undefined, it means global popular numbers
+		let state = null;
+		if (stateId) {
+			state = await State.findById(stateId);
+			if (!state) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'State not found',
+					},
+				};
+			}
+		}
+
+		// Validate numbers format (2 or 3 digits)
+		for (const number of numbers) {
+			if (typeof number !== 'string' && typeof number !== 'number') {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Each number must be a string or number',
+					},
+				};
+			}
+			const numberStr = number.toString();
+			if (!/^\d{2,3}$/.test(numberStr)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Number "${numberStr}" must be 2 or 3 digits`,
+					},
+				};
+			}
+		}
+
+		// Check if popular numbers already exist
+		const existingPopularNumbers = await PopularNumbers.findOne({
+			state: stateId ? stateId.toString() : null,
+		});
+
+		if (existingPopularNumbers) {
+			const errorMessage = stateId
+				? 'Popular numbers already exist for this state. Use update endpoint to modify.'
+				: 'Global popular numbers already exist. Use update endpoint to modify.';
+			return {
+				status: 409,
+				entity: {
+					success: false,
+					error: errorMessage,
+				},
+			};
+		}
+
+		// Convert all numbers to strings and remove duplicates
+		const uniqueNumbers = [...new Set(numbers.map(num => num.toString()))];
+
+		// Create popular numbers
+		const popularNumbers = await PopularNumbers.create({
+			state: stateId ? stateId.toString() : null,
+			numbers: uniqueNumbers,
+			updatedBy: adminUser._id.toString(),
+		});
+
+		const successMessage = stateId
+			? 'Popular numbers created successfully'
+			: 'Global popular numbers created successfully';
+
+		return {
+			status: 201,
+			entity: {
+				success: true,
+				message: successMessage,
+				popularNumbers,
+			},
+		};
+	} catch (error) {
+		console.error('Create popular numbers error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to create popular numbers',
+			},
+		};
+	}
+};
+
+// ===== UPDATE POPULAR NUMBERS =====
+
+export const updatePopularNumbers = async (stateId, body, adminUser) => {
+	try {
+		const { numbers } = body;
+
+		// Handle global popular numbers (stateId is "global" or null)
+		const isGlobal = !stateId || stateId === 'global' || stateId === 'null';
+		let state = null;
+
+		if (!isGlobal) {
+			// Validate state exists
+			state = await State.findById(stateId);
+			if (!state) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'State not found',
+					},
+				};
+			}
+		}
+
+		// Check if popular numbers exist
+		const existingPopularNumbers = await PopularNumbers.findOne({
+			state: isGlobal ? null : stateId.toString(),
+		});
+
+		if (!existingPopularNumbers) {
+			const errorMessage = isGlobal
+				? 'Global popular numbers not found. Use create endpoint to create popular numbers.'
+				: 'Popular numbers not found for this state. Use create endpoint to create popular numbers.';
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: errorMessage,
+				},
+			};
+		}
+
+		// Validate numbers if provided
+		if (numbers !== undefined) {
+			if (!Array.isArray(numbers)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Numbers must be an array',
+					},
+				};
+			}
+
+			// Validate numbers format (2 or 3 digits)
+			for (const number of numbers) {
+				if (typeof number !== 'string' && typeof number !== 'number') {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'Each number must be a string or number',
+						},
+					};
+				}
+				const numberStr = number.toString();
+				if (!/^\d{2,3}$/.test(numberStr)) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: `Number "${numberStr}" must be 2 or 3 digits`,
+						},
+					};
+				}
+			}
+
+			// Convert all numbers to strings and remove duplicates
+			const uniqueNumbers = [
+				...new Set(numbers.map(num => num.toString())),
+			];
+
+			// Update popular numbers
+			existingPopularNumbers.numbers = uniqueNumbers;
+			existingPopularNumbers.updatedBy = adminUser._id.toString();
+			await existingPopularNumbers.save();
+
+			const successMessage = isGlobal
+				? 'Global popular numbers updated successfully'
+				: 'Popular numbers updated successfully';
+
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					message: successMessage,
+					popularNumbers: existingPopularNumbers,
+				},
+			};
+		}
+
+		return {
+			status: 400,
+			entity: {
+				success: false,
+				error: 'Numbers array is required for update',
+			},
+		};
+	} catch (error) {
+		console.error('Update popular numbers error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to update popular numbers',
+			},
+		};
+	}
+};
+
+// ===== REMOVE POPULAR NUMBERS =====
+
+// eslint-disable-next-line no-unused-vars
+export const removePopularNumbers = async (stateId, adminUser) => {
+	try {
+		// Handle global popular numbers (stateId is "global" or null)
+		const isGlobal = !stateId || stateId === 'global' || stateId === 'null';
+		let state = null;
+
+		if (!isGlobal) {
+			// Validate state exists
+			state = await State.findById(stateId);
+			if (!state) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'State not found',
+					},
+				};
+			}
+		}
+
+		// Find and remove popular numbers
+		const popularNumbers = await PopularNumbers.findOneAndDelete({
+			state: isGlobal ? null : stateId.toString(),
+		});
+
+		if (!popularNumbers) {
+			const errorMessage = isGlobal
+				? 'Global popular numbers not found'
+				: 'Popular numbers not found for this state';
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: errorMessage,
+				},
+			};
+		}
+
+		const successMessage = isGlobal
+			? 'Global popular numbers removed successfully'
+			: 'Popular numbers removed successfully';
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: successMessage,
+			},
+		};
+	} catch (error) {
+		console.error('Remove popular numbers error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to remove popular numbers',
 			},
 		};
 	}

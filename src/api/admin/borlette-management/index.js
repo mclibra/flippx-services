@@ -6,6 +6,9 @@ import {
 	getBorletteDetails,
 	createLotteryRestriction,
 	updateLotteryRestriction,
+	createPopularNumbers,
+	updatePopularNumbers,
+	removePopularNumbers,
 } from './controller';
 
 const router = new Router();
@@ -102,6 +105,54 @@ router.put(
 				req.user
 			)
 		)
+);
+
+/**
+ * POST /api/admin/borlette-management/popular-numbers
+ * Create popular numbers for a state or global
+ * Body: {
+ *   stateId: string (optional) - If null/omitted, creates global popular numbers
+ *   numbers: string[] (required) - Array of 2 or 3 digit numbers
+ * }
+ */
+router.post(
+	'/popular-numbers',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await createPopularNumbers(req.body, req.user))
+);
+
+/**
+ * PUT /api/admin/borlette-management/popular-numbers/:stateId
+ * Update popular numbers for a state or global
+ * Params: stateId - State ID or "global" for global popular numbers
+ * Body: {
+ *   numbers: string[] (required) - Array of 2 or 3 digit numbers
+ * }
+ */
+router.put(
+	'/popular-numbers/:stateId',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(
+			res,
+			await updatePopularNumbers(req.params.stateId, req.body, req.user)
+		)
+);
+
+/**
+ * DELETE /api/admin/borlette-management/popular-numbers/:stateId
+ * Remove popular numbers for a state or global
+ * Params: stateId - State ID or "global" for global popular numbers
+ */
+router.delete(
+	'/popular-numbers/:stateId',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await removePopularNumbers(req.params.stateId, req.user))
 );
 
 export default router;
