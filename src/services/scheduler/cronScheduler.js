@@ -875,19 +875,19 @@ class CronScheduler {
 								pastDrawsResponse.data.gameDetails
 									?.drawTimezone || lotteryTimezone;
 
-							// Convert lottery scheduledTime to API's timezone for matching
-							const lotteryDateTimeInApiTimezone = moment(
+							// Convert lottery scheduledTime to API's timezone and extract date only
+							const lotteryDateInApiTimezone = moment(
 								lottery.scheduledTime
 							)
 								.tz(apiDrawTimezone)
-								.format('YYYY-MM-DD HH:mm:ss');
+								.format('YYYY-MM-DD');
 
-							// Find matching drawDateTime
+							// Find matching drawDate (compare date only, not time)
 							const matchingDraw =
 								pastDrawsResponse.data.date.find(
 									draw =>
-										draw.drawDateTime ===
-										lotteryDateTimeInApiTimezone
+										draw.drawDate ===
+										lotteryDateInApiTimezone
 								);
 
 							if (matchingDraw && matchingDraw.drawID) {
@@ -917,10 +917,10 @@ class CronScheduler {
 								);
 							} else {
 								console.log(
-									`No matching drawDateTime found for lottery ${lottery._id}. Expected: ${lotteryDateTimeInApiTimezone} (API timezone: ${apiDrawTimezone}). Available draws:`,
+									`No matching drawDate found for lottery ${lottery._id}. Expected: ${lotteryDateInApiTimezone} (API timezone: ${apiDrawTimezone}). Available draws:`,
 									pastDrawsResponse.data.date
 										.slice(0, 5)
-										.map(d => d.drawDateTime)
+										.map(d => d.drawDate)
 								);
 								return;
 							}
@@ -980,17 +980,18 @@ class CronScheduler {
 										pick3PastDrawsResponse.data.gameDetails
 											?.drawTimezone || lotteryTimezone;
 
-									// Convert lottery scheduledTime to pick3 API's timezone
-									const pick3LotteryDateTimeInApiTimezone =
+									// Convert lottery scheduledTime to pick3 API's timezone and extract date only
+									const pick3LotteryDateInApiTimezone =
 										moment(lottery.scheduledTime)
 											.tz(pick3ApiDrawTimezone)
-											.format('YYYY-MM-DD HH:mm:ss');
+											.format('YYYY-MM-DD');
 
+									// Find matching drawDate (compare date only, not time)
 									const matchingPick3Draw =
 										pick3PastDrawsResponse.data.date.find(
 											draw =>
-												draw.drawDateTime ===
-												pick3LotteryDateTimeInApiTimezone
+												draw.drawDate ===
+												pick3LotteryDateInApiTimezone
 										);
 
 									if (
@@ -1099,19 +1100,19 @@ class CronScheduler {
 								megaPastDrawsResponse.data.gameDetails
 									?.drawTimezone || megaTimezone;
 
-							// Convert lottery scheduledTime to API's timezone for matching
-							const megaLotteryDateTimeInApiTimezone = moment(
+							// Convert lottery scheduledTime to API's timezone and extract date only
+							const megaLotteryDateInApiTimezone = moment(
 								lottery.scheduledTime
 							)
 								.tz(megaApiDrawTimezone)
-								.format('YYYY-MM-DD HH:mm:ss');
+								.format('YYYY-MM-DD');
 
-							// Find matching drawDateTime
+							// Find matching drawDate (compare date only, not time)
 							const matchingMegaDraw =
 								megaPastDrawsResponse.data.date.find(
 									draw =>
-										draw.drawDateTime ===
-										megaLotteryDateTimeInApiTimezone
+										draw.drawDate ===
+										megaLotteryDateInApiTimezone
 								);
 
 							if (matchingMegaDraw && matchingMegaDraw.drawID) {
@@ -1141,10 +1142,10 @@ class CronScheduler {
 								Object.assign(megaResult, megaResultWithDrawID);
 							} else {
 								console.log(
-									`No matching drawDateTime found for MEGAMILLION lottery ${lottery._id}. Expected: ${megaLotteryDateTimeInApiTimezone} (API timezone: ${megaApiDrawTimezone}). Available draws:`,
+									`No matching drawDate found for MEGAMILLION lottery ${lottery._id}. Expected: ${megaLotteryDateInApiTimezone} (API timezone: ${megaApiDrawTimezone}). Available draws:`,
 									megaPastDrawsResponse.data.date
 										.slice(0, 5)
-										.map(d => d.drawDateTime)
+										.map(d => d.drawDate)
 								);
 								return;
 							}
