@@ -7,7 +7,10 @@ import { mongo } from '../../../config';
 import { Lottery } from '../../api/lottery/model';
 import { createLotteriesForState } from '../../api/lottery/controller';
 import { State } from '../../api/admin/state-management/model';
-import { fetchGameResult } from '../lottery/externalLottery';
+import {
+	fetchGameResult,
+	fetchPastDrawDates,
+} from '../lottery/externalLottery';
 import { publishResult } from '../lottery/resultPublisher';
 
 // Import domino dependencies
@@ -852,13 +855,76 @@ class CronScheduler {
 				const lotteryDate = moment(lottery.scheduledTime)
 					.tz(lotteryTimezone)
 					.format('YYYY-MM-DD');
+				const lotteryDateTime = moment(lottery.scheduledTime)
+					.tz(lotteryTimezone)
+					.format('YYYY-MM-DD HH:mm:ss');
 				const apiDrawDate = pick4Result.data.drawDate;
 
+				let pick4DrawID = null;
 				if (apiDrawDate !== lotteryDate) {
 					console.log(
-						`API draw date (${apiDrawDate}) does not match lottery date (${lotteryDate}) for lottery ${lottery._id}. Skipping.`
+						`API draw date (${apiDrawDate}) does not match lottery date (${lotteryDate}) for lottery ${lottery._id}. Fetching past draws.`
 					);
-					return;
+
+					try {
+						const pastDrawsResponse =
+							await fetchPastDrawDates(pick4Id);
+						if (
+							pastDrawsResponse?.data?.date &&
+							Array.isArray(pastDrawsResponse.data.date)
+						) {
+							// Find matching drawDateTime
+							const matchingDraw =
+								pastDrawsResponse.data.date.find(
+									draw =>
+										draw.drawDateTime === lotteryDateTime
+								);
+
+							if (matchingDraw && matchingDraw.drawID) {
+								pick4DrawID = matchingDraw.drawID;
+								console.log(
+									`Found matching drawID ${pick4DrawID} for lottery ${lottery._id}`
+								);
+
+								// Fetch result with drawID
+								const pick4ResultWithDrawID =
+									await fetchGameResult(pick4Id, pick4DrawID);
+
+								if (
+									!pick4ResultWithDrawID?.data?.winningNumbers
+								) {
+									console.error(
+										'Invalid pick4 result data after fetching with drawID for BORLETTE lottery:',
+										lottery._id
+									);
+									return;
+								}
+
+								// Update pick4Result with the new result
+								Object.assign(
+									pick4Result,
+									pick4ResultWithDrawID
+								);
+							} else {
+								console.log(
+									`No matching drawDateTime found for lottery ${lottery._id}. Expected: ${lotteryDateTime}`
+								);
+								return;
+							}
+						} else {
+							console.error(
+								'Invalid past draws response for lottery:',
+								lottery._id
+							);
+							return;
+						}
+					} catch (error) {
+						console.error(
+							`Error fetching past draws for lottery ${lottery._id}:`,
+							error
+						);
+						return;
+					}
 				}
 
 				const drawNumber = pick4Result.data.drawNumber;
@@ -877,7 +943,62 @@ class CronScheduler {
 				let pick3Numbers = null;
 
 				if (pick3Id) {
-					pick3Result = await fetchGameResult(pick3Id);
+					// If we found a drawID for pick4, try to use the same logic for pick3
+					if (pick4DrawID) {
+						try {
+							// First check if pick3 also needs drawID by checking its current result
+							const pick3ResultCheck =
+								await fetchGameResult(pick3Id);
+							const pick3ApiDrawDate =
+								pick3ResultCheck?.data?.drawDate;
+
+							if (pick3ApiDrawDate !== lotteryDate) {
+								// Fetch past draws for pick3 and find matching drawID
+								const pick3PastDrawsResponse =
+									await fetchPastDrawDates(pick3Id);
+								if (
+									pick3PastDrawsResponse?.data?.date &&
+									Array.isArray(
+										pick3PastDrawsResponse.data.date
+									)
+								) {
+									const matchingPick3Draw =
+										pick3PastDrawsResponse.data.date.find(
+											draw =>
+												draw.drawDateTime ===
+												lotteryDateTime
+										);
+
+									if (
+										matchingPick3Draw &&
+										matchingPick3Draw.drawID
+									) {
+										pick3Result = await fetchGameResult(
+											pick3Id,
+											matchingPick3Draw.drawID
+										);
+									} else {
+										// Fallback to regular fetch
+										pick3Result = pick3ResultCheck;
+									}
+								} else {
+									pick3Result = pick3ResultCheck;
+								}
+							} else {
+								pick3Result = pick3ResultCheck;
+							}
+						} catch (error) {
+							console.error(
+								`Error fetching pick3 result with drawID for lottery ${lottery._id}:`,
+								error
+							);
+							// Fallback to regular fetch
+							pick3Result = await fetchGameResult(pick3Id);
+						}
+					} else {
+						pick3Result = await fetchGameResult(pick3Id);
+					}
+
 					if (pick3Result?.data?.winningNumbers) {
 						pick3Numbers = pick3Result.data.winningNumbers;
 					}
@@ -934,13 +1055,77 @@ class CronScheduler {
 				const megaLotteryDate = moment(lottery.scheduledTime)
 					.tz(megaTimezone)
 					.format('YYYY-MM-DD');
+				const megaLotteryDateTime = moment(lottery.scheduledTime)
+					.tz(megaTimezone)
+					.format('YYYY-MM-DD HH:mm:ss');
 				const megaApiDrawDate = megaResult.data.drawDate;
 
+				let megaDrawID = null;
 				if (megaApiDrawDate !== megaLotteryDate) {
 					console.log(
-						`API draw date (${megaApiDrawDate}) does not match lottery date (${megaLotteryDate}) for MEGAMILLION lottery ${lottery._id}. Skipping.`
+						`API draw date (${megaApiDrawDate}) does not match lottery date (${megaLotteryDate}) for MEGAMILLION lottery ${lottery._id}. Fetching past draws.`
 					);
-					return;
+
+					try {
+						const megaPastDrawsResponse =
+							await fetchPastDrawDates(megaId);
+						if (
+							megaPastDrawsResponse?.data?.date &&
+							Array.isArray(megaPastDrawsResponse.data.date)
+						) {
+							// Find matching drawDateTime
+							const matchingMegaDraw =
+								megaPastDrawsResponse.data.date.find(
+									draw =>
+										draw.drawDateTime ===
+										megaLotteryDateTime
+								);
+
+							if (matchingMegaDraw && matchingMegaDraw.drawID) {
+								megaDrawID = matchingMegaDraw.drawID;
+								console.log(
+									`Found matching drawID ${megaDrawID} for MEGAMILLION lottery ${lottery._id}`
+								);
+
+								// Fetch result with drawID
+								const megaResultWithDrawID =
+									await fetchGameResult(megaId, megaDrawID);
+
+								if (
+									!megaResultWithDrawID?.data
+										?.winningNumbers ||
+									!megaResultWithDrawID?.data
+										?.additionalNumbers
+								) {
+									console.error(
+										'Invalid result data after fetching with drawID for MEGAMILLION lottery:',
+										lottery._id
+									);
+									return;
+								}
+
+								// Update megaResult with the new result
+								Object.assign(megaResult, megaResultWithDrawID);
+							} else {
+								console.log(
+									`No matching drawDateTime found for MEGAMILLION lottery ${lottery._id}. Expected: ${megaLotteryDateTime}`
+								);
+								return;
+							}
+						} else {
+							console.error(
+								'Invalid past draws response for MEGAMILLION lottery:',
+								lottery._id
+							);
+							return;
+						}
+					} catch (error) {
+						console.error(
+							`Error fetching past draws for MEGAMILLION lottery ${lottery._id}:`,
+							error
+						);
+						return;
+					}
 				}
 
 				const megaDrawNumber = megaResult.data.drawNumber;
