@@ -132,6 +132,20 @@ export const getTransactions = async (user, query) => {
 						transferTo,
 					};
 				}
+				
+				// Add separate realAmount and virtualAmount based on cashType
+				if (item.cashType === 'REAL') {
+					item.realAmount = item.transactionAmount || 0;
+					item.virtualAmount = 0;
+				} else if (item.cashType === 'VIRTUAL') {
+					item.realAmount = 0;
+					item.virtualAmount = item.transactionAmount || 0;
+				} else {
+					// Default to virtual if cashType is not set
+					item.realAmount = 0;
+					item.virtualAmount = item.transactionAmount || 0;
+				}
+				
 				return item;
 			})
 		);
@@ -151,6 +165,177 @@ export const getTransactions = async (user, query) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const transactionSummary = async (user, query) => {
+	try {
+		const {
+			startDate,
+			endDate,
+			cashType,
+			transactionType,
+			status,
+		} = query;
+
+		let params = {};
+
+		if (user.role !== 'ADMIN') {
+			params.user = user._id;
+		}
+
+		if (cashType) {
+			params.cashType = cashType.toUpperCase();
+		}
+
+		if (transactionType) {
+			params.transactionType = transactionType.toUpperCase();
+		}
+
+		if (status) {
+			params.status = status.toUpperCase();
+		}
+
+		if (startDate && endDate) {
+			params.createdAt = {
+				$gte: new Date(startDate),
+				$lte: new Date(endDate),
+			};
+		}
+
+		// Get summary statistics with separate real and virtual amounts
+		const summary = await Transaction.aggregate([
+			{ $match: params },
+			{
+				$group: {
+					_id: null,
+					totalTransactions: { $sum: 1 },
+					totalAmount: { $sum: '$transactionAmount' },
+					totalRealAmount: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'REAL'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalVirtualAmount: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'VIRTUAL'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalCredits: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$transactionType', 'CREDIT'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalCreditsReal: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'CREDIT'] },
+										{ $eq: ['$cashType', 'REAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalCreditsVirtual: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'CREDIT'] },
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebits: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$transactionType', 'DEBIT'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebitsReal: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'DEBIT'] },
+										{ $eq: ['$cashType', 'REAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebitsVirtual: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'DEBIT'] },
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+				},
+			},
+		]);
+
+		const result = summary[0] || {
+			totalTransactions: 0,
+			totalAmount: 0,
+			totalRealAmount: 0,
+			totalVirtualAmount: 0,
+			totalCredits: 0,
+			totalCreditsReal: 0,
+			totalCreditsVirtual: 0,
+			totalDebits: 0,
+			totalDebitsReal: 0,
+			totalDebitsVirtual: 0,
+		};
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				summary: result,
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.errors || error.message || 'Failed to get transaction summary',
 			},
 		};
 	}
@@ -1023,6 +1208,191 @@ export const makeTransaction = async (
 	}
 };
 
+export const initiateTransaction = async (user, body) => {
+	try {
+		const { userId, amount, amountType = 'VIRTUAL', transactionType } = body;
+
+		// Validate inputs
+		if (!userId || !amount || amount <= 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Valid userId and amount are required',
+				},
+			};
+		}
+
+		// Validate amountType
+		const cashType = amountType.toUpperCase();
+		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'amountType must be REAL or VIRTUAL',
+				},
+			};
+		}
+
+		// Determine transaction identifier based on transactionType
+		let transactionIdentifier = 'DEPOSIT';
+		if (transactionType) {
+			transactionIdentifier = transactionType.toUpperCase();
+		}
+
+		// For withdrawals, ensure only REAL cash type
+		if (transactionIdentifier.includes('WITHDRAW') && cashType !== 'REAL') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Withdrawals are only allowed for REAL cash type',
+				},
+			};
+		}
+
+		// Create transaction record (actual processing happens in processTransaction)
+		const transaction = await Transaction.create({
+			user: userId,
+			cashType,
+			transactionType: transactionIdentifier.includes('WITHDRAW') ? 'DEBIT' : 'CREDIT',
+			transactionIdentifier,
+			transactionAmount: amount,
+			status: 'PENDING',
+			referenceIndex: user._id.toString(),
+		});
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				transaction: {
+					id: transaction._id,
+					userId,
+					amount,
+					realAmount: cashType === 'REAL' ? amount : 0,
+					virtualAmount: cashType === 'VIRTUAL' ? amount : 0,
+					amountType: cashType,
+					transactionType: transactionIdentifier,
+					status: 'PENDING',
+				},
+				message: 'Transaction initiated successfully',
+			},
+		};
+	} catch (error) {
+		console.error('Initiate transaction error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to initiate transaction',
+			},
+		};
+	}
+};
+
+export const processTransaction = async (user, body) => {
+	try {
+		const { transactionId, userId, amount, amountType = 'VIRTUAL' } = body;
+
+		// Validate inputs
+		if (!transactionId && (!userId || !amount)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Either transactionId or userId and amount are required',
+				},
+			};
+		}
+
+		const cashType = amountType.toUpperCase();
+		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'amountType must be REAL or VIRTUAL',
+				},
+			};
+		}
+
+		let targetUserId = userId;
+		let transactionAmount = amount;
+		let transactionIdentifier = 'DEPOSIT';
+
+		// If transactionId is provided, fetch the transaction
+		if (transactionId) {
+			const transaction = await Transaction.findById(transactionId);
+			if (!transaction) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'Transaction not found',
+					},
+				};
+			}
+
+			if (transaction.status !== 'PENDING') {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Transaction is already ${transaction.status.toLowerCase()}`,
+					},
+				};
+			}
+
+			targetUserId = transaction.user.toString();
+			transactionAmount = transaction.transactionAmount;
+			transactionIdentifier = transaction.transactionIdentifier;
+		}
+
+		// Process the transaction using makeTransaction
+		await makeTransaction(
+			targetUserId,
+			user.role,
+			transactionIdentifier,
+			transactionAmount,
+			transactionId || user._id.toString(),
+			cashType
+		);
+
+		// Update transaction status if transactionId was provided
+		if (transactionId) {
+			await Transaction.findByIdAndUpdate(transactionId, {
+				status: 'COMPLETED',
+			});
+		}
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				message: 'Transaction processed successfully',
+				transaction: {
+					userId: targetUserId,
+					amount: transactionAmount,
+					realAmount: cashType === 'REAL' ? transactionAmount : 0,
+					virtualAmount: cashType === 'VIRTUAL' ? transactionAmount : 0,
+					amountType: cashType,
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Process transaction error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to process transaction',
+			},
+		};
+	}
+};
+
 export const commissionSummaryByAgent = async (
 	user,
 	{ agentId, startDate, endDate }
@@ -1092,30 +1462,88 @@ export const commissionSummaryByAgent = async (
 		const summary = {
 			totalTransactions: transactions.length,
 			totalCommissionEarned: 0,
+			totalCommissionEarnedReal: 0,
+			totalCommissionEarnedVirtual: 0,
 			totalVolume: 0,
+			totalVolumeReal: 0,
+			totalVolumeVirtual: 0,
 			gameBreakdown: {
-				borlette: { volume: 0, commission: 0, count: 0 },
-				megamillion: { volume: 0, commission: 0, count: 0 },
-				domino: { volume: 0, commission: 0, count: 0 },
-				roulette: { volume: 0, commission: 0, count: 0 },
+				borlette: { 
+					volume: 0, 
+					volumeReal: 0, 
+					volumeVirtual: 0,
+					commission: 0, 
+					commissionReal: 0,
+					commissionVirtual: 0,
+					count: 0 
+				},
+				megamillion: { 
+					volume: 0, 
+					volumeReal: 0, 
+					volumeVirtual: 0,
+					commission: 0, 
+					commissionReal: 0,
+					commissionVirtual: 0,
+					count: 0 
+				},
+				domino: { 
+					volume: 0, 
+					volumeReal: 0, 
+					volumeVirtual: 0,
+					commission: 0, 
+					commissionReal: 0,
+					commissionVirtual: 0,
+					count: 0 
+				},
+				roulette: { 
+					volume: 0, 
+					volumeReal: 0, 
+					volumeVirtual: 0,
+					commission: 0, 
+					commissionReal: 0,
+					commissionVirtual: 0,
+					count: 0 
+				},
 			},
 		};
 
 		transactions.forEach(transaction => {
 			const amount = transaction.transactionAmount;
+			const isReal = transaction.cashType === 'REAL';
+			const isVirtual = transaction.cashType === 'VIRTUAL';
 
 			if (transaction.transactionIdentifier.includes('COMMISSION')) {
 				summary.totalCommissionEarned += amount;
+				if (isReal) {
+					summary.totalCommissionEarnedReal += amount;
+				} else if (isVirtual) {
+					summary.totalCommissionEarnedVirtual += amount;
+				}
 			} else {
 				summary.totalVolume += amount;
+				if (isReal) {
+					summary.totalVolumeReal += amount;
+				} else if (isVirtual) {
+					summary.totalVolumeVirtual += amount;
+				}
 			}
 
 			// Categorize by game type
 			if (transaction.transactionIdentifier.includes('BORLETTE')) {
 				if (transaction.transactionIdentifier.includes('COMMISSION')) {
 					summary.gameBreakdown.borlette.commission += amount;
+					if (isReal) {
+						summary.gameBreakdown.borlette.commissionReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.borlette.commissionVirtual += amount;
+					}
 				} else {
 					summary.gameBreakdown.borlette.volume += amount;
+					if (isReal) {
+						summary.gameBreakdown.borlette.volumeReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.borlette.volumeVirtual += amount;
+					}
 					summary.gameBreakdown.borlette.count++;
 				}
 			} else if (
@@ -1123,22 +1551,52 @@ export const commissionSummaryByAgent = async (
 			) {
 				if (transaction.transactionIdentifier.includes('COMMISSION')) {
 					summary.gameBreakdown.megamillion.commission += amount;
+					if (isReal) {
+						summary.gameBreakdown.megamillion.commissionReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.megamillion.commissionVirtual += amount;
+					}
 				} else {
 					summary.gameBreakdown.megamillion.volume += amount;
+					if (isReal) {
+						summary.gameBreakdown.megamillion.volumeReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.megamillion.volumeVirtual += amount;
+					}
 					summary.gameBreakdown.megamillion.count++;
 				}
 			} else if (transaction.transactionIdentifier.includes('DOMINO')) {
 				if (transaction.transactionIdentifier.includes('COMMISSION')) {
 					summary.gameBreakdown.domino.commission += amount;
+					if (isReal) {
+						summary.gameBreakdown.domino.commissionReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.domino.commissionVirtual += amount;
+					}
 				} else {
 					summary.gameBreakdown.domino.volume += amount;
+					if (isReal) {
+						summary.gameBreakdown.domino.volumeReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.domino.volumeVirtual += amount;
+					}
 					summary.gameBreakdown.domino.count++;
 				}
 			} else if (transaction.transactionIdentifier.includes('ROULETTE')) {
 				if (transaction.transactionIdentifier.includes('COMMISSION')) {
 					summary.gameBreakdown.roulette.commission += amount;
+					if (isReal) {
+						summary.gameBreakdown.roulette.commissionReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.roulette.commissionVirtual += amount;
+					}
 				} else {
 					summary.gameBreakdown.roulette.volume += amount;
+					if (isReal) {
+						summary.gameBreakdown.roulette.volumeReal += amount;
+					} else if (isVirtual) {
+						summary.gameBreakdown.roulette.volumeVirtual += amount;
+					}
 					summary.gameBreakdown.roulette.count++;
 				}
 			}

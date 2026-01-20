@@ -80,13 +80,19 @@ export const getWalletSummary = async req => {
 			},
 		]);
 
-		// Get payments summary
+		// Get payments summary with separate real and virtual amounts
 		const paymentsSummary = await Payment.aggregate([
 			{
 				$group: {
 					_id: '$status',
 					count: { $sum: 1 },
 					totalAmount: { $sum: '$amount' },
+					totalRealAmount: {
+						$sum: { $ifNull: ['$realCashAmount', 0] },
+					},
+					totalVirtualAmount: {
+						$sum: { $ifNull: ['$virtualCashAmount', 0] },
+					},
 				},
 			},
 		]);
@@ -97,20 +103,29 @@ export const getWalletSummary = async req => {
 			paymentsData[item._id] = {
 				count: item.count,
 				totalAmount: item.totalAmount,
+				totalRealAmount: item.totalRealAmount || 0,
+				totalVirtualAmount: item.totalVirtualAmount || 0,
 			};
 		});
+
+		const walletData = walletSummary[0] || {
+			totalUsers: 0,
+			totalVirtualBalance: 0,
+			totalRealWithdrawable: 0,
+			totalRealNonWithdrawable: 0,
+			totalPendingWithdrawals: 0,
+		};
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				summary: {
-					wallets: walletSummary[0] || {
-						totalUsers: 0,
-						totalVirtualBalance: 0,
-						totalRealWithdrawable: 0,
-						totalRealNonWithdrawable: 0,
-						totalPendingWithdrawals: 0,
+					wallets: {
+						...walletData,
+						totalRealBalance:
+							(walletData.totalRealWithdrawable || 0) +
+							(walletData.totalRealNonWithdrawable || 0),
 					},
 					payments: paymentsData,
 				},
@@ -423,6 +438,8 @@ export const createManualPayment = async (user, body) => {
 		const {
 			userId,
 			amount: providedAmount,
+			realAmount: providedRealAmount,
+			virtualAmount: providedVirtualAmount,
 			bankTransferReference,
 			bankName,
 			transferDate,
@@ -466,6 +483,8 @@ export const createManualPayment = async (user, body) => {
 
 		let plan = null;
 		let finalAmount = providedAmount;
+		let finalRealAmount = providedRealAmount;
+		let finalVirtualAmount = providedVirtualAmount;
 
 		// If plan is specified, validate it and fetch amount from plan
 		if (planId) {
@@ -492,6 +511,8 @@ export const createManualPayment = async (user, body) => {
 
 			// If planId exists, fetch amount from plan
 			finalAmount = plan.price;
+			finalRealAmount = plan.realCashAmount || 0;
+			finalVirtualAmount = plan.virtualCashAmount || 0;
 
 			// If amount was also provided, validate it matches the plan price
 			if (
@@ -507,14 +528,51 @@ export const createManualPayment = async (user, body) => {
 				};
 			}
 		} else {
-			if (!providedAmount || providedAmount <= 0) {
+			// If no plan, require either total amount or both real and virtual amounts
+			if (
+				providedRealAmount !== undefined ||
+				providedVirtualAmount !== undefined
+			) {
+				// If real/virtual amounts are provided, validate them
+				finalRealAmount = providedRealAmount || 0;
+				finalVirtualAmount = providedVirtualAmount || 0;
+				finalAmount = finalRealAmount + finalVirtualAmount;
+
+				if (finalAmount <= 0) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'Total of realAmount and virtualAmount must be greater than 0',
+						},
+					};
+				}
+
+				// If total amount was also provided, validate it matches
+				if (
+					providedAmount &&
+					Math.abs(providedAmount - finalAmount) > 0.01
+				) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: `Total amount (${providedAmount}) does not match sum of realAmount (${finalRealAmount}) and virtualAmount (${finalVirtualAmount})`,
+						},
+					};
+				}
+			} else if (!providedAmount || providedAmount <= 0) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: 'Amount is required when no plan is specified',
+						error: 'Amount or both realAmount and virtualAmount are required when no plan is specified',
 					},
 				};
+			} else {
+				// If only total amount provided, default to real cash
+				finalRealAmount = finalAmount;
+				finalVirtualAmount = 0;
 			}
 		}
 
@@ -532,6 +590,8 @@ export const createManualPayment = async (user, body) => {
 			method: 'BANK_TRANSFER',
 			status: 'PENDING',
 			plan: planId || null,
+			realCashAmount: finalRealAmount,
+			virtualCashAmount: finalVirtualAmount,
 			isManual: true,
 			bankTransferReference,
 			bankName: bankName || null,
@@ -540,11 +600,16 @@ export const createManualPayment = async (user, body) => {
 			notes: notes || null,
 		});
 
+		const paymentResponse = payment.toObject ? payment.toObject() : payment;
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				payment,
+				payment: {
+					...paymentResponse,
+					realAmount: paymentResponse.realCashAmount || 0,
+					virtualAmount: paymentResponse.virtualCashAmount || 0,
+				},
 				message: planId
 					? `Manual payment record created successfully with amount $${finalAmount} from plan "${plan.name}"`
 					: 'Manual payment record created successfully',
@@ -610,6 +675,7 @@ export const confirmPayment = async (user, { paymentId }) => {
 		// Process wallet credits and user plan creation
 		await processPaymentCompletion(payment);
 
+		const paymentObj = payment.toObject ? payment.toObject() : payment;
 		return {
 			status: 200,
 			entity: {
@@ -618,8 +684,10 @@ export const confirmPayment = async (user, { paymentId }) => {
 				payment: {
 					id: payment._id,
 					amount: payment.amount,
-					virtualCashAmount: payment.virtualCashAmount,
-					realCashAmount: payment.realCashAmount,
+					realAmount: paymentObj.realCashAmount || 0,
+					virtualAmount: paymentObj.virtualCashAmount || 0,
+					realCashAmount: paymentObj.realCashAmount || 0,
+					virtualCashAmount: paymentObj.virtualCashAmount || 0,
 					plan: payment.plan
 						? { id: payment.plan._id, name: payment.plan.name }
 						: null,
@@ -670,7 +738,15 @@ export const getAllPayments = async (user, query) => {
 			.populate('confirmedBy', 'name phone email')
 			.sort({ createdAt: -1 })
 			.skip(skip)
-			.limit(parseInt(limit));
+			.limit(parseInt(limit))
+			.lean();
+
+		// Transform payments to include separate realAmount and virtualAmount
+		const transformedPayments = payments.map(payment => ({
+			...payment,
+			realAmount: payment.realCashAmount || 0,
+			virtualAmount: payment.virtualCashAmount || 0,
+		}));
 
 		// Get total count
 		const total = await Payment.countDocuments(filter);
@@ -679,7 +755,7 @@ export const getAllPayments = async (user, query) => {
 			status: 200,
 			entity: {
 				success: true,
-				payments,
+				payments: transformedPayments,
 				pagination: {
 					page: parseInt(page),
 					limit: parseInt(limit),
@@ -716,7 +792,15 @@ export const getUserPayments = async ({ _id, query }) => {
 			.populate('plan', 'name price')
 			.sort({ createdAt: -1 })
 			.skip(skip)
-			.limit(parseInt(limit));
+			.limit(parseInt(limit))
+			.lean();
+
+		// Transform payments to include separate realAmount and virtualAmount
+		const transformedPayments = payments.map(payment => ({
+			...payment,
+			realAmount: payment.realCashAmount || 0,
+			virtualAmount: payment.virtualCashAmount || 0,
+		}));
 
 		// Get total count
 		const total = await Payment.countDocuments(filter);
@@ -725,7 +809,7 @@ export const getUserPayments = async ({ _id, query }) => {
 			status: 200,
 			entity: {
 				success: true,
-				payments,
+				payments: transformedPayments,
 				pagination: {
 					page: parseInt(page),
 					limit: parseInt(limit),
@@ -942,7 +1026,9 @@ export const handleRapydWebhook = async req => {
 			const metadata = data?.metadata || {};
 
 			if (!paymentId && !metadata.sessionId) {
-				console.error('No payment ID or session ID found in webhook data');
+				console.error(
+					'No payment ID or session ID found in webhook data'
+				);
 				return {
 					status: 400,
 					entity: {
@@ -1040,7 +1126,9 @@ export const handleRapydWebhook = async req => {
 					const rapydStatus = data?.status || 'ERR';
 					payment.status = mapPaymentStatus(rapydStatus);
 					payment.errorMessage =
-						data?.failure_reason || data?.message || 'Payment failed';
+						data?.failure_reason ||
+						data?.message ||
+						'Payment failed';
 					payment.providerResponse = {
 						...payment.providerResponse,
 						webhook_data: data,
@@ -1061,7 +1149,9 @@ export const handleRapydWebhook = async req => {
 			const metadata = data?.metadata || {};
 
 			if (!payoutId && !metadata.withdrawalId) {
-				console.error('No payout ID or withdrawal ID found in webhook data');
+				console.error(
+					'No payout ID or withdrawal ID found in webhook data'
+				);
 				return {
 					status: 400,
 					entity: {
@@ -1116,7 +1206,9 @@ export const handleRapydWebhook = async req => {
 					const rapydStatus = data?.status || 'ERR';
 					withdrawal.status = mapPayoutStatus(rapydStatus);
 					withdrawal.errorMessage =
-						data?.failure_reason || data?.message || 'Payout failed';
+						data?.failure_reason ||
+						data?.message ||
+						'Payout failed';
 					withdrawal.paymentDetails = {
 						...withdrawal.paymentDetails,
 						webhook_data: data,

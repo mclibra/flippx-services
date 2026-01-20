@@ -56,13 +56,51 @@ export const list = async (queryParams, user) => {
 		// Get total count for pagination
 		const total = await BorletteTicket.countDocuments(query);
 
-		// Calculate summary statistics
-		const totalAmountPlayed = tickets.reduce(
+		// Transform tickets to include separate realAmount and virtualAmount
+		const transformedTickets = tickets.map(ticket => {
+			const ticketObj = ticket.toObject ? ticket.toObject() : ticket;
+			if (ticketObj.cashType === 'REAL') {
+				return {
+					...ticketObj,
+					realAmountPlayed: ticketObj.totalAmountPlayed || 0,
+					virtualAmountPlayed: 0,
+					realAmountWon: ticketObj.totalAmountWon || 0,
+					virtualAmountWon: 0,
+				};
+			} else {
+				return {
+					...ticketObj,
+					realAmountPlayed: 0,
+					virtualAmountPlayed: ticketObj.totalAmountPlayed || 0,
+					realAmountWon: 0,
+					virtualAmountWon: ticketObj.totalAmountWon || 0,
+				};
+			}
+		});
+
+		// Calculate summary statistics with separate real and virtual amounts
+		const totalAmountPlayed = transformedTickets.reduce(
 			(sum, ticket) => sum + (ticket.totalAmountPlayed || 0),
 			0
 		);
-		const totalAmountWon = tickets.reduce(
+		const totalAmountWon = transformedTickets.reduce(
 			(sum, ticket) => sum + (ticket.totalAmountWon || 0),
+			0
+		);
+		const totalRealAmountPlayed = transformedTickets.reduce(
+			(sum, ticket) => sum + (ticket.realAmountPlayed || 0),
+			0
+		);
+		const totalVirtualAmountPlayed = transformedTickets.reduce(
+			(sum, ticket) => sum + (ticket.virtualAmountPlayed || 0),
+			0
+		);
+		const totalRealAmountWon = transformedTickets.reduce(
+			(sum, ticket) => sum + (ticket.realAmountWon || 0),
+			0
+		);
+		const totalVirtualAmountWon = transformedTickets.reduce(
+			(sum, ticket) => sum + (ticket.virtualAmountWon || 0),
 			0
 		);
 
@@ -70,7 +108,7 @@ export const list = async (queryParams, user) => {
 			status: 200,
 			entity: {
 				success: true,
-				tickets,
+				tickets: transformedTickets,
 				pagination: {
 					total,
 					offset: parseInt(offset),
@@ -81,7 +119,13 @@ export const list = async (queryParams, user) => {
 					totalTickets: tickets.length,
 					totalAmountPlayed,
 					totalAmountWon,
+					totalRealAmountPlayed,
+					totalVirtualAmountPlayed,
+					totalRealAmountWon,
+					totalVirtualAmountWon,
 					netResult: totalAmountWon - totalAmountPlayed,
+					netResultReal: totalRealAmountWon - totalRealAmountPlayed,
+					netResultVirtual: totalVirtualAmountWon - totalVirtualAmountPlayed,
 				},
 			},
 		};
