@@ -922,6 +922,8 @@ class CronScheduler {
 										.slice(0, 5)
 										.map(d => d.drawDate)
 								);
+								lottery.status = 'ERROR';
+								await lottery.save();
 								return;
 							}
 						} else {
@@ -1147,6 +1149,8 @@ class CronScheduler {
 										.slice(0, 5)
 										.map(d => d.drawDate)
 								);
+								lottery.status = 'ERROR';
+								await lottery.save();
 								return;
 							}
 						} else {
