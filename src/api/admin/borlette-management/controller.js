@@ -22,6 +22,9 @@ export const listBorlette = async query => {
 			search,
 			sortBy = 'createdAt',
 			sortOrder = 'desc',
+			minAmount,
+			maxAmount,
+			cashType,
 		} = query;
 
 		// Build filter object
@@ -78,13 +81,32 @@ export const listBorlette = async query => {
 			lotteries.map(async lottery => {
 				const lotteryId = lottery._id.toString();
 
-				// Get ticket statistics
+				// Build ticket match filter
+				const ticketMatchFilter = {
+					lottery: lotteryId,
+					status: { $ne: 'CANCELLED' },
+				};
+
+				// Add amount filters
+				if (minAmount !== undefined || maxAmount !== undefined) {
+					ticketMatchFilter.totalAmountPlayed = {};
+					if (minAmount !== undefined) {
+						ticketMatchFilter.totalAmountPlayed.$gte = parseFloat(minAmount);
+					}
+					if (maxAmount !== undefined) {
+						ticketMatchFilter.totalAmountPlayed.$lte = parseFloat(maxAmount);
+					}
+				}
+
+				// Add cashType filter
+				if (cashType) {
+					ticketMatchFilter.cashType = cashType.toUpperCase();
+				}
+
+				// Get ticket statistics with separate real and virtual amounts
 				const ticketStats = await BorletteTicket.aggregate([
 					{
-						$match: {
-							lottery: lotteryId,
-							status: { $ne: 'CANCELLED' },
-						},
+						$match: ticketMatchFilter,
 					},
 					{
 						$group: {
@@ -93,6 +115,42 @@ export const listBorlette = async query => {
 							totalAmountPlayed: { $sum: '$totalAmountPlayed' },
 							totalAmountWon: {
 								$sum: { $ifNull: ['$totalAmountWon', 0] },
+							},
+							totalRealAmountPlayed: {
+								$sum: {
+									$cond: [
+										{ $eq: ['$cashType', 'REAL'] },
+										'$totalAmountPlayed',
+										0,
+									],
+								},
+							},
+							totalVirtualAmountPlayed: {
+								$sum: {
+									$cond: [
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+										'$totalAmountPlayed',
+										0,
+									],
+								},
+							},
+							totalRealAmountWon: {
+								$sum: {
+									$cond: [
+										{ $eq: ['$cashType', 'REAL'] },
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
+								},
+							},
+							totalVirtualAmountWon: {
+								$sum: {
+									$cond: [
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+										{ $ifNull: ['$totalAmountWon', 0] },
+										0,
+									],
+								},
 							},
 							winningTickets: {
 								$sum: {
@@ -124,20 +182,35 @@ export const listBorlette = async query => {
 								totalTickets: 0,
 								totalAmountPlayed: 0,
 								totalAmountWon: 0,
+								totalRealAmountPlayed: 0,
+								totalVirtualAmountPlayed: 0,
+								totalRealAmountWon: 0,
+								totalVirtualAmountWon: 0,
 								winningTickets: 0,
 							};
+
+				const profit = stats.totalAmountPlayed - stats.totalAmountWon;
+				const profitReal = stats.totalRealAmountPlayed - stats.totalRealAmountWon;
+				const profitVirtual = stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
 
 				return {
 					...lottery.toObject(),
 					statistics: {
 						...stats,
-						profit: stats.totalAmountPlayed - stats.totalAmountWon,
+						profit,
+						profitReal,
+						profitVirtual,
 						profitMargin:
 							stats.totalAmountPlayed > 0
-								? ((stats.totalAmountPlayed -
-										stats.totalAmountWon) /
-										stats.totalAmountPlayed) *
-									100
+								? (profit / stats.totalAmountPlayed) * 100
+								: 0,
+						profitMarginReal:
+							stats.totalRealAmountPlayed > 0
+								? (profitReal / stats.totalRealAmountPlayed) * 100
+								: 0,
+						profitMarginVirtual:
+							stats.totalVirtualAmountPlayed > 0
+								? (profitVirtual / stats.totalVirtualAmountPlayed) * 100
 								: 0,
 					},
 				};

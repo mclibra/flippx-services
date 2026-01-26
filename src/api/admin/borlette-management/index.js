@@ -29,6 +29,9 @@ const router = new Router();
  * - search: Search by title or metadata
  * - sortBy: Sort field (default: createdAt)
  * - sortOrder: Sort order (asc/desc, default: desc)
+ * - minAmount: Minimum ticket amount to filter by
+ * - maxAmount: Maximum ticket amount to filter by
+ * - cashType: Filter by cash type (REAL, VIRTUAL)
  */
 router.get(
 	'',
