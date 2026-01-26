@@ -83,20 +83,57 @@ export const listMegamillion = async query => {
 					status: { $ne: 'CANCELLED' },
 				};
 
-				// Add amount filters
-				if (minAmount !== undefined || maxAmount !== undefined) {
-					ticketMatchFilter.amountPlayed = {};
-					if (minAmount !== undefined) {
-						ticketMatchFilter.amountPlayed.$gte = parseFloat(minAmount);
+				// Add date filters for tickets (filter by purchasedOn timestamp)
+				if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
+					const dateFilter = {};
+					let hasDateFilter = false;
+					
+					if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
+						const startTimestamp = parseInt(startDate);
+						if (!isNaN(startTimestamp) && startTimestamp > 0) {
+							dateFilter.$gte = startTimestamp;
+							hasDateFilter = true;
+						}
 					}
-					if (maxAmount !== undefined) {
-						ticketMatchFilter.amountPlayed.$lte = parseFloat(maxAmount);
+					if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
+						const endTimestamp = parseInt(endDate);
+						if (!isNaN(endTimestamp) && endTimestamp > 0) {
+							dateFilter.$lte = endTimestamp;
+							hasDateFilter = true;
+						}
+					}
+					
+					if (hasDateFilter && Object.keys(dateFilter).length > 0) {
+						ticketMatchFilter.purchasedOn = dateFilter;
+					}
+				}
+
+				// Add amount filters
+				if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
+					const min = parseFloat(minAmount);
+					if (!isNaN(min) && min >= 0) {
+						if (!ticketMatchFilter.amountPlayed) {
+							ticketMatchFilter.amountPlayed = {};
+						}
+						ticketMatchFilter.amountPlayed.$gte = min;
+					}
+				}
+				if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
+					const max = parseFloat(maxAmount);
+					if (!isNaN(max) && max >= 0) {
+						if (!ticketMatchFilter.amountPlayed) {
+							ticketMatchFilter.amountPlayed = {};
+						}
+						ticketMatchFilter.amountPlayed.$lte = max;
 					}
 				}
 
 				// Add cashType filter
-				if (cashType) {
-					ticketMatchFilter.cashType = cashType.toUpperCase();
+				if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+					const upperCashType = cashType.toUpperCase().trim();
+					if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
+						ticketMatchFilter.cashType = upperCashType;
+					}
 				}
 
 				// Get ticket statistics with separate real and virtual amounts
