@@ -234,8 +234,8 @@ export const listBorlette = async query => {
 				}
 			}
 
-				// Get ticket statistics with separate real and virtual amounts
-				const ticketStats = await BorletteTicket.aggregate([
+			// Get ticket statistics with separate real and virtual amounts
+			const ticketStats = await BorletteTicket.aggregate([
 					{
 						$match: ticketMatchFilter,
 					},
@@ -306,47 +306,46 @@ export const listBorlette = async query => {
 					},
 				]);
 
-				const stats =
-					ticketStats.length > 0
-						? ticketStats[0]
-						: {
-								totalTickets: 0,
-								totalAmountPlayed: 0,
-								totalAmountWon: 0,
-								totalRealAmountPlayed: 0,
-								totalVirtualAmountPlayed: 0,
-								totalRealAmountWon: 0,
-								totalVirtualAmountWon: 0,
-								winningTickets: 0,
-							};
+			const stats =
+				ticketStats.length > 0
+					? ticketStats[0]
+					: {
+							totalTickets: 0,
+							totalAmountPlayed: 0,
+							totalAmountWon: 0,
+							totalRealAmountPlayed: 0,
+							totalVirtualAmountPlayed: 0,
+							totalRealAmountWon: 0,
+							totalVirtualAmountWon: 0,
+							winningTickets: 0,
+						};
 
-				const profit = stats.totalAmountPlayed - stats.totalAmountWon;
-				const profitReal = stats.totalRealAmountPlayed - stats.totalRealAmountWon;
-				const profitVirtual = stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
+			const profit = stats.totalAmountPlayed - stats.totalAmountWon;
+			const profitReal = stats.totalRealAmountPlayed - stats.totalRealAmountWon;
+			const profitVirtual = stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
 
-				return {
-					...lottery.toObject(),
-					statistics: {
-						...stats,
-						profit,
-						profitReal,
-						profitVirtual,
-						profitMargin:
-							stats.totalAmountPlayed > 0
-								? (profit / stats.totalAmountPlayed) * 100
-								: 0,
-						profitMarginReal:
-							stats.totalRealAmountPlayed > 0
-								? (profitReal / stats.totalRealAmountPlayed) * 100
-								: 0,
-						profitMarginVirtual:
-							stats.totalVirtualAmountPlayed > 0
-								? (profitVirtual / stats.totalVirtualAmountPlayed) * 100
-								: 0,
-					},
-				};
-			})
-		);
+			return {
+				...lottery.toObject(),
+				statistics: {
+					...stats,
+					profit,
+					profitReal,
+					profitVirtual,
+					profitMargin:
+						stats.totalAmountPlayed > 0
+							? (profit / stats.totalAmountPlayed) * 100
+							: 0,
+					profitMarginReal:
+						stats.totalRealAmountPlayed > 0
+							? (profitReal / stats.totalRealAmountPlayed) * 100
+							: 0,
+					profitMarginVirtual:
+						stats.totalVirtualAmountPlayed > 0
+							? (profitVirtual / stats.totalVirtualAmountPlayed) * 100
+							: 0,
+				},
+			};
+		});
 
 		// Wait for all promises to resolve
 		const enrichedLotteries = await Promise.all(enrichedLotteriesPromises);
