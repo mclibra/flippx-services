@@ -57,24 +57,118 @@ export const listMegamillion = async query => {
 			];
 		}
 
-		// Calculate pagination
-		const skip = (page - 1) * limit;
+		// Check if any ticket filters are applied
+		const hasTicketFilters = 
+			(minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') ||
+			(maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') ||
+			(cashType && cashType.trim() !== '' && cashType !== 'undefined') ||
+			(startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') ||
+			(endDate && endDate !== 'undefined' && endDate !== null && endDate !== '');
 
-		// Get lotteries with populated data
-		const lotteries = await Lottery.find(filter)
-			.populate('state', 'name code')
-			.populate('createdBy', 'name userName email')
-			.skip(skip)
-			.limit(parseInt(limit))
-			.sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
-			.exec();
+		// If ticket filters are applied, we need to filter lotteries by tickets first
+		// Otherwise, we can paginate normally
+		let lotteries;
+		let total;
 
-		// Get total count
-		const total = await Lottery.countDocuments(filter);
+		if (hasTicketFilters) {
+			// Get all lotteries matching the lottery filter (without pagination)
+			const allLotteries = await Lottery.find(filter)
+				.populate('state', 'name code')
+				.populate('createdBy', 'name userName email')
+				.sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+				.exec();
+
+			// Build ticket match filter template (without lottery ID)
+			const ticketMatchFilterTemplate = {
+				status: { $ne: 'CANCELLED' },
+			};
+
+			// Add date filters for tickets
+			if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
+				const dateFilter = {};
+				let hasDateFilter = false;
+				
+				if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
+					const startTimestamp = parseInt(startDate);
+					if (!isNaN(startTimestamp) && startTimestamp > 0) {
+						dateFilter.$gte = startTimestamp;
+						hasDateFilter = true;
+					}
+				}
+				if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
+					const endTimestamp = parseInt(endDate);
+					if (!isNaN(endTimestamp) && endTimestamp > 0) {
+						dateFilter.$lte = endTimestamp;
+						hasDateFilter = true;
+					}
+				}
+				
+				if (hasDateFilter && Object.keys(dateFilter).length > 0) {
+					ticketMatchFilterTemplate.purchasedOn = dateFilter;
+				}
+			}
+
+			// Add amount filters
+			if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
+				const min = parseFloat(minAmount);
+				if (!isNaN(min) && min >= 0) {
+					if (!ticketMatchFilterTemplate.amountPlayed) {
+						ticketMatchFilterTemplate.amountPlayed = {};
+					}
+					ticketMatchFilterTemplate.amountPlayed.$gte = min;
+				}
+			}
+			if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
+				const max = parseFloat(maxAmount);
+				if (!isNaN(max) && max >= 0) {
+					if (!ticketMatchFilterTemplate.amountPlayed) {
+						ticketMatchFilterTemplate.amountPlayed = {};
+					}
+					ticketMatchFilterTemplate.amountPlayed.$lte = max;
+				}
+			}
+
+			// Add cashType filter
+			if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+				const upperCashType = cashType.toUpperCase().trim();
+				if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
+					ticketMatchFilterTemplate.cashType = upperCashType;
+				}
+			}
+
+			// Filter lotteries that have at least one ticket matching the criteria
+			const lotteriesWithTickets = await Promise.all(
+				allLotteries.map(async lottery => {
+					const ticketCount = await MegaMillionTicket.countDocuments({
+						...ticketMatchFilterTemplate,
+						lottery: lottery._id.toString(),
+					});
+					return ticketCount > 0 ? lottery : null;
+				})
+			);
+
+			// Remove null entries (lotteries with no matching tickets)
+			const filteredLotteries = lotteriesWithTickets.filter(l => l !== null);
+
+			// Apply pagination
+			const skip = (page - 1) * limit;
+			lotteries = filteredLotteries.slice(skip, skip + parseInt(limit));
+			total = filteredLotteries.length;
+		} else {
+			// No ticket filters, paginate normally
+			const skip = (page - 1) * limit;
+			lotteries = await Lottery.find(filter)
+				.populate('state', 'name code')
+				.populate('createdBy', 'name userName email')
+				.skip(skip)
+				.limit(parseInt(limit))
+				.sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+				.exec();
+			total = await Lottery.countDocuments(filter);
+		}
 
 		// Enrich with ticket statistics
-		const enrichedLotteries = await Promise.all(
-			lotteries.map(async lottery => {
+		const enrichedLotteriesPromises = lotteries.map(async lottery => {
 				const lotteryId = lottery._id.toString();
 
 				// Build ticket match filter
@@ -244,6 +338,9 @@ export const listMegamillion = async query => {
 				};
 			})
 		);
+
+		// Wait for all promises to resolve
+		const enrichedLotteries = await Promise.all(enrichedLotteriesPromises);
 
 		return {
 			status: 200,
