@@ -397,19 +397,41 @@ export const getBorletteDetails = async lotteryId => {
 		}
 
 		// Get all tickets for this lottery
-		const tickets = await BorletteTicket.find({
+		const ticketsRaw = await BorletteTicket.find({
 			lottery: lotteryId,
 		})
 			.populate('user', 'name email phone userName')
 			.sort({ createdAt: -1 })
 			.exec();
 
+		// Transform tickets to separate real and virtual cash
+		const tickets = ticketsRaw.map(ticket => {
+			const ticketObj = ticket.toObject();
+			const isReal = ticketObj.cashType === 'REAL';
+			const isVirtual = ticketObj.cashType === 'VIRTUAL';
+
+			return {
+				...ticketObj,
+				totalAmountPlayedReal: isReal ? ticketObj.totalAmountPlayed : 0,
+				totalAmountPlayedVirtual: isVirtual ? ticketObj.totalAmountPlayed : 0,
+				totalAmountWonReal: isReal ? (ticketObj.totalAmountWon || 0) : 0,
+				totalAmountWonVirtual: isVirtual ? (ticketObj.totalAmountWon || 0) : 0,
+				numbers: ticketObj.numbers.map(num => ({
+					...num,
+					amountPlayedReal: isReal ? num.amountPlayed : 0,
+					amountPlayedVirtual: isVirtual ? num.amountPlayed : 0,
+					amountWonReal: isReal ? (num.amountWon || 0) : 0,
+					amountWonVirtual: isVirtual ? (num.amountWon || 0) : 0,
+				})),
+			};
+		});
+
 		// Get lottery restrictions
 		const restrictions = await LotteryRestriction.findOne({
 			lottery: lotteryId.toString(),
 		}).exec();
 
-		// Calculate ticket statistics
+		// Calculate ticket statistics - separate by cash type
 		const ticketStats = await BorletteTicket.aggregate([
 			{
 				$match: {
@@ -424,6 +446,34 @@ export const getBorletteDetails = async lotteryId => {
 					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
 					totalAmountWon: {
 						$sum: { $ifNull: ['$totalAmountWon', 0] },
+					},
+					totalAmountPlayedReal: {
+						$sum: {
+							$cond: [{ $eq: ['$cashType', 'REAL'] }, '$totalAmountPlayed', 0],
+						},
+					},
+					totalAmountPlayedVirtual: {
+						$sum: {
+							$cond: [{ $eq: ['$cashType', 'VIRTUAL'] }, '$totalAmountPlayed', 0],
+						},
+					},
+					totalAmountWonReal: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'REAL'] },
+								{ $ifNull: ['$totalAmountWon', 0] },
+								0,
+							],
+						},
+					},
+					totalAmountWonVirtual: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'VIRTUAL'] },
+								{ $ifNull: ['$totalAmountWon', 0] },
+								0,
+							],
+						},
 					},
 					winningTickets: {
 						$sum: {
@@ -465,6 +515,10 @@ export const getBorletteDetails = async lotteryId => {
 						totalTickets: 0,
 						totalAmountPlayed: 0,
 						totalAmountWon: 0,
+						totalAmountPlayedReal: 0,
+						totalAmountPlayedVirtual: 0,
+						totalAmountWonReal: 0,
+						totalAmountWonVirtual: 0,
 						winningTickets: 0,
 						activeTickets: 0,
 						completedTickets: 0,
@@ -478,7 +532,7 @@ export const getBorletteDetails = async lotteryId => {
 				n.toString()
 			);
 
-			// Calculate breakdown by winning number
+			// Calculate breakdown by winning number - separate by cash type
 			const numberBreakdown = await BorletteTicket.aggregate([
 				{
 					$match: {
@@ -491,12 +545,95 @@ export const getBorletteDetails = async lotteryId => {
 				},
 				{
 					$group: {
-						_id: '$numbers.numberPlayed',
+						_id: {
+							numberPlayed: '$numbers.numberPlayed',
+							cashType: '$cashType',
+						},
 						totalAmountPlayed: { $sum: '$numbers.amountPlayed' },
 						totalAmountWon: {
 							$sum: { $ifNull: ['$numbers.amountWon', 0] },
 						},
 						ticketCount: { $sum: 1 },
+					},
+				},
+				{
+					$group: {
+						_id: '$_id.numberPlayed',
+						totalAmountPlayed: { $sum: '$totalAmountPlayed' },
+						totalAmountWon: { $sum: '$totalAmountWon' },
+						ticketCount: { $sum: '$ticketCount' },
+						totalAmountPlayedReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountPlayedVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountWonReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						totalAmountWonVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						ticketCountReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+						ticketCountVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+					},
+				},
+				{
+					$project: {
+						_id: 1,
+						totalAmountPlayed: 1,
+						totalAmountWon: 1,
+						ticketCount: 1,
+						realCash: {
+							totalAmountPlayed: '$totalAmountPlayedReal',
+							totalAmountWon: '$totalAmountWonReal',
+							ticketCount: '$ticketCountReal',
+						},
+						virtualCash: {
+							totalAmountPlayed: '$totalAmountPlayedVirtual',
+							totalAmountWon: '$totalAmountWonVirtual',
+							ticketCount: '$ticketCountVirtual',
+						},
 					},
 				},
 				{
@@ -545,6 +682,22 @@ export const getBorletteDetails = async lotteryId => {
 								? ((stats.totalAmountPlayed -
 										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
+									100
+								: 0,
+						profitReal: stats.totalAmountPlayedReal - stats.totalAmountWonReal,
+						profitVirtual: stats.totalAmountPlayedVirtual - stats.totalAmountWonVirtual,
+						profitMarginReal:
+							stats.totalAmountPlayedReal > 0
+								? ((stats.totalAmountPlayedReal -
+										stats.totalAmountWonReal) /
+										stats.totalAmountPlayedReal) *
+									100
+								: 0,
+						profitMarginVirtual:
+							stats.totalAmountPlayedVirtual > 0
+								? ((stats.totalAmountPlayedVirtual -
+										stats.totalAmountWonVirtual) /
+										stats.totalAmountPlayedVirtual) *
 									100
 								: 0,
 					},

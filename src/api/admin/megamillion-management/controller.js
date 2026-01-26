@@ -388,19 +388,34 @@ export const getMegamillionDetails = async lotteryId => {
 		}
 
 		// Get all tickets for this lottery
-		const tickets = await MegaMillionTicket.find({
+		const ticketsRaw = await MegaMillionTicket.find({
 			lottery: lotteryId,
 		})
 			.populate('user', 'name email phone userName')
 			.sort({ createdAt: -1 })
 			.exec();
 
+		// Transform tickets to separate real and virtual cash
+		const tickets = ticketsRaw.map(ticket => {
+			const ticketObj = ticket.toObject();
+			const isReal = ticketObj.cashType === 'REAL';
+			const isVirtual = ticketObj.cashType === 'VIRTUAL';
+
+			return {
+				...ticketObj,
+				amountPlayedReal: isReal ? ticketObj.amountPlayed : 0,
+				amountPlayedVirtual: isVirtual ? ticketObj.amountPlayed : 0,
+				amountWonReal: isReal ? (ticketObj.amountWon || 0) : 0,
+				amountWonVirtual: isVirtual ? (ticketObj.amountWon || 0) : 0,
+			};
+		});
+
 		// Get lottery restrictions
 		const restrictions = await LotteryRestriction.findOne({
 			lottery: lotteryId.toString(),
 		}).exec();
 
-		// Calculate ticket statistics
+		// Calculate ticket statistics - separate by cash type
 		const ticketStats = await MegaMillionTicket.aggregate([
 			{
 				$match: {
@@ -415,6 +430,34 @@ export const getMegamillionDetails = async lotteryId => {
 					totalAmountPlayed: { $sum: '$amountPlayed' },
 					totalAmountWon: {
 						$sum: { $ifNull: ['$amountWon', 0] },
+					},
+					totalAmountPlayedReal: {
+						$sum: {
+							$cond: [{ $eq: ['$cashType', 'REAL'] }, '$amountPlayed', 0],
+						},
+					},
+					totalAmountPlayedVirtual: {
+						$sum: {
+							$cond: [{ $eq: ['$cashType', 'VIRTUAL'] }, '$amountPlayed', 0],
+						},
+					},
+					totalAmountWonReal: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'REAL'] },
+								{ $ifNull: ['$amountWon', 0] },
+								0,
+							],
+						},
+					},
+					totalAmountWonVirtual: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$cashType', 'VIRTUAL'] },
+								{ $ifNull: ['$amountWon', 0] },
+								0,
+							],
+						},
 					},
 					winningTickets: {
 						$sum: {
@@ -453,6 +496,10 @@ export const getMegamillionDetails = async lotteryId => {
 						totalTickets: 0,
 						totalAmountPlayed: 0,
 						totalAmountWon: 0,
+						totalAmountPlayedReal: 0,
+						totalAmountPlayedVirtual: 0,
+						totalAmountWonReal: 0,
+						totalAmountWonVirtual: 0,
 						winningTickets: 0,
 						activeTickets: 0,
 						completedTickets: 0,
@@ -469,7 +516,7 @@ export const getMegamillionDetails = async lotteryId => {
 				? lottery.results.megaBall.toString()
 				: null;
 
-			// Calculate breakdown by winning number
+			// Calculate breakdown by winning number - separate by cash type
 			const numberBreakdown = await MegaMillionTicket.aggregate([
 				{
 					$match: {
@@ -482,7 +529,10 @@ export const getMegamillionDetails = async lotteryId => {
 				},
 				{
 					$group: {
-						_id: '$numbers',
+						_id: {
+							number: '$numbers',
+							cashType: '$cashType',
+						},
 						totalAmountPlayed: { $sum: '$amountPlayed' },
 						totalAmountWon: {
 							$sum: { $ifNull: ['$amountWon', 0] },
@@ -491,11 +541,91 @@ export const getMegamillionDetails = async lotteryId => {
 					},
 				},
 				{
+					$group: {
+						_id: '$_id.number',
+						totalAmountPlayed: { $sum: '$totalAmountPlayed' },
+						totalAmountWon: { $sum: '$totalAmountWon' },
+						ticketCount: { $sum: '$ticketCount' },
+						totalAmountPlayedReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountPlayedVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountWonReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						totalAmountWonVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						ticketCountReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+						ticketCountVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+					},
+				},
+				{
+					$project: {
+						_id: 1,
+						totalAmountPlayed: 1,
+						totalAmountWon: 1,
+						ticketCount: 1,
+						realCash: {
+							totalAmountPlayed: '$totalAmountPlayedReal',
+							totalAmountWon: '$totalAmountWonReal',
+							ticketCount: '$ticketCountReal',
+						},
+						virtualCash: {
+							totalAmountPlayed: '$totalAmountPlayedVirtual',
+							totalAmountWon: '$totalAmountWonVirtual',
+							ticketCount: '$ticketCountVirtual',
+						},
+					},
+				},
+				{
 					$sort: { totalAmountWon: -1 },
 				},
 			]);
 
-			// Calculate mega ball breakdown
+			// Calculate mega ball breakdown - separate by cash type
 			const megaBallBreakdown = await MegaMillionTicket.aggregate([
 				{
 					$match: {
@@ -506,12 +636,95 @@ export const getMegamillionDetails = async lotteryId => {
 				},
 				{
 					$group: {
-						_id: '$megaBall',
+						_id: {
+							megaBall: '$megaBall',
+							cashType: '$cashType',
+						},
 						totalAmountPlayed: { $sum: '$amountPlayed' },
 						totalAmountWon: {
 							$sum: { $ifNull: ['$amountWon', 0] },
 						},
 						ticketCount: { $sum: 1 },
+					},
+				},
+				{
+					$group: {
+						_id: '$_id.megaBall',
+						totalAmountPlayed: { $sum: '$totalAmountPlayed' },
+						totalAmountWon: { $sum: '$totalAmountWon' },
+						ticketCount: { $sum: '$ticketCount' },
+						totalAmountPlayedReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountPlayedVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
+							},
+						},
+						totalAmountWonReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						totalAmountWonVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$totalAmountWon',
+									0,
+								],
+							},
+						},
+						ticketCountReal: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'REAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+						ticketCountVirtual: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$_id.cashType', 'VIRTUAL'] },
+									'$ticketCount',
+									0,
+								],
+							},
+						},
+					},
+				},
+				{
+					$project: {
+						_id: 1,
+						totalAmountPlayed: 1,
+						totalAmountWon: 1,
+						ticketCount: 1,
+						realCash: {
+							totalAmountPlayed: '$totalAmountPlayedReal',
+							totalAmountWon: '$totalAmountWonReal',
+							ticketCount: '$ticketCountReal',
+						},
+						virtualCash: {
+							totalAmountPlayed: '$totalAmountPlayedVirtual',
+							totalAmountWon: '$totalAmountWonVirtual',
+							ticketCount: '$ticketCountVirtual',
+						},
 					},
 				},
 				{
@@ -562,6 +775,22 @@ export const getMegamillionDetails = async lotteryId => {
 								? ((stats.totalAmountPlayed -
 										stats.totalAmountWon) /
 										stats.totalAmountPlayed) *
+									100
+								: 0,
+						profitReal: stats.totalAmountPlayedReal - stats.totalAmountWonReal,
+						profitVirtual: stats.totalAmountPlayedVirtual - stats.totalAmountWonVirtual,
+						profitMarginReal:
+							stats.totalAmountPlayedReal > 0
+								? ((stats.totalAmountPlayedReal -
+										stats.totalAmountWonReal) /
+										stats.totalAmountPlayedReal) *
+									100
+								: 0,
+						profitMarginVirtual:
+							stats.totalAmountPlayedVirtual > 0
+								? ((stats.totalAmountPlayedVirtual -
+										stats.totalAmountWonVirtual) /
+										stats.totalAmountPlayedVirtual) *
 									100
 								: 0,
 					},
