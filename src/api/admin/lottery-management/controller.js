@@ -2046,19 +2046,47 @@ export const getApplicationDashboard = async (_, { role }) => {
 					summary: {
 						totalUsers,
 						activeUsers,
-						totalRevenue: totalRealRevenue + totalVirtualRevenue,
-						totalPayout: totalRealPayout + totalVirtualPayout,
-						totalProfit: totalRealProfit + totalVirtualProfit,
-						profitMargin:
-							totalRealRevenue + totalVirtualRevenue > 0
-								? (
-										((totalRealProfit +
-											totalVirtualProfit) /
-											(totalRealRevenue +
-												totalVirtualRevenue)) *
-										100
-									).toFixed(2)
-								: 0,
+						real: {
+							revenue: totalRealRevenue,
+							payout: totalRealPayout,
+							profit: totalRealProfit,
+							profitMargin:
+								totalRealRevenue > 0
+									? (
+											(totalRealProfit /
+												totalRealRevenue) *
+											100
+										).toFixed(2)
+									: 0,
+						},
+						virtual: {
+							revenue: totalVirtualRevenue,
+							payout: totalVirtualPayout,
+							profit: totalVirtualProfit,
+							profitMargin:
+								totalVirtualRevenue > 0
+									? (
+											(totalVirtualProfit /
+												totalVirtualRevenue) *
+											100
+										).toFixed(2)
+									: 0,
+						},
+						total: {
+							revenue: totalRealRevenue + totalVirtualRevenue,
+							payout: totalRealPayout + totalVirtualPayout,
+							profit: totalRealProfit + totalVirtualProfit,
+							profitMargin:
+								totalRealRevenue + totalVirtualRevenue > 0
+									? (
+											((totalRealProfit +
+												totalVirtualProfit) /
+												(totalRealRevenue +
+													totalVirtualRevenue)) *
+											100
+										).toFixed(2)
+									: 0,
+						},
 					},
 				},
 			},
