@@ -3,6 +3,7 @@ import { done } from '../../../services/response/';
 import { xApi, token } from '../../../services/passport';
 import {
 	getLotteryDashboard,
+	getApplicationDashboard,
 	stateReport,
 	allStatesSummary,
 	showAllTickets,
@@ -28,6 +29,19 @@ router.get(
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
 		done(res, await getLotteryDashboard(req.params, req.user))
+);
+
+/**
+ * GET /api/admin/lottery-management/application-dashboard
+ * Get comprehensive application dashboard overview with Real and Virtual monetary separation
+ * Requires ADMIN role
+ */
+router.get(
+	'/application-dashboard',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) =>
+		done(res, await getApplicationDashboard(req.params, req.user))
 );
 
 /**

@@ -6,6 +6,13 @@ import { State } from '../state-management/model';
 import { publishResult } from '../../../services/lottery/resultPublisher';
 import PayoutService from '../../../services/payout/payoutService';
 import { LotteryDefaultConfig } from '../../lottery-default-config/model';
+import { User } from '../../user/model';
+import { Wallet, Payment } from '../../wallet/model';
+import { Transaction } from '../../transaction/model';
+import { Withdrawal } from '../../withdrawal/model';
+import { RouletteTicket } from '../../roulette_ticket/model';
+import { DominoGame, DominoRoom } from '../../domino/model';
+import { LoyaltyProfile } from '../../loyalty/model';
 
 // Helper function to get default jackpot amount for MEGAMILLION
 const getDefaultJackpotAmount = async () => {
@@ -1378,6 +1385,691 @@ export const remove = async ({ id }) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
+			},
+		};
+	}
+};
+
+/**
+ * Get comprehensive application dashboard overview
+ * Separates all monetary information into Real and Virtual
+ */
+export const getApplicationDashboard = async (_, { role }) => {
+	try {
+		if (role !== 'ADMIN') {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized access',
+				},
+			};
+		}
+
+		const startOfToday = moment().startOf('day').valueOf();
+		const endOfToday = moment().endOf('day').valueOf();
+		const startOfWeek = moment().startOf('week').valueOf();
+		const startOfMonth = moment().startOf('month').valueOf();
+
+		// ===== USER STATISTICS =====
+		const [
+			totalUsers,
+			activeUsers,
+			newUsersToday,
+			newUsersThisWeek,
+			newUsersThisMonth,
+			loyaltyTierDistribution,
+		] = await Promise.all([
+			User.countDocuments(),
+			User.countDocuments({
+				lastLoginAt: { $gte: moment().subtract(30, 'days').toDate() },
+			}),
+			User.countDocuments({
+				createdAt: {
+					$gte: moment(startOfToday).toDate(),
+					$lte: moment(endOfToday).toDate(),
+				},
+			}),
+			User.countDocuments({
+				createdAt: { $gte: moment(startOfWeek).toDate() },
+			}),
+			User.countDocuments({
+				createdAt: { $gte: moment(startOfMonth).toDate() },
+			}),
+			LoyaltyProfile.aggregate([
+				{
+					$group: {
+						_id: '$currentTier',
+						count: { $sum: 1 },
+					},
+				},
+			]),
+		]);
+
+		// ===== WALLET BALANCES (Real vs Virtual) =====
+		const walletStats = await Wallet.aggregate([
+			{
+				$group: {
+					_id: null,
+					totalVirtualBalance: { $sum: '$virtualBalance' },
+					totalRealBalanceWithdrawable: {
+						$sum: '$realBalanceWithdrawable',
+					},
+					totalRealBalanceNonWithdrawable: {
+						$sum: '$realBalanceNonWithdrawable',
+					},
+					totalPendingWithdrawals: { $sum: '$pendingWithdrawals' },
+					walletCount: { $sum: 1 },
+				},
+			},
+		]);
+
+		const walletData = walletStats[0] || {
+			totalVirtualBalance: 0,
+			totalRealBalanceWithdrawable: 0,
+			totalRealBalanceNonWithdrawable: 0,
+			totalPendingWithdrawals: 0,
+			walletCount: 0,
+		};
+
+		// ===== PAYMENTS (Real vs Virtual) =====
+		const paymentStats = await Payment.aggregate([
+			{
+				$match: { status: 'COMPLETED' },
+			},
+			{
+				$group: {
+					_id: null,
+					totalAmount: { $sum: '$amount' },
+					totalRealCash: {
+						$sum: { $ifNull: ['$realCashAmount', 0] },
+					},
+					totalVirtualCash: {
+						$sum: { $ifNull: ['$virtualCashAmount', 0] },
+					},
+					count: { $sum: 1 },
+				},
+			},
+		]);
+
+		const paymentData = paymentStats[0] || {
+			totalAmount: 0,
+			totalRealCash: 0,
+			totalVirtualCash: 0,
+			count: 0,
+		};
+
+		// Periodic payment stats
+		const getPeriodicPayments = async timeQuery => {
+			const stats = await Payment.aggregate([
+				{
+					$match: {
+						status: 'COMPLETED',
+						createdAt: timeQuery,
+					},
+				},
+				{
+					$group: {
+						_id: null,
+						totalAmount: { $sum: '$amount' },
+						totalRealCash: {
+							$sum: { $ifNull: ['$realCashAmount', 0] },
+						},
+						totalVirtualCash: {
+							$sum: { $ifNull: ['$virtualCashAmount', 0] },
+						},
+						count: { $sum: 1 },
+					},
+				},
+			]);
+			return (
+				stats[0] || {
+					totalAmount: 0,
+					totalRealCash: 0,
+					totalVirtualCash: 0,
+					count: 0,
+				}
+			);
+		};
+
+		const [todayPayments, weekPayments, monthPayments] = await Promise.all([
+			getPeriodicPayments({
+				$gte: moment(startOfToday).toDate(),
+				$lte: moment(endOfToday).toDate(),
+			}),
+			getPeriodicPayments({
+				$gte: moment(startOfWeek).toDate(),
+			}),
+			getPeriodicPayments({
+				$gte: moment(startOfMonth).toDate(),
+			}),
+		]);
+
+		// ===== WITHDRAWALS (Real only) =====
+		const completedWithdrawals = await Withdrawal.aggregate([
+			{
+				$match: { status: 'COMPLETED' },
+			},
+			{
+				$group: {
+					_id: null,
+					totalAmount: { $sum: '$amount' },
+					count: { $sum: 1 },
+				},
+			},
+		]);
+
+		const withdrawalData = completedWithdrawals[0] || {
+			totalAmount: 0,
+			count: 0,
+		};
+
+		// Periodic withdrawal stats
+		const getPeriodicWithdrawals = async timeQuery => {
+			const stats = await Withdrawal.aggregate([
+				{
+					$match: {
+						status: 'COMPLETED',
+						createdAt: timeQuery,
+					},
+				},
+				{
+					$group: {
+						_id: null,
+						totalAmount: { $sum: '$amount' },
+						count: { $sum: 1 },
+					},
+				},
+			]);
+			return stats[0] || { totalAmount: 0, count: 0 };
+		};
+
+		const [todayWithdrawals, weekWithdrawals, monthWithdrawals] =
+			await Promise.all([
+				getPeriodicWithdrawals({
+					$gte: moment(startOfToday).toDate(),
+					$lte: moment(endOfToday).toDate(),
+				}),
+				getPeriodicWithdrawals({
+					$gte: moment(startOfWeek).toDate(),
+				}),
+				getPeriodicWithdrawals({
+					$gte: moment(startOfMonth).toDate(),
+				}),
+			]);
+
+		// ===== TRANSACTIONS (Real vs Virtual) =====
+		const transactionStats = await Transaction.aggregate([
+			{
+				$match: { status: 'COMPLETED' },
+			},
+			{
+				$group: {
+					_id: {
+						cashType: '$cashType',
+						transactionType: '$transactionType',
+					},
+					totalAmount: { $sum: '$transactionAmount' },
+					count: { $sum: 1 },
+				},
+			},
+		]);
+
+		// Separate Real and Virtual transactions
+		const realTransactions = transactionStats.filter(
+			t => t._id.cashType === 'REAL'
+		);
+		const virtualTransactions = transactionStats.filter(
+			t => t._id.cashType === 'VIRTUAL'
+		);
+
+		const realCredits = realTransactions
+			.filter(t => t._id.transactionType === 'CREDIT')
+			.reduce((sum, t) => sum + t.totalAmount, 0);
+		const realDebits = realTransactions
+			.filter(t => t._id.transactionType === 'DEBIT')
+			.reduce((sum, t) => sum + t.totalAmount, 0);
+		const virtualCredits = virtualTransactions
+			.filter(t => t._id.transactionType === 'CREDIT')
+			.reduce((sum, t) => sum + t.totalAmount, 0);
+		const virtualDebits = virtualTransactions
+			.filter(t => t._id.transactionType === 'DEBIT')
+			.reduce((sum, t) => sum + t.totalAmount, 0);
+
+		// ===== LOTTERY STATISTICS (Real vs Virtual) =====
+		const completedLotteryIds = await Lottery.find({ status: 'COMPLETED' })
+			.select('_id type')
+			.lean();
+		const lotteryIds = completedLotteryIds.map(l => l._id.toString());
+
+		// Get Borlette ticket stats by cashType
+		const borletteStatsByCashType = await BorletteTicket.aggregate([
+			{
+				$match: {
+					lottery: { $in: lotteryIds },
+					status: { $ne: 'CANCELLED' },
+				},
+			},
+			{
+				$group: {
+					_id: '$cashType',
+					totalPlayed: { $sum: '$totalAmountPlayed' },
+					totalWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+					ticketCount: { $sum: 1 },
+				},
+			},
+		]);
+
+		const borletteReal = borletteStatsByCashType.find(
+			s => s._id === 'REAL'
+		) || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+		const borletteVirtual = borletteStatsByCashType.find(
+			s => s._id === 'VIRTUAL'
+		) || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+
+		// Get MegaMillion ticket stats by cashType
+		const megaMillionStatsByCashType = await MegaMillionTicket.aggregate([
+			{
+				$match: {
+					lottery: { $in: lotteryIds },
+					status: { $ne: 'CANCELLED' },
+				},
+			},
+			{
+				$group: {
+					_id: '$cashType',
+					totalPlayed: { $sum: '$amountPlayed' },
+					totalWon: { $sum: { $ifNull: ['$amountWon', 0] } },
+					ticketCount: { $sum: 1 },
+				},
+			},
+		]);
+
+		const megaMillionReal = megaMillionStatsByCashType.find(
+			s => s._id === 'REAL'
+		) || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+		const megaMillionVirtual = megaMillionStatsByCashType.find(
+			s => s._id === 'VIRTUAL'
+		) || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+
+		// Calculate totals
+		const realLotteryRevenue =
+			borletteReal.totalPlayed + megaMillionReal.totalPlayed;
+		const virtualLotteryRevenue =
+			borletteVirtual.totalPlayed + megaMillionVirtual.totalPlayed;
+		const realLotteryWinnings =
+			borletteReal.totalWon + megaMillionReal.totalWon;
+		const virtualLotteryWinnings =
+			borletteVirtual.totalWon + megaMillionVirtual.totalWon;
+
+		// ===== ROULETTE STATISTICS (Real vs Virtual) =====
+		const rouletteStats = await RouletteTicket.aggregate([
+			{
+				$group: {
+					_id: '$cashType',
+					totalPlayed: { $sum: '$totalAmountPlayed' },
+					totalWon: { $sum: { $ifNull: ['$totalAmountWon', 0] } },
+					ticketCount: { $sum: 1 },
+				},
+			},
+		]);
+
+		const realRoulette = rouletteStats.find(s => s._id === 'REAL') || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+		const virtualRoulette = rouletteStats.find(
+			s => s._id === 'VIRTUAL'
+		) || {
+			totalPlayed: 0,
+			totalWon: 0,
+			ticketCount: 0,
+		};
+
+		// ===== DOMINO STATISTICS (Real vs Virtual) =====
+		const dominoStats = await DominoRoom.aggregate([
+			{
+				$match: { status: 'COMPLETED' },
+			},
+			{
+				$group: {
+					_id: '$cashType',
+					totalPot: { $sum: '$totalPot' },
+					roomCount: { $sum: 1 },
+				},
+			},
+		]);
+
+		const realDomino = dominoStats.find(s => s._id === 'REAL') || {
+			totalPot: 0,
+			roomCount: 0,
+		};
+		const virtualDomino = dominoStats.find(s => s._id === 'VIRTUAL') || {
+			totalPot: 0,
+			roomCount: 0,
+		};
+
+		// Get domino game count
+		const dominoGameCount = await DominoGame.countDocuments();
+		const realDominoGames = await DominoRoom.countDocuments({
+			cashType: 'REAL',
+			status: 'COMPLETED',
+		});
+		const virtualDominoGames = await DominoRoom.countDocuments({
+			cashType: 'VIRTUAL',
+			status: 'COMPLETED',
+		});
+
+		// ===== CALCULATE TOTALS =====
+		const totalRealRevenue =
+			realLotteryRevenue + realRoulette.totalPlayed + realDomino.totalPot;
+		const totalVirtualRevenue =
+			virtualLotteryRevenue +
+			virtualRoulette.totalPlayed +
+			virtualDomino.totalPot;
+
+		const totalRealPayout = realLotteryWinnings + realRoulette.totalWon;
+		const totalVirtualPayout =
+			virtualLotteryWinnings + virtualRoulette.totalWon;
+
+		const totalRealProfit = totalRealRevenue - totalRealPayout;
+		const totalVirtualProfit = totalVirtualRevenue - totalVirtualPayout;
+
+		// ===== LOTTERY COUNTS =====
+		const lotteryCounts = await Lottery.aggregate([
+			{
+				$group: {
+					_id: '$status',
+					count: { $sum: 1 },
+				},
+			},
+		]);
+
+		const totalLotteries = lotteryCounts.reduce(
+			(sum, stat) => sum + stat.count,
+			0
+		);
+		const scheduledLotteries =
+			lotteryCounts.find(s => s._id === 'SCHEDULED')?.count || 0;
+		const completedLotteries =
+			lotteryCounts.find(s => s._id === 'COMPLETED')?.count || 0;
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				dashboard: {
+					// User Statistics
+					users: {
+						total: totalUsers,
+						active: activeUsers,
+						newUsers: {
+							today: newUsersToday,
+							thisWeek: newUsersThisWeek,
+							thisMonth: newUsersThisMonth,
+						},
+						loyaltyTierDistribution: loyaltyTierDistribution.map(
+							tier => ({
+								tier: tier._id,
+								count: tier.count,
+							})
+						),
+					},
+
+					// Wallet Balances
+					wallets: {
+						real: {
+							withdrawable:
+								walletData.totalRealBalanceWithdrawable,
+							nonWithdrawable:
+								walletData.totalRealBalanceNonWithdrawable,
+							total:
+								walletData.totalRealBalanceWithdrawable +
+								walletData.totalRealBalanceNonWithdrawable,
+							pendingWithdrawals:
+								walletData.totalPendingWithdrawals,
+						},
+						virtual: {
+							total: walletData.totalVirtualBalance,
+						},
+						totalWallets: walletData.walletCount,
+					},
+
+					// Financial Overview
+					financial: {
+						real: {
+							deposits: {
+								total: paymentData.totalRealCash,
+								today: todayPayments.totalRealCash,
+								thisWeek: weekPayments.totalRealCash,
+								thisMonth: monthPayments.totalRealCash,
+							},
+							withdrawals: {
+								total: withdrawalData.totalAmount,
+								today: todayWithdrawals.totalAmount,
+								thisWeek: weekWithdrawals.totalAmount,
+								thisMonth: monthWithdrawals.totalAmount,
+							},
+							revenue: {
+								total: totalRealRevenue,
+								lottery: realLotteryRevenue,
+								roulette: realRoulette.totalPlayed,
+								domino: realDomino.totalPot,
+							},
+							payouts: {
+								total: totalRealPayout,
+								lottery: realLotteryWinnings,
+								roulette: realRoulette.totalWon,
+							},
+							profit: {
+								total: totalRealProfit,
+								margin:
+									totalRealRevenue > 0
+										? (
+												(totalRealProfit /
+													totalRealRevenue) *
+												100
+											).toFixed(2)
+										: 0,
+							},
+							transactions: {
+								credits: realCredits,
+								debits: realDebits,
+								net: realCredits - realDebits,
+								count: realTransactions.reduce(
+									(sum, t) => sum + t.count,
+									0
+								),
+							},
+						},
+						virtual: {
+							deposits: {
+								total: paymentData.totalVirtualCash,
+								today: todayPayments.totalVirtualCash,
+								thisWeek: weekPayments.totalVirtualCash,
+								thisMonth: monthPayments.totalVirtualCash,
+							},
+							revenue: {
+								total: totalVirtualRevenue,
+								lottery: virtualLotteryRevenue,
+								roulette: virtualRoulette.totalPlayed,
+								domino: virtualDomino.totalPot,
+							},
+							payouts: {
+								total: totalVirtualPayout,
+								lottery: virtualLotteryWinnings,
+								roulette: virtualRoulette.totalWon,
+							},
+							profit: {
+								total: totalVirtualProfit,
+								margin:
+									totalVirtualRevenue > 0
+										? (
+												(totalVirtualProfit /
+													totalVirtualRevenue) *
+												100
+											).toFixed(2)
+										: 0,
+							},
+							transactions: {
+								credits: virtualCredits,
+								debits: virtualDebits,
+								net: virtualCredits - virtualDebits,
+								count: virtualTransactions.reduce(
+									(sum, t) => sum + t.count,
+									0
+								),
+							},
+						},
+					},
+
+					// Game Statistics
+					games: {
+						lottery: {
+							total: totalLotteries,
+							scheduled: scheduledLotteries,
+							completed: completedLotteries,
+							borlette: {
+								totalPlayed:
+									borletteReal.totalPlayed +
+									borletteVirtual.totalPlayed,
+								totalWon:
+									borletteReal.totalWon +
+									borletteVirtual.totalWon,
+								ticketCount:
+									borletteReal.ticketCount +
+									borletteVirtual.ticketCount,
+								real: {
+									revenue: borletteReal.totalPlayed,
+									winnings: borletteReal.totalWon,
+									ticketCount: borletteReal.ticketCount,
+								},
+								virtual: {
+									revenue: borletteVirtual.totalPlayed,
+									winnings: borletteVirtual.totalWon,
+									ticketCount: borletteVirtual.ticketCount,
+								},
+							},
+							megaMillion: {
+								totalPlayed:
+									megaMillionReal.totalPlayed +
+									megaMillionVirtual.totalPlayed,
+								totalWon:
+									megaMillionReal.totalWon +
+									megaMillionVirtual.totalWon,
+								ticketCount:
+									megaMillionReal.ticketCount +
+									megaMillionVirtual.ticketCount,
+								real: {
+									revenue: megaMillionReal.totalPlayed,
+									winnings: megaMillionReal.totalWon,
+									ticketCount: megaMillionReal.ticketCount,
+								},
+								virtual: {
+									revenue: megaMillionVirtual.totalPlayed,
+									winnings: megaMillionVirtual.totalWon,
+									ticketCount: megaMillionVirtual.ticketCount,
+								},
+							},
+						},
+						roulette: {
+							real: {
+								revenue: realRoulette.totalPlayed,
+								payouts: realRoulette.totalWon,
+								profit:
+									realRoulette.totalPlayed -
+									realRoulette.totalWon,
+								ticketCount: realRoulette.ticketCount,
+							},
+							virtual: {
+								revenue: virtualRoulette.totalPlayed,
+								payouts: virtualRoulette.totalWon,
+								profit:
+									virtualRoulette.totalPlayed -
+									virtualRoulette.totalWon,
+								ticketCount: virtualRoulette.ticketCount,
+							},
+							total: {
+								revenue:
+									realRoulette.totalPlayed +
+									virtualRoulette.totalPlayed,
+								payouts:
+									realRoulette.totalWon +
+									virtualRoulette.totalWon,
+								profit:
+									realRoulette.totalPlayed +
+									virtualRoulette.totalPlayed -
+									(realRoulette.totalWon +
+										virtualRoulette.totalWon),
+								ticketCount:
+									realRoulette.ticketCount +
+									virtualRoulette.ticketCount,
+							},
+						},
+						domino: {
+							real: {
+								revenue: realDomino.totalPot,
+								roomCount: realDominoGames,
+							},
+							virtual: {
+								revenue: virtualDomino.totalPot,
+								roomCount: virtualDominoGames,
+							},
+							total: {
+								revenue:
+									realDomino.totalPot +
+									virtualDomino.totalPot,
+								roomCount: realDominoGames + virtualDominoGames,
+								gameCount: dominoGameCount,
+							},
+						},
+					},
+
+					// Summary
+					summary: {
+						totalUsers,
+						activeUsers,
+						totalRevenue: totalRealRevenue + totalVirtualRevenue,
+						totalPayout: totalRealPayout + totalVirtualPayout,
+						totalProfit: totalRealProfit + totalVirtualProfit,
+						profitMargin:
+							totalRealRevenue + totalVirtualRevenue > 0
+								? (
+										((totalRealProfit +
+											totalVirtualProfit) /
+											(totalRealRevenue +
+												totalVirtualRevenue)) *
+										100
+									).toFixed(2)
+								: 0,
+					},
+				},
+			},
+		};
+	} catch (error) {
+		console.error('Dashboard error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || error.errors || error,
 			},
 		};
 	}
