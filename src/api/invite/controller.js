@@ -2,7 +2,7 @@ import {
 	PinpointSMSVoiceV2Client,
 	SendTextMessageCommand,
 } from '@aws-sdk/client-pinpoint-sms-voice-v2';
-import { aws, enableText, inviteConfig } from '../../../config';
+import { aws, enableText } from '../../../config';
 import { Invite } from './model';
 
 const sanitizePhoneNumbers = phoneNumbers =>
@@ -48,7 +48,11 @@ export const sendInvites = async ({ phoneNumbers, message }, user) => {
 			};
 		}
 
-		const messageToSend = (message || '').trim() || inviteConfig.defaultMessage;
+		// Build message with referrer username and bonus information
+		const referrerUsername = user.userName || user.slugName || 'me';
+		const defaultReferralMessage = `Join FlippX! Sign up using ${referrerUsername} as your referrer to get a bonus and start playing today!`;
+
+		const messageToSend = (message || '').trim() || defaultReferralMessage;
 
 		if (!messageToSend) {
 			return {
@@ -119,7 +123,9 @@ export const sendInvites = async ({ phoneNumbers, message }, user) => {
 				invite.status = 'FAILED';
 				invite.error =
 					error?.message ||
-					(typeof error === 'string' ? error : 'Failed to send invite');
+					(typeof error === 'string'
+						? error
+						: 'Failed to send invite');
 				await invite.save();
 
 				results.push({
@@ -226,5 +232,3 @@ export const getInviteStatuses = async ({ phoneNumbers }, user) => {
 		};
 	}
 };
-
-
