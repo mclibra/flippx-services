@@ -197,12 +197,6 @@ Create a payment session for purchasing a plan or adding virtual/real cash to wa
   "error": "Amount mismatch. Provided: $100, Expected: $99.99"
 }
 
-// Already has active plan
-{
-  "success": false,
-  "error": "You already have an active subscription to this plan"
-}
-
 // Cash amounts don't sum
 {
   "success": false,

@@ -208,23 +208,6 @@ export const initiateVirtualCashPurchase = async req => {
 			finalVirtualCashAmount = plan.virtualCashAmount || 0;
 			finalRealCashAmount = plan.realCashAmount || 0;
 			description = `Plan Purchase - ${plan.name}`;
-
-			// Check if user already has an active plan of this type
-			const existingUserPlan = await UserPlan.findOne({
-				user: user._id,
-				plan: planId,
-				status: 'ACTIVE',
-			});
-
-			if (existingUserPlan) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'You already have an active subscription to this plan',
-					},
-				};
-			}
 		} else {
 			// Validate cash distribution for non-plan purchases
 			const totalCashAmount =
