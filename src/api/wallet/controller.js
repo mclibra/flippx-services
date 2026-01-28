@@ -260,11 +260,24 @@ export const initiateVirtualCashPurchase = async req => {
 			});
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);
+			// Return more detailed error information for debugging
+			const errorMessage =
+				rapydError.message ||
+				rapydError.response?.data?.status?.message ||
+				'Payment service temporarily unavailable. Please try again later.';
+			const errorCode =
+				rapydError.response?.data?.status?.error_code ||
+				rapydError.response?.data?.status?.response_code;
+			
 			return {
-				status: 500,
+				status: rapydError.response?.status || 500,
 				entity: {
 					success: false,
-					error: 'Payment service temporarily unavailable. Please try again later.',
+					error: errorMessage,
+					errorCode: errorCode || undefined,
+					details: process.env.NODE_ENV === 'development' 
+						? rapydError.response?.data 
+						: undefined,
 				},
 			};
 		}
