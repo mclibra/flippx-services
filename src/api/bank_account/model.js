@@ -13,6 +13,8 @@ const BankAccountSchema = new Schema(
 		isDefault: { type: Boolean, default: false },
 		isVerified: { type: Boolean, default: false },
 		verificationDate: { type: Date, default: null },
+		rapydBeneficiaryId: { type: String, default: null },
+		rapydBeneficiaryError: { type: String, default: null },
 	},
 	{
 		timestamps: true,

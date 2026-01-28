@@ -545,6 +545,7 @@ export const createCustomer = async ({
 /**
  * Create a beneficiary for payouts
  * Required before creating payouts
+ * Matches Rapyd API structure: flat structure with category, entity_type, etc.
  */
 export const createBeneficiary = async ({
 	firstName,
@@ -553,48 +554,114 @@ export const createBeneficiary = async ({
 	phoneNumber,
 	country,
 	currency,
-	payoutMethodType,
-	beneficiaryType = 'individual',
-	bankAccountDetails = null,
-	cardDetails = null,
-	metadata = {},
+	bankAccountDetails,
+	address = null,
+	city = null,
+	state = null,
+	postcode = null,
+	identificationType = null,
+	identificationValue = null,
+	merchantReferenceId = null,
+	bicSwift = null,
+	routingNumber = null,
 }) => {
 	try {
 		const path = '/v1/payouts/beneficiary';
-		const body = {
-			first_name: firstName,
-			last_name: lastName,
-			email,
-			phone_number: phoneNumber,
-			country,
-			currency,
-			payout_method_type: payoutMethodType,
-			beneficiary_type: beneficiaryType,
-			metadata,
-		};
 
-		// Add bank account details if provided
-		if (bankAccountDetails) {
-			body.bank_account = {
-				name: bankAccountDetails.accountHolderName,
-				account_number: bankAccountDetails.accountNumber,
-				routing_number: bankAccountDetails.routingNumber,
-				account_type:
-					bankAccountDetails.accountType?.toLowerCase() || 'checking',
-				bank_name: bankAccountDetails.bankName,
-				country: bankAccountDetails.country || country,
-			};
+		// Validate required fields
+		if (!firstName || !lastName || !country || !currency) {
+			throw new Error(
+				'Missing required fields: firstName, lastName, country, and currency are required'
+			);
 		}
 
-		// Add card details if provided
-		if (cardDetails) {
-			body.card = {
-				name: cardDetails.cardholderName,
-				number: cardDetails.cardNumber,
-				expiration_month: cardDetails.expirationMonth,
-				expiration_year: cardDetails.expirationYear,
-				cvv: cardDetails.cvv,
-			};
+		if (
+			!bankAccountDetails ||
+			!bankAccountDetails.bankName ||
+			!bankAccountDetails.accountNumber
+		) {
+			throw new Error(
+				'Bank account details (bankName, accountNumber) are required'
+			);
+		}
+
+		// Build body according to Rapyd API structure
+		const body = {
+			category: 'bank',
+			bank_name: String(bankAccountDetails.bankName),
+			country: String(country),
+			currency: String(currency),
+			entity_type: 'individual',
+			first_name: String(firstName),
+			last_name: String(lastName),
+			account_number: String(bankAccountDetails.accountNumber),
+		};
+
+		// Add optional email
+		if (email) {
+			body.email = String(email);
+		}
+
+		// Add optional phone number
+		if (phoneNumber) {
+			body.phone_number = String(phoneNumber);
+		}
+
+		// Add address fields (required by Rapyd but we'll make them optional with defaults)
+		if (address) {
+			body.address = String(address);
+		} else {
+			// Use a default address if not provided
+			body.address = 'Not provided';
+		}
+
+		if (city) {
+			body.city = String(city);
+		} else {
+			body.city = 'Not provided';
+		}
+
+		if (state) {
+			body.state = String(state);
+		} else if (country === 'US') {
+			// For US, state might be required
+			body.state = 'Not provided';
+		}
+
+		if (postcode) {
+			body.postcode = String(postcode);
+		} else {
+			body.postcode = '00000';
+		}
+
+		// Add identification (required by Rapyd)
+		if (identificationType && identificationValue) {
+			body.identification_type = String(identificationType);
+			body.identification_value = String(identificationValue);
+		} else {
+			// Use default identification if not provided
+			// Note: This might need to be adjusted based on your requirements
+			body.identification_type = 'identification_id';
+			body.identification_value = 'NOT_PROVIDED';
+		}
+
+		// Add merchant reference ID if provided
+		if (merchantReferenceId) {
+			body.merchant_reference_id = String(merchantReferenceId);
+		}
+
+		// Add BIC/SWIFT code if provided (for international transfers)
+		if (bicSwift) {
+			body.bic_swift = String(bicSwift);
+		}
+
+		// For US accounts, routing number might be needed instead of BIC
+		// Note: Rapyd API might accept routing_number for US accounts
+		// Check Rapyd documentation for your specific use case
+		if (routingNumber && country === 'US') {
+			// Some Rapyd endpoints might accept routing_number
+			// If your API version supports it, uncomment:
+			// body.routing_number = String(routingNumber);
 		}
 
 		const response = await makeRapydRequest('POST', path, body);
@@ -607,9 +674,13 @@ export const createBeneficiary = async ({
 			response.status?.message || 'Failed to create beneficiary'
 		);
 	} catch (error) {
-		console.error('Rapyd create beneficiary error:', error);
+		console.error('Rapyd create beneficiary error:', {
+			message: error.message,
+			response: error.response?.data,
+		});
 		throw new Error(
 			error.response?.data?.status?.message ||
+				error.message ||
 				'Failed to create beneficiary in Rapyd'
 		);
 	}
@@ -633,19 +704,21 @@ export const createPayout = async ({
 		const path = '/v1/payouts';
 		const body = {
 			beneficiary: beneficiaryId,
-			amount,
-			currency,
-			description,
-			payout_method_type: payoutMethodType,
+			amount: String(amount), // Convert to string as per Rapyd requirements
+			currency: String(currency),
+			description: String(description),
+			payout_method_type: String(payoutMethodType),
 			metadata: {
 				...metadata,
-				client_reference_id: reference,
+				client_reference_id: String(reference),
 			},
 		};
 
 		// Add eWallet if provided
+		// Note: Rapyd may require an eWallet for payouts. Ensure your Rapyd account
+		// has a wallet configured or pass the eWalletId parameter.
 		if (eWalletId) {
-			body.ewallet = eWalletId;
+			body.ewallet = String(eWalletId);
 		}
 
 		const response = await makeRapydRequest('POST', path, body);

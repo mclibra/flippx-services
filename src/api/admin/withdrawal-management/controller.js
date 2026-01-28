@@ -65,42 +65,83 @@ export const approveWithdrawal = async req => {
 		await withdrawal.save();
 
 		try {
-			// Create beneficiary in Rapyd if not already created
-			let beneficiaryId = withdrawal.paymentDetails?.rapydBeneficiaryId;
+			// Use beneficiary ID from bank account (should be created when bank account was added)
+			let beneficiaryId =
+				withdrawal.bankAccount.rapydBeneficiaryId ||
+				withdrawal.paymentDetails?.rapydBeneficiaryId;
 
+			// If beneficiary doesn't exist, try to create it (fallback)
 			if (!beneficiaryId) {
-				const beneficiary = await createBeneficiary({
-					firstName:
-						user.name?.firstName || user.name?.first || 'User',
-					lastName: user.name?.lastName || user.name?.last || 'Name',
-					email: user.email,
-					phoneNumber: user.phone,
-					country: user.countryCode || 'US',
-					currency: 'USD',
-					payoutMethodType: 'us_standard_bank_account', // Default, can be made configurable
-					beneficiaryType: 'individual',
-					bankAccountDetails: {
-						accountHolderName:
-							withdrawal.bankAccount.accountHolderName,
-						accountNumber: withdrawal.bankAccount.accountNumber,
-						routingNumber: withdrawal.bankAccount.routingNumber,
-						accountType: withdrawal.bankAccount.accountType,
-						bankName: withdrawal.bankAccount.bankName,
-						country: user.countryCode || 'US',
-					},
-					metadata: {
-						userId: user._id.toString(),
-						withdrawalId: withdrawal._id.toString(),
-						bankAccountId: withdrawal.bankAccount._id.toString(),
-					},
-				});
+				console.warn(
+					`Beneficiary not found for bank account ${withdrawal.bankAccount._id}, attempting to create one`
+				);
 
-				beneficiaryId = beneficiary.id;
-				withdrawal.paymentDetails = {
-					...withdrawal.paymentDetails,
-					rapydBeneficiaryId: beneficiaryId,
-				};
-				await withdrawal.save();
+				try {
+					const beneficiary = await createBeneficiary({
+						firstName:
+							user.name?.firstName || user.name?.first || 'User',
+						lastName:
+							user.name?.lastName || user.name?.last || 'Name',
+						email: user.email,
+						phoneNumber: user.phone,
+						country: user.countryCode || 'US',
+						currency: 'USD',
+						bankAccountDetails: {
+							bankName: withdrawal.bankAccount.bankName,
+							accountNumber: withdrawal.bankAccount.accountNumber,
+							accountHolderName:
+								withdrawal.bankAccount.accountHolderName,
+							routingNumber: withdrawal.bankAccount.routingNumber,
+							accountType: withdrawal.bankAccount.accountType,
+						},
+						address: user.address?.address1 || null,
+						city: user.address?.city || null,
+						state: user.address?.state || null,
+						postcode: user.address?.pincode || null,
+						identificationType: 'identification_id',
+						identificationValue: user.sim_nif || 'NOT_PROVIDED',
+						merchantReferenceId:
+							withdrawal.bankAccount._id.toString(),
+						routingNumber: withdrawal.bankAccount.routingNumber,
+					});
+
+					beneficiaryId = beneficiary.id;
+
+					// Update bank account with beneficiary ID
+					withdrawal.bankAccount.rapydBeneficiaryId = beneficiaryId;
+					withdrawal.bankAccount.rapydBeneficiaryError = null;
+					await withdrawal.bankAccount.save();
+
+					// Also store in withdrawal payment details
+					withdrawal.paymentDetails = {
+						...withdrawal.paymentDetails,
+						rapydBeneficiaryId: beneficiaryId,
+					};
+					await withdrawal.save();
+
+					console.log(
+						`Created beneficiary ${beneficiaryId} for bank account ${withdrawal.bankAccount._id}`
+					);
+				} catch (beneficiaryError) {
+					console.error(
+						'Failed to create beneficiary during withdrawal approval:',
+						beneficiaryError
+					);
+					throw new Error(
+						`Beneficiary not found and failed to create: ${
+							beneficiaryError.response?.data?.status?.message ||
+							beneficiaryError.message ||
+							'Unknown error'
+						}`
+					);
+				}
+			}
+
+			// Verify beneficiary ID exists
+			if (!beneficiaryId) {
+				throw new Error(
+					'Beneficiary ID is required but not found. Please ensure the bank account has a valid beneficiary.'
+				);
 			}
 
 			// Create payout in Rapyd
@@ -110,7 +151,7 @@ export const approveWithdrawal = async req => {
 				currency: 'USD',
 				description: `Withdrawal for user ${user.email}`,
 				reference: withdrawal._id.toString(),
-				payoutMethodType: 'us_standard_bank_account', // Should match beneficiary
+				payoutMethodType: 'us_standard_bank_account', // Should match beneficiary category
 				metadata: {
 					userId: user._id.toString(),
 					withdrawalId: withdrawal._id.toString(),

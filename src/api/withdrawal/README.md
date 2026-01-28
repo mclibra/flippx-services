@@ -238,6 +238,7 @@ curl -X GET "https://your-api-domain.com/api/withdrawals?status=PENDING&limit=20
 - Results are sorted by creation date (newest first)
 - Bank account details are populated in the response
 - Status filter is case-insensitive (automatically converted to uppercase)
+- Bank accounts must have a valid Rapyd beneficiary ID (created automatically when bank account is added)
 
 ---
 
@@ -258,8 +259,8 @@ curl -X GET "https://your-api-domain.com/api/withdrawals?status=PENDING&limit=20
 
 3. **Admin Approves** (`POST /api/admin/withdrawal-management/:id/approve`)
    - Status changes to `PROCESSING`
-   - Creates beneficiary in Rapyd (if not exists)
-   - Creates payout in Rapyd
+   - Uses Rapyd beneficiary ID from bank account (created when bank account was added)
+   - Creates payout in Rapyd using the beneficiary ID
    - Updates transaction status to `WITHDRAWAL_APPROVED`
    - Funds are transferred to user's bank account via Rapyd
 
@@ -448,6 +449,7 @@ All endpoints follow a consistent error response format:
 - **Weekly Limits**: Withdrawal limits are based on user's loyalty tier and reset weekly.
 - **Admin Approval**: All withdrawals require admin approval before processing.
 - **Payment Gateway**: Approved withdrawals are processed through Rapyd payment gateway.
+- **Bank Account Beneficiaries**: Bank accounts are automatically registered as Rapyd beneficiaries when added (see [Bank Account API](../bank_account/README.md)). The beneficiary ID is stored in the bank account record and reused for all withdrawals.
 - **Transaction Tracking**: All withdrawals create transaction records for audit purposes.
 - **Refunds**: Rejected withdrawals automatically refund the amount to user's `realBalanceWithdrawable`.
 - **Processing Time**: Once approved, payouts typically take 1-3 business days to reach the bank account.

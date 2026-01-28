@@ -168,10 +168,11 @@ curl -X GET "https://your-api-domain.com/api/admin/withdrawal-management?userId=
 ### 2. Approve Withdrawal
 
 Approve a pending withdrawal request. This will:
-1. Create a beneficiary in Rapyd (if not already created)
-2. Create a payout in Rapyd
-3. Update withdrawal status to `PROCESSING`
-4. Update transaction status to `WITHDRAWAL_APPROVED`
+1. Use the Rapyd beneficiary ID from the bank account (created when bank account was added)
+2. Create a payout in Rapyd if beneficiary exists
+3. Create a beneficiary as fallback if one doesn't exist (for backward compatibility)
+4. Update withdrawal status to `PROCESSING`
+5. Update transaction status to `WITHDRAWAL_APPROVED`
 
 **Endpoint:** `POST /api/admin/withdrawal-management/:id/approve`
 
@@ -274,15 +275,18 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 1. Validates admin permissions
 2. Finds withdrawal and validates it's in `PENDING` status
 3. Updates status to `PROCESSING`
-4. Creates Rapyd beneficiary (if not exists) with bank account details
-5. Creates Rapyd payout for `netAmount`
-6. Updates withdrawal with Rapyd payout details
-7. Updates transaction status from `WITHDRAWAL_PENDING` to `WITHDRAWAL_APPROVED`
-8. If Rapyd operations fail, reverts status to `PENDING` and records error
+4. Retrieves Rapyd beneficiary ID from bank account (created when bank account was added)
+5. If beneficiary doesn't exist, creates one as fallback (for backward compatibility)
+6. Creates Rapyd payout for `netAmount` using the beneficiary ID
+7. Updates withdrawal with Rapyd payout details
+8. Updates transaction status from `WITHDRAWAL_PENDING` to `WITHDRAWAL_APPROVED`
+9. If Rapyd operations fail, reverts status to `PENDING` and records error
 
 **Notes:**
 - Only withdrawals with status `PENDING` can be approved
-- If Rapyd beneficiary already exists (from previous withdrawal), it's reused
+- Rapyd beneficiaries are created automatically when bank accounts are added (see [Bank Account API](../bank_account/README.md))
+- The beneficiary ID is stored in the bank account's `rapydBeneficiaryId` field
+- If beneficiary doesn't exist, system attempts to create one as fallback
 - Rapyd payout is created for `netAmount` (amount after fees)
 - If Rapyd operations fail, withdrawal status is reverted to `PENDING` for retry
 - Transaction status is updated to reflect approval
@@ -415,8 +419,8 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 
    **Option A: Approve**
    - Admin calls `POST /api/admin/withdrawal-management/:id/approve`
-   - System creates Rapyd beneficiary (if needed)
-   - System creates Rapyd payout
+   - System uses Rapyd beneficiary ID from bank account (created when bank account was added)
+   - System creates Rapyd payout using the beneficiary ID
    - Status: `PROCESSING`
    - Transaction status: `WITHDRAWAL_APPROVED`
    - Funds are transferred via Rapyd
@@ -602,12 +606,14 @@ All endpoints follow a consistent error response format:
 ## Notes
 
 - **Admin Only**: All endpoints require ADMIN role
-- **Rapyd Integration**: Approvals automatically create beneficiaries and payouts via Rapyd
+- **Rapyd Integration**: Approvals use existing Rapyd beneficiaries (created when bank accounts are added) and create payouts via Rapyd
+- **Beneficiary Management**: Beneficiaries are automatically created when users add bank accounts (see [Bank Account API](../bank_account/README.md))
 - **Error Recovery**: Failed Rapyd operations revert withdrawal to `PENDING` status for retry
 - **Transaction Tracking**: All approvals/rejections update transaction records
 - **Refunds**: Rejected withdrawals automatically refund amounts to users
 - **Audit Trail**: All actions are tracked with `approvedBy` and `processedDate` fields
-- **Beneficiary Reuse**: Rapyd beneficiaries are reused if they already exist for a user
+- **Beneficiary Storage**: Rapyd beneficiary IDs are stored in bank account records for reuse
+- **Fallback Creation**: If beneficiary doesn't exist, system attempts to create one during approval (for backward compatibility)
 - **Processing Time**: Once approved, payouts typically take 1-3 business days via Rapyd
 
 ---
@@ -627,8 +633,9 @@ All endpoints follow a consistent error response format:
 - [ ] Reject withdrawal with reason
 - [ ] Reject withdrawal without reason (should use default)
 - [ ] Verify rejected withdrawal refunds amount to user
-- [ ] Verify approved withdrawal creates Rapyd beneficiary
+- [ ] Verify approved withdrawal uses existing Rapyd beneficiary from bank account
 - [ ] Verify approved withdrawal creates Rapyd payout
+- [ ] Verify fallback beneficiary creation if beneficiary doesn't exist
 - [ ] Verify transaction status updates correctly
 - [ ] Verify admin permissions are enforced
 - [ ] Verify user details are populated correctly
