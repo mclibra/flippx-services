@@ -787,6 +787,7 @@ export const createCheckoutPage = async ({
 	customerId,
 	paymentMethodTypesInclude = [],
 	paymentMethodTypesExclude = [],
+	paymentMethodTypeCategories = [],
 	country = null,
 }) => {
 	try {
@@ -831,6 +832,10 @@ export const createCheckoutPage = async ({
 
 		if (paymentMethodTypesExclude.length > 0) {
 			body.payment_method_types_exclude = paymentMethodTypesExclude;
+		}
+
+		if (paymentMethodTypeCategories.length > 0) {
+			body.payment_method_type_categories = paymentMethodTypeCategories;
 		}
 
 		const response = await makeRapydRequest('POST', path, body);

@@ -243,14 +243,9 @@ export const initiateVirtualCashPurchase = async req => {
 			metadata.planId = planId.toString();
 		}
 
-		// Define credit card payment method types for US
-		// Common Rapyd payment method types for US credit cards
-		const creditCardPaymentMethods = [
-			'us_visa_card',
-			'us_mastercard_card',
-			'us_amex_card',
-			'us_discover_card',
-		];
+		// Use payment method categories to show card payment options
+		// "card" category includes all card payment methods (credit/debit cards)
+		const paymentMethodCategories = ['card'];
 
 		let checkoutPage;
 		try {
@@ -261,7 +256,7 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
-				paymentMethodTypesInclude: creditCardPaymentMethods,
+				paymentMethodTypeCategories: paymentMethodCategories,
 			});
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);
