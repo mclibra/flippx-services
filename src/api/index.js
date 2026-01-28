@@ -28,6 +28,7 @@ import adminGlobalChatManagement from './admin/global-chat-management';
 import adminMessageManagement from './admin/message-management';
 import adminBannerManagement from './admin/banner-management';
 import adminLotteryManagement from './admin/lottery-management';
+import adminWithdrawalManagement from './admin/withdrawal-management';
 import globalChat from './global_chat';
 import invite from './invite';
 import banner from './banner';
@@ -64,6 +65,7 @@ router.use('/admin/global-chat-management', adminGlobalChatManagement);
 router.use('/admin/message-management', adminMessageManagement);
 router.use('/admin/banner-management', adminBannerManagement);
 router.use('/admin/lottery-management', adminLotteryManagement);
+router.use('/admin/withdrawal-management', adminWithdrawalManagement);
 router.use('/global-chat', globalChat);
 router.use('/banner', banner);
 
