@@ -243,10 +243,8 @@ export const initiateVirtualCashPurchase = async req => {
 			metadata.planId = planId.toString();
 		}
 
-		// Use payment method categories to show card payment options
-		// "card" category includes all card payment methods (credit/debit cards)
-		const paymentMethodCategories = ['card'];
-
+		// Try without payment method restrictions first to see if checkout works
+		// If cash payment shows up, we'll need to configure payment methods differently
 		let checkoutPage;
 		try {
 			checkoutPage = await createCheckoutPage({
@@ -256,7 +254,8 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
-				paymentMethodTypeCategories: paymentMethodCategories,
+				// Temporarily removed payment method restrictions to debug the error
+				// paymentMethodTypeCategories: ['card'],
 			});
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);
