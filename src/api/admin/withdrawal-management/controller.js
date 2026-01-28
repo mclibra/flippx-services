@@ -4,7 +4,7 @@ import { makeTransaction } from '../../transaction/controller';
 import {
 	createBeneficiary,
 	createPayout,
-	convertPhoneCountryCodeToISO,
+	normalizeCountryToISO,
 } from '../../../services/rapyd';
 import { User } from '../../user/model';
 
@@ -81,11 +81,11 @@ export const approveWithdrawal = async req => {
 				);
 
 				try {
-					// Convert phone country code to ISO country code for Rapyd
-					// Use address.country if available (might already be ISO), otherwise convert countryCode
-					const isoCountryCode =
-						user.address?.country ||
-						convertPhoneCountryCodeToISO(user.countryCode);
+					// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
+					// Handles phone codes, full country names, and ISO codes
+					const isoCountryCode = normalizeCountryToISO(
+						user.address?.country || user.countryCode
+					);
 
 					const beneficiary = await createBeneficiary({
 						firstName:

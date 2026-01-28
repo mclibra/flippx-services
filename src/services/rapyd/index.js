@@ -222,6 +222,170 @@ const convertPhoneCountryCodeToISO = phoneCountryCode => {
 };
 
 /**
+ * Convert country name or code to ISO 3166-1 ALPHA-2 country code
+ * Handles phone codes, full country names, and ISO codes
+ * Rapyd requires ISO country codes (e.g., "IN", "US")
+ */
+export const normalizeCountryToISO = countryInput => {
+	if (!countryInput) {
+		return 'US'; // Default to US
+	}
+
+	const input = String(countryInput).trim();
+
+	// If it's already a 2-letter uppercase code, validate and return
+	if (/^[A-Z]{2}$/.test(input)) {
+		return input;
+	}
+
+	// If it's a 2-letter lowercase code, uppercase it
+	if (/^[a-z]{2}$/.test(input)) {
+		return input.toUpperCase();
+	}
+
+	// Check if it's a phone country code (starts with + or is numeric)
+	if (/^\+?\d+$/.test(input)) {
+		return convertPhoneCountryCodeToISO(input);
+	}
+
+	// Mapping of common country names to ISO codes
+	const countryNameToISOMap = {
+		// Common variations
+		'united states': 'US',
+		'united states of america': 'US',
+		'usa': 'US',
+		'us': 'US',
+		'india': 'IN',
+		'united kingdom': 'GB',
+		'uk': 'GB',
+		'great britain': 'GB',
+		'france': 'FR',
+		'germany': 'DE',
+		'japan': 'JP',
+		'china': 'CN',
+		'australia': 'AU',
+		'brazil': 'BR',
+		'mexico': 'MX',
+		'spain': 'ES',
+		'italy': 'IT',
+		'russia': 'RU',
+		'russian federation': 'RU',
+		'south korea': 'KR',
+		'korea': 'KR',
+		'singapore': 'SG',
+		'uae': 'AE',
+		'united arab emirates': 'AE',
+		'saudi arabia': 'SA',
+		'south africa': 'ZA',
+		'netherlands': 'NL',
+		'sweden': 'SE',
+		'norway': 'NO',
+		'denmark': 'DK',
+		'finland': 'FI',
+		'switzerland': 'CH',
+		'austria': 'AT',
+		'belgium': 'BE',
+		'portugal': 'PT',
+		'greece': 'GR',
+		'poland': 'PL',
+		'czech republic': 'CZ',
+		'hungary': 'HU',
+		'romania': 'RO',
+		'ireland': 'IE',
+		'new zealand': 'NZ',
+		'malaysia': 'MY',
+		'thailand': 'TH',
+		'vietnam': 'VN',
+		'indonesia': 'ID',
+		'philippines': 'PH',
+		'pakistan': 'PK',
+		'bangladesh': 'BD',
+		'sri lanka': 'LK',
+		'myanmar': 'MM',
+		'nepal': 'NP',
+		'lebanon': 'LB',
+		'jordan': 'JO',
+		'egypt': 'EG',
+		'nigeria': 'NG',
+		'kenya': 'KE',
+		'ghana': 'GH',
+		'uganda': 'UG',
+		'tanzania': 'TZ',
+		'rwanda': 'RW',
+		'morocco': 'MA',
+		'algeria': 'DZ',
+		'tunisia': 'TN',
+		'libya': 'LY',
+		'canada': 'CA',
+		'argentina': 'AR',
+		'chile': 'CL',
+		'colombia': 'CO',
+		'peru': 'PE',
+		'venezuela': 'VE',
+		'ecuador': 'EC',
+		'bolivia': 'BO',
+		'paraguay': 'PY',
+		'uruguay': 'UY',
+		'israel': 'IL',
+		'turkey': 'TR',
+		'iran': 'IR',
+		'iraq': 'IQ',
+		'kuwait': 'KW',
+		'qatar': 'QA',
+		'bahrain': 'BH',
+		'oman': 'OM',
+		'yemen': 'YE',
+		'afghanistan': 'AF',
+		'kazakhstan': 'KZ',
+		'uzbekistan': 'UZ',
+		'kyrgyzstan': 'KG',
+		'tajikistan': 'TJ',
+		'turkmenistan': 'TM',
+		'azerbaijan': 'AZ',
+		'georgia': 'GE',
+		'armenia': 'AM',
+		'ukraine': 'UA',
+		'belarus': 'BY',
+		'moldova': 'MD',
+		'croatia': 'HR',
+		'serbia': 'RS',
+		'bulgaria': 'BG',
+		'slovakia': 'SK',
+		'slovenia': 'SI',
+		'estonia': 'EE',
+		'latvia': 'LV',
+		'lithuania': 'LT',
+		'iceland': 'IS',
+		'liechtenstein': 'LI',
+		'luxembourg': 'LU',
+		'malta': 'MT',
+		'cyprus': 'CY',
+		'monaco': 'MC',
+		'san marino': 'SM',
+		'andorra': 'AD',
+		'vatican': 'VA',
+		'vatican city': 'VA',
+	};
+
+	// Try to find in country name map (case-insensitive)
+	const normalizedInput = input.toLowerCase();
+	if (countryNameToISOMap[normalizedInput]) {
+		return countryNameToISOMap[normalizedInput];
+	}
+
+	// If no match found, try phone code conversion as fallback
+	if (/^\+?\d+$/.test(input)) {
+		return convertPhoneCountryCodeToISO(input);
+	}
+
+	// If still no match, log warning and default to US
+	console.warn(
+		`Could not normalize country "${input}" to ISO code, defaulting to US`
+	);
+	return 'US';
+};
+
+/**
  * Recursively convert all numbers in an object to strings
  * Rapyd requires numbers to be strings to avoid signature issues
  */
@@ -1055,7 +1219,7 @@ export const mapPayoutStatus = rapydStatus => {
 	return statusMap[rapydStatus] || 'PENDING';
 };
 
-export { convertPhoneCountryCodeToISO };
+export { convertPhoneCountryCodeToISO, normalizeCountryToISO };
 
 export default {
 	createCheckoutPage,
@@ -1069,4 +1233,5 @@ export default {
 	mapPaymentStatus,
 	mapPayoutStatus,
 	convertPhoneCountryCodeToISO,
+	normalizeCountryToISO,
 };
