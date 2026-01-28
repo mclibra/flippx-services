@@ -325,6 +325,20 @@ export const initiateVirtualCashPurchase = async req => {
 			);
 
 			checkoutPage = await createCheckoutPage(checkoutParams);
+
+			// Log the checkout response to see what payment methods are available
+			console.log(
+				'Checkout page response:',
+				JSON.stringify(
+					{
+						checkoutId: checkoutPage.checkoutId,
+						checkoutUrl: checkoutPage.checkoutUrl,
+						fullResponse: checkoutPage,
+					},
+					null,
+					2
+				)
+			);
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);
 			// Return more detailed error information for debugging
