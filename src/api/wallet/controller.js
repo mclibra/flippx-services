@@ -244,40 +244,61 @@ export const initiateVirtualCashPurchase = async req => {
 			metadata.planId = planId.toString();
 		}
 
-		// Try to get available payment methods and filter for card types
-		// If that fails, exclude cash payment methods
-		let cardPaymentMethods = [];
-		let cashPaymentMethodsToExclude = [];
-		
+		// Exclude cash payment methods to show card payment options
+		// Based on Rapyd documentation, common cash payment method types for US
+		// Try multiple possible type codes for cash payment
+		const cashPaymentMethodsToExclude = [
+			'us_cash',
+			'cash_payment_us',
+			'us_cash_payment',
+			'cash',
+			'cash_payment',
+		];
+
+		// Try to get available payment methods to identify the correct cash type
+		let identifiedCashMethods = [];
 		try {
-			// Try to get payment methods for the country/currency
-			const paymentMethods = await getPaymentMethods(currency === 'USD' ? 'US' : 'US', currency);
-			if (paymentMethods && paymentMethods.data) {
-				// Filter for card payment methods
-				cardPaymentMethods = paymentMethods.data
-					.filter(pm => 
-						pm.type && (
-							pm.type.toLowerCase().includes('card') ||
-							pm.type.toLowerCase().includes('visa') ||
-							pm.type.toLowerCase().includes('mastercard') ||
-							pm.type.toLowerCase().includes('amex') ||
-							pm.type.toLowerCase().includes('discover')
-						)
-					)
-					.map(pm => pm.type);
-				
-				// Also get cash payment methods to exclude
-				cashPaymentMethodsToExclude = paymentMethods.data
-					.filter(pm => 
-						pm.type && pm.type.toLowerCase().includes('cash')
-					)
-					.map(pm => pm.type);
+			const paymentMethods = await getPaymentMethods('US', currency);
+			console.log(
+				'Payment methods response:',
+				JSON.stringify(paymentMethods, null, 2)
+			);
+
+			if (
+				paymentMethods &&
+				paymentMethods.data &&
+				Array.isArray(paymentMethods.data)
+			) {
+				// Find cash payment methods
+				identifiedCashMethods = paymentMethods.data
+					.filter(pm => {
+						const type = pm.type || pm.payment_method_type || '';
+						const name = pm.name || '';
+						return (
+							type.toLowerCase().includes('cash') ||
+							name.toLowerCase().includes('cash')
+						);
+					})
+					.map(pm => pm.type || pm.payment_method_type);
+
+				console.log(
+					'Identified cash payment methods:',
+					identifiedCashMethods
+				);
 			}
 		} catch (error) {
-			console.warn('Could not fetch payment methods, using defaults:', error.message);
-			// Fallback: exclude common cash payment method types
-			cashPaymentMethodsToExclude = ['us_cash', 'cash_payment_us'];
+			console.warn('Could not fetch payment methods:', error.message);
 		}
+
+		// Combine identified cash methods with fallback list
+		const allCashMethodsToExclude = [
+			...new Set([
+				...identifiedCashMethods,
+				...cashPaymentMethodsToExclude,
+			]),
+		];
+
+		console.log('Excluding cash payment methods:', allCashMethodsToExclude);
 
 		let checkoutPage;
 		try {
@@ -288,14 +309,20 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
+				paymentMethodTypesExclude: allCashMethodsToExclude,
 			};
 
-			// Use card payment methods if we found them, otherwise exclude cash
-			if (cardPaymentMethods.length > 0) {
-				checkoutParams.paymentMethodTypesInclude = cardPaymentMethods;
-			} else if (cashPaymentMethodsToExclude.length > 0) {
-				checkoutParams.paymentMethodTypesExclude = cashPaymentMethodsToExclude;
-			}
+			console.log(
+				'Checkout params:',
+				JSON.stringify(
+					{
+						...checkoutParams,
+						metadata: '...', // Don't log full metadata
+					},
+					null,
+					2
+				)
+			);
 
 			checkoutPage = await createCheckoutPage(checkoutParams);
 		} catch (rapydError) {
@@ -308,16 +335,17 @@ export const initiateVirtualCashPurchase = async req => {
 			const errorCode =
 				rapydError.response?.data?.status?.error_code ||
 				rapydError.response?.data?.status?.response_code;
-			
+
 			return {
 				status: rapydError.response?.status || 500,
 				entity: {
 					success: false,
 					error: errorMessage,
 					errorCode: errorCode || undefined,
-					details: process.env.NODE_ENV === 'development' 
-						? rapydError.response?.data 
-						: undefined,
+					details:
+						process.env.NODE_ENV === 'development'
+							? rapydError.response?.data
+							: undefined,
 				},
 			};
 		}
