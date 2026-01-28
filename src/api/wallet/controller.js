@@ -9,6 +9,7 @@ import {
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,
+	getPaymentMethods,
 } from '../../services/rapyd';
 import { Withdrawal } from '../withdrawal/model';
 
@@ -243,20 +244,60 @@ export const initiateVirtualCashPurchase = async req => {
 			metadata.planId = planId.toString();
 		}
 
-		// Try without payment method restrictions first to see if checkout works
-		// If cash payment shows up, we'll need to configure payment methods differently
+		// Try to get available payment methods and filter for card types
+		// If that fails, exclude cash payment methods
+		let cardPaymentMethods = [];
+		let cashPaymentMethodsToExclude = [];
+		
+		try {
+			// Try to get payment methods for the country/currency
+			const paymentMethods = await getPaymentMethods(currency === 'USD' ? 'US' : 'US', currency);
+			if (paymentMethods && paymentMethods.data) {
+				// Filter for card payment methods
+				cardPaymentMethods = paymentMethods.data
+					.filter(pm => 
+						pm.type && (
+							pm.type.toLowerCase().includes('card') ||
+							pm.type.toLowerCase().includes('visa') ||
+							pm.type.toLowerCase().includes('mastercard') ||
+							pm.type.toLowerCase().includes('amex') ||
+							pm.type.toLowerCase().includes('discover')
+						)
+					)
+					.map(pm => pm.type);
+				
+				// Also get cash payment methods to exclude
+				cashPaymentMethodsToExclude = paymentMethods.data
+					.filter(pm => 
+						pm.type && pm.type.toLowerCase().includes('cash')
+					)
+					.map(pm => pm.type);
+			}
+		} catch (error) {
+			console.warn('Could not fetch payment methods, using defaults:', error.message);
+			// Fallback: exclude common cash payment method types
+			cashPaymentMethodsToExclude = ['us_cash', 'cash_payment_us'];
+		}
+
 		let checkoutPage;
 		try {
-			checkoutPage = await createCheckoutPage({
+			const checkoutParams = {
 				amount,
 				currency,
 				description,
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
-				// Temporarily removed payment method restrictions to debug the error
-				// paymentMethodTypeCategories: ['card'],
-			});
+			};
+
+			// Use card payment methods if we found them, otherwise exclude cash
+			if (cardPaymentMethods.length > 0) {
+				checkoutParams.paymentMethodTypesInclude = cardPaymentMethods;
+			} else if (cashPaymentMethodsToExclude.length > 0) {
+				checkoutParams.paymentMethodTypesExclude = cashPaymentMethodsToExclude;
+			}
+
+			checkoutPage = await createCheckoutPage(checkoutParams);
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);
 			// Return more detailed error information for debugging

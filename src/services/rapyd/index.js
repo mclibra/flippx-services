@@ -1169,6 +1169,31 @@ export const getPayoutMethodTypes = async (country, currency) => {
 };
 
 /**
+ * Get available payment methods for a country
+ * This helps identify correct payment method type codes
+ */
+export const getPaymentMethods = async (country, currency) => {
+	try {
+		const path = `/v1/payment_methods?country=${country}&currency=${currency}`;
+		const response = await makeRapydRequest('GET', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to get payment methods'
+		);
+	} catch (error) {
+		console.error('Rapyd get payment methods error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get payment methods from Rapyd'
+		);
+	}
+};
+
+/**
  * Verify webhook signature from Rapyd
  */
 export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
