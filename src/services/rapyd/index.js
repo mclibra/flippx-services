@@ -1219,7 +1219,7 @@ export const mapPayoutStatus = rapydStatus => {
 	return statusMap[rapydStatus] || 'PENDING';
 };
 
-export { convertPhoneCountryCodeToISO, normalizeCountryToISO };
+export { convertPhoneCountryCodeToISO };
 
 export default {
 	createCheckoutPage,
