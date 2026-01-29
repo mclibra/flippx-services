@@ -5,7 +5,6 @@ import { Wallet, Payment } from './model';
 import { makeTransaction } from '../transaction/controller';
 import {
 	createCheckoutPage,
-	getPaymentStatus,
 	getPaymentMethodsByCountry,
 	verifyWebhookSignature,
 	mapPaymentStatus,
@@ -339,8 +338,8 @@ export const initiateVirtualCashPurchase = async req => {
 				// Extract unique categories from payment methods
 				const categories = new Set();
 				paymentMethods.forEach(method => {
-					if (method.category) {
-						categories.add(method.category);
+					if (method.type) {
+						categories.add(method.type);
 					}
 				});
 				if (categories.size > 0) {
@@ -354,8 +353,8 @@ export const initiateVirtualCashPurchase = async req => {
 				// Handle nested data structure
 				const categories = new Set();
 				paymentMethods.data.forEach(method => {
-					if (method.category) {
-						categories.add(method.category);
+					if (method.type) {
+						categories.add(method.type);
 					}
 				});
 				if (categories.size > 0) {
@@ -970,13 +969,21 @@ export const handlePurchaseSuccess = async req => {
 			};
 		}
 
-		// Check if already processed
+		// CRITICAL SECURITY: Payments are ONLY completed through webhook, not success callback
+		// The success callback URL can be manipulated and should NOT be trusted
+		// This endpoint only serves to redirect users to a success page
+		// Payment completion and wallet crediting happens ONLY via webhook
+
+		// Check if already processed (via webhook)
 		if (payment.status !== 'PENDING') {
 			return {
 				status: 200,
 				entity: {
 					success: true,
-					message: 'Payment already processed',
+					message:
+						payment.status === 'COMPLETED'
+							? 'Payment already processed successfully'
+							: `Payment status: ${payment.status}`,
 					payment: {
 						id: payment._id,
 						amount: payment.amount,
@@ -986,43 +993,21 @@ export const handlePurchaseSuccess = async req => {
 			};
 		}
 
-		// Verify payment status with Rapyd
-		try {
-			const rapydPaymentId =
-				payment.metadata?.rapydPaymentId ||
-				payment.providerResponse?.paymentId ||
-				payment.providerResponse?.rapyd_payment_id;
-
-			if (rapydPaymentId) {
-				const rapydPayment = await getPaymentStatus(rapydPaymentId);
-				const rapydStatus = rapydPayment?.status || 'ACT';
-				payment.status = mapPaymentStatus(rapydStatus);
-				payment.providerResponse = {
-					...payment.providerResponse,
-					rapyd_payment_data: rapydPayment,
-				};
-			} else {
-				// If no payment ID, assume completed (user reached success page)
-				payment.status = 'COMPLETED';
+		console.log(
+			'[Payment Success] User redirected to success page - payment still pending, waiting for webhook:',
+			{
+				paymentId: payment._id,
+				sessionId: payment.sessionId,
+				status: payment.status,
 			}
-		} catch (error) {
-			console.error('Error verifying payment with Rapyd:', error);
-			// Still mark as completed if user reached success page
-			payment.status = 'COMPLETED';
-		}
-
-		await payment.save();
-
-		// Process wallet credits and user plan creation if completed
-		if (payment.status === 'COMPLETED') {
-			await processPaymentCompletion(payment);
-		}
+		);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				message: 'Payment processed successfully',
+				message:
+					'Payment received. Your payment is being processed and will be confirmed shortly.',
 				payment: {
 					id: payment._id,
 					amount: payment.amount,
