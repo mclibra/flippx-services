@@ -342,9 +342,6 @@ export const initiateVirtualCashPurchase = async req => {
 					if (method.category) {
 						categories.add(method.category);
 					}
-					if (method.type) {
-						categories.add(method.type);
-					}
 				});
 				if (categories.size > 0) {
 					paymentMethodTypeCategories = Array.from(categories);
@@ -359,9 +356,6 @@ export const initiateVirtualCashPurchase = async req => {
 				paymentMethods.data.forEach(method => {
 					if (method.category) {
 						categories.add(method.category);
-					}
-					if (method.type) {
-						categories.add(method.type);
 					}
 				});
 				if (categories.size > 0) {
