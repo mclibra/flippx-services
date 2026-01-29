@@ -997,7 +997,6 @@ export const handleRapydWebhook = async req => {
 
 		const rawBody = req.body.toString('utf8');
 		const webhookBody = JSON.parse(rawBody);
-		console.log('Rapyd webhook received', webhookBody);
 
 		// The payload for signature verification is the raw body string
 		// According to Rapyd docs: HMAC-SHA256(url_path + salt + timestamp + access_key + secret_key + body_string)
@@ -1064,8 +1063,6 @@ export const handleRapydWebhook = async req => {
 		}
 
 		const { type, data } = webhookBody;
-
-		console.log(`Rapyd webhook received: ${type}`, data);
 
 		// Handle payment events
 		if (type === 'PAYMENT_COMPLETED' || type === 'PAYMENT_SUCCEEDED') {
