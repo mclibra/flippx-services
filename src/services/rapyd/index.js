@@ -778,12 +778,23 @@ export const verifyWebhookSignature = (
 		const isValid = signature === expectedSignature;
 
 		if (!isValid) {
+			// Decode both signatures to see what they contain
+			const receivedDecoded = Buffer.from(signature, 'base64').toString(
+				'hex'
+			);
+			const expectedDecoded = Buffer.from(
+				expectedSignature,
+				'base64'
+			).toString('hex');
 			console.error('Signature mismatch:', {
 				received: signature.substring(0, 50) + '...',
 				expected: expectedSignature.substring(0, 50) + '...',
 				receivedLength: signature.length,
 				expectedLength: expectedSignature.length,
+				receivedDecodedHex: receivedDecoded.substring(0, 50) + '...',
+				expectedDecodedHex: expectedDecoded.substring(0, 50) + '...',
 				urlPath: urlPath,
+				hashHex: hashHex.substring(0, 50) + '...',
 				toSignPreview: toSign.substring(0, 100) + '...',
 			});
 		}

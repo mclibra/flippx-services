@@ -46,16 +46,23 @@ console.log('  Length:', signature1.length);
 console.log('  Match:', signature1 === receivedSignature);
 console.log('');
 
-// Method 2: Hex then base64 encode hex string
+// Method 2: Hex then base64 encode hex string (as UTF-8)
 const hmac2 = crypto.createHmac('sha256', secretKey);
 hmac2.update(toSign1);
 const hashHex = hmac2.digest('hex');
 const signature2 = Buffer.from(hashHex, 'utf8').toString('base64');
-console.log('Method 2 (hex string -> base64):');
+console.log('Method 2 (hex string -> base64 as UTF-8):');
 console.log('  HashHex:', hashHex.substring(0, 50) + '...');
+console.log('  HashHex length:', hashHex.length);
 console.log('  Signature:', signature2.substring(0, 50) + '...');
 console.log('  Length:', signature2.length);
 console.log('  Match:', signature2 === receivedSignature);
+console.log('  Decoded signature2:', Buffer.from(signature2, 'base64').toString('hex').substring(0, 50) + '...');
+console.log('');
+
+// Method 2b: Try with actual body from webhook (need to get it)
+console.log('Note: The bodyString in this test is simplified.');
+console.log('The actual webhook body might be different and needs to match exactly.');
 console.log('');
 
 // Method 3: Hex bytes -> base64
