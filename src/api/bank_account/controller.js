@@ -1,5 +1,7 @@
 import { BankAccount } from './model';
 import { Withdrawal } from '../withdrawal/model';
+import { createBeneficiary, normalizeCountryToISO } from '../../services/rapyd';
+import { User } from '../user/model';
 
 export const addBankAccount = async req => {
 	try {
@@ -46,6 +48,90 @@ export const addBankAccount = async req => {
 			accountType,
 			isDefault,
 		});
+
+		// Create beneficiary in Rapyd immediately
+		try {
+			// Get user details for beneficiary creation
+			const userDetails = await User.findById(user._id);
+			if (!userDetails) {
+				throw new Error('User not found');
+			}
+
+			// Extract name parts
+			const firstName =
+				userDetails.name?.firstName ||
+				userDetails.name?.first ||
+				'User';
+			const lastName =
+				userDetails.name?.lastName || userDetails.name?.last || 'Name';
+
+			// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
+			// Handles phone codes, full country names, and ISO codes
+			const isoCountryCode = normalizeCountryToISO(
+				userDetails.address?.country || userDetails.countryCode
+			);
+
+			// Create beneficiary in Rapyd
+			const beneficiary = await createBeneficiary({
+				firstName,
+				lastName,
+				email: userDetails.email || null,
+				phoneNumber: userDetails.phone || null,
+				country: isoCountryCode,
+				currency: 'USD',
+				bankAccountDetails: {
+					bankName,
+					accountNumber,
+					accountHolderName,
+					routingNumber,
+					accountType,
+				},
+				address: userDetails.address?.address1 || null,
+				city: userDetails.address?.city || null,
+				state: userDetails.address?.state || null,
+				postcode: userDetails.address?.pincode || null,
+				identificationType: 'identification_id',
+				identificationValue: userDetails.sim_nif || 'NOT_PROVIDED',
+				merchantReferenceId: bankAccount._id.toString(),
+				routingNumber: routingNumber,
+			});
+
+			// Update bank account with beneficiary ID
+			bankAccount.rapydBeneficiaryId = beneficiary.id;
+			bankAccount.rapydBeneficiaryError = null;
+			await bankAccount.save();
+
+			console.log(
+				`Successfully created Rapyd beneficiary ${beneficiary.id} for bank account ${bankAccount._id}`
+			);
+		} catch (beneficiaryError) {
+			// Log the error but don't fail the bank account creation
+			console.error(
+				`Failed to create Rapyd beneficiary for bank account ${bankAccount._id}:`,
+				beneficiaryError
+			);
+
+			// Store the error in the bank account
+			bankAccount.rapydBeneficiaryError =
+				beneficiaryError.response?.data?.status?.message ||
+				beneficiaryError.message ||
+				'Failed to create beneficiary';
+			await bankAccount.save();
+
+			// Return success but with a warning
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					bankAccount,
+					warning:
+						'Bank account created but beneficiary creation failed. Please contact support.',
+					beneficiaryError:
+						beneficiaryError.response?.data?.status?.message ||
+						beneficiaryError.message,
+				},
+			};
+		}
 
 		return {
 			status: 200,
