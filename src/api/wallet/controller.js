@@ -269,6 +269,7 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
+				paymentMethodTypeCategories: ['card'],
 			});
 		} catch (rapydError) {
 			console.error('Rapyd checkout creation failed:', rapydError);

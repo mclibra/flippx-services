@@ -407,7 +407,7 @@ export const createCheckoutPage = async ({
 	errorPaymentUrl,
 	metadata = {},
 	customerId,
-	paymentMethodTypesInclude = [],
+	paymentMethodTypeCategories = [],
 	paymentMethodTypesExclude = [],
 	country = null,
 }) => {
@@ -447,8 +447,8 @@ export const createCheckoutPage = async ({
 			body.customer = String(customerId);
 		}
 
-		if (paymentMethodTypesInclude.length > 0) {
-			body.payment_method_types_include = paymentMethodTypesInclude;
+		if (paymentMethodTypeCategories.length > 0) {
+			body.payment_method_type_categories = paymentMethodTypeCategories;
 		}
 
 		if (paymentMethodTypesExclude.length > 0) {
