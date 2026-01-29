@@ -407,7 +407,6 @@ export const createCheckoutPage = async ({
 	errorPaymentUrl,
 	metadata = {},
 	customerId,
-	paymentMethodTypeCategories = [],
 	country = null,
 }) => {
 	try {
@@ -423,6 +422,7 @@ export const createCheckoutPage = async ({
 			complete_payment_url: String(completePaymentUrl),
 			error_payment_url: String(errorPaymentUrl),
 			country: String(country || rapydConfig.defaultCountry || 'US'),
+			payment_method_type_categories: ['cash', 'card', 'ewallet'],
 		};
 
 		// Only add metadata if it has content (Rapyd may reject empty objects)
@@ -443,10 +443,6 @@ export const createCheckoutPage = async ({
 		// Add optional parameters
 		if (customerId) {
 			body.customer = String(customerId);
-		}
-
-		if (paymentMethodTypeCategories.length > 0) {
-			body.payment_method_type_categories = paymentMethodTypeCategories;
 		}
 
 		const response = await makeRapydRequest('POST', path, body);

@@ -5,7 +5,6 @@ import { Wallet, Payment } from './model';
 import { makeTransaction } from '../transaction/controller';
 import {
 	createCheckoutPage,
-	getPaymentMethodsByCountry,
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,
@@ -301,7 +300,6 @@ export const initiateVirtualCashPurchase = async req => {
 				);
 			}
 		} else if (user.countryCode) {
-			// Map common phone country codes to ISO country codes
 			const countryCodeMap = {
 				'+1': 'US',
 				'+91': 'IN',
@@ -326,49 +324,6 @@ export const initiateVirtualCashPurchase = async req => {
 			);
 		}
 
-		// Get payment methods for the country
-		let paymentMethods = null;
-		let paymentMethodTypeCategories = ['card']; // Default fallback
-		try {
-			paymentMethods = await getPaymentMethodsByCountry(countryCode);
-
-			// Extract payment method type categories from the response
-			// The response structure may vary, but typically contains payment methods with categories
-			if (paymentMethods && Array.isArray(paymentMethods)) {
-				// Extract unique categories from payment methods
-				const categories = new Set();
-				paymentMethods.forEach(method => {
-					if (method.type) {
-						categories.add(method.type);
-					}
-				});
-				if (categories.size > 0) {
-					paymentMethodTypeCategories = Array.from(categories);
-				}
-			} else if (
-				paymentMethods &&
-				paymentMethods.data &&
-				Array.isArray(paymentMethods.data)
-			) {
-				// Handle nested data structure
-				const categories = new Set();
-				paymentMethods.data.forEach(method => {
-					if (method.type) {
-						categories.add(method.type);
-					}
-				});
-				if (categories.size > 0) {
-					paymentMethodTypeCategories = Array.from(categories);
-				}
-			}
-		} catch (paymentMethodsError) {
-			console.error('Failed to fetch payment methods by country:', {
-				countryCode,
-				error: paymentMethodsError.message,
-			});
-			// Continue with default categories if fetch fails
-		}
-
 		let checkoutPage;
 		try {
 			checkoutPage = await createCheckoutPage({
@@ -378,7 +333,6 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
-				paymentMethodTypeCategories,
 				country: countryCode,
 			});
 		} catch (rapydError) {
@@ -968,11 +922,6 @@ export const handlePurchaseSuccess = async req => {
 				},
 			};
 		}
-
-		// CRITICAL SECURITY: Payments are ONLY completed through webhook, not success callback
-		// The success callback URL can be manipulated and should NOT be trusted
-		// This endpoint only serves to redirect users to a success page
-		// Payment completion and wallet crediting happens ONLY via webhook
 
 		// Check if already processed (via webhook)
 		if (payment.status !== 'PENDING') {
