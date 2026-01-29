@@ -1012,9 +1012,14 @@ export const handleRapydWebhook = async req => {
 			payload = JSON.stringify(JSON.parse(rawBody));
 		}
 
-		// Use the path (without query string) - Rapyd docs say "entire URL" but typically means just the path
-		// The path should match exactly what was configured in Rapyd dashboard
-		const urlPath = req.path || req.originalUrl.split('?')[0];
+		// url_path is the entire URL configured for the webhook endpoint
+		// According to Rapyd docs, this should be the full URL as configured in the dashboard
+		// Use environment variable or default to dev API URL
+		const webhookBaseUrl =
+			process.env.RAPYD_WEBHOOK_URL ||
+			process.env.WEBHOOK_BASE_URL ||
+			'https://dev.api.getflippx.com';
+		const urlPath = `${webhookBaseUrl}/api/wallet/webhook/rapyd`;
 
 		// Log for debugging
 		console.log('Signature verification params:', {

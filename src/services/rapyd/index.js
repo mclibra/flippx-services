@@ -764,11 +764,14 @@ export const verifyWebhookSignature = (
 		const hmac = crypto.createHmac('sha256', secretKey);
 		hmac.update(toSign);
 
-		// Rapyd base64 encodes the HMAC result directly
-		// According to docs: BASE64 ( HASH ( ... ) )
-		// where HASH is HMAC-SHA256
-		// Get base64-encoded HMAC directly
-		const expectedSignature = hmac.digest('base64');
+		// Rapyd signature encoding: BASE64 ( HASH ( ... ) )
+		// Based on received signature length (88 chars), Rapyd uses hex->base64 encoding
+		// Get hex representation first (64 hex chars = 32 bytes), then base64 encode the hex string
+		const hashHex = hmac.digest('hex');
+		// Base64 encode the hex string as UTF-8 (not the bytes)
+		const expectedSignature = Buffer.from(hashHex, 'utf8').toString(
+			'base64'
+		);
 
 		// Compare the base64 strings directly
 		// Both signatures should be base64 encoded
