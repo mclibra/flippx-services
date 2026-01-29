@@ -961,10 +961,8 @@ export const getPaymentStatusBySessionId = async req => {
 };
 
 export const handleRapydWebhook = async req => {
-	console.log('Rapyd webhook received', req.body);
 	try {
 		// Headers (timestamp, salt, signature) are in HTTP headers
-		// Webhook data (id, type, data) is in req.body directly
 		const signature = req.get('signature');
 		const timestamp = req.get('timestamp');
 		const salt = req.get('salt');
@@ -984,10 +982,18 @@ export const handleRapydWebhook = async req => {
 			};
 		}
 
-		// The payload for signature verification is the entire req.body object stringified
+		// req.body is a Buffer when using express.raw() middleware
+		// Use the raw body string for signature verification (exact match with Rapyd)
+		const rawBody = req.body.toString('utf8');
+
+		// Parse the body for processing
+		const webhookBody = JSON.parse(rawBody);
+		console.log('Rapyd webhook received', webhookBody);
+
+		// The payload for signature verification is the raw body string
 		// According to Rapyd docs: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
-		// The body is the JSON stringified webhook payload
-		const payload = JSON.stringify(req.body);
+		// The body is the raw JSON string as received
+		const payload = rawBody;
 
 		// Verify webhook signature
 		if (
@@ -1016,7 +1022,7 @@ export const handleRapydWebhook = async req => {
 			};
 		}
 
-		const { type, data } = req.body;
+		const { type, data } = webhookBody;
 
 		console.log(`Rapyd webhook received: ${type}`, data);
 

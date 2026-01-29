@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import express from 'express';
 import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
@@ -38,8 +39,12 @@ router.get('/purchase/status', xApi(), async (req, res) =>
 	done(res, await getPaymentStatusBySessionId(req))
 );
 
-router.post('/webhook/rapyd', async (req, res) =>
-	done(res, await handleRapydWebhook(req, res))
+// Webhook route needs raw body for signature verification
+// Use express.raw() middleware to preserve raw body before JSON parsing
+router.post(
+	'/webhook/rapyd',
+	express.raw({ type: 'application/json' }),
+	async (req, res) => done(res, await handleRapydWebhook(req, res))
 );
 
 // ===== MANUAL PAYMENT ROUTES (ADMIN) =====
