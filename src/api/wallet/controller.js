@@ -1002,8 +1002,28 @@ export const handleRapydWebhook = async req => {
 		// The payload for signature verification is the raw body string
 		// According to Rapyd docs: HMAC-SHA256(url_path + salt + timestamp + access_key + secret_key + body_string)
 		// url_path is the entire URL configured for the webhook endpoint
-		const payload = rawBody;
-		const urlPath = req.originalUrl || req.path;
+		// The body_string should not contain any whitespace (spaces, tabs, newlines) except inside strings
+		// Use the raw body as-is (it should already be minified by Rapyd)
+		// Only minify if we detect whitespace that shouldn't be there
+		let payload = rawBody;
+		// Check if body has unnecessary whitespace (outside of strings)
+		if (/\s+(?![^"]*"[^"]*:)/.test(rawBody)) {
+			// Has whitespace, minify it
+			payload = JSON.stringify(JSON.parse(rawBody));
+		}
+
+		// Use the path (without query string) - Rapyd docs say "entire URL" but typically means just the path
+		// The path should match exactly what was configured in Rapyd dashboard
+		const urlPath = req.path || req.originalUrl.split('?')[0];
+
+		// Log for debugging
+		console.log('Signature verification params:', {
+			urlPath,
+			path: req.path,
+			originalUrl: req.originalUrl,
+			payloadLength: payload.length,
+			rawBodyLength: rawBody.length,
+		});
 
 		// Verify webhook signature
 		if (
