@@ -982,11 +982,19 @@ export const handleRapydWebhook = async req => {
 			};
 		}
 
-		// req.body is a Buffer when using express.raw() middleware
 		// Use the raw body string for signature verification (exact match with Rapyd)
-		const rawBody = req.body.toString('utf8');
+		if (!Buffer.isBuffer(req.body)) {
+			console.error('Expected raw body Buffer, got:', typeof req.body);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Raw body not available for signature verification',
+				},
+			};
+		}
 
-		// Parse the body for processing
+		const rawBody = req.body.toString('utf8');
 		const webhookBody = JSON.parse(rawBody);
 		console.log('Rapyd webhook received', webhookBody);
 

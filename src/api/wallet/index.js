@@ -40,7 +40,7 @@ router.get('/purchase/status', xApi(), async (req, res) =>
 );
 
 // Webhook route needs raw body for signature verification
-// Use express.raw() middleware to preserve raw body before JSON parsing
+// express.raw() middleware preserves raw body
 router.post(
 	'/webhook/rapyd',
 	express.raw({ type: 'application/json' }),
