@@ -9,7 +9,6 @@ import {
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,
-	getPaymentMethods,
 } from '../../services/rapyd';
 import { Withdrawal } from '../withdrawal/model';
 
@@ -244,61 +243,15 @@ export const initiateVirtualCashPurchase = async req => {
 			metadata.planId = planId.toString();
 		}
 
-		// Exclude cash payment methods to show card payment options
-		// Based on Rapyd documentation, common cash payment method types for US
-		// Try multiple possible type codes for cash payment
-		const cashPaymentMethodsToExclude = [
-			'us_cash',
-			'cash_payment_us',
-			'us_cash_payment',
-			'cash',
-			'cash_payment',
-		];
+		// Use payment method categories to explicitly include card payments
+		// This should exclude all non-card payment methods including cash
+		// According to Rapyd docs, "card" category includes all card payment methods
+		const paymentMethodCategories = ['card'];
 
-		// Try to get available payment methods to identify the correct cash type
-		let identifiedCashMethods = [];
-		try {
-			const paymentMethods = await getPaymentMethods('US', currency);
-			console.log(
-				'Payment methods response:',
-				JSON.stringify(paymentMethods, null, 2)
-			);
-
-			if (
-				paymentMethods &&
-				paymentMethods.data &&
-				Array.isArray(paymentMethods.data)
-			) {
-				// Find cash payment methods
-				identifiedCashMethods = paymentMethods.data
-					.filter(pm => {
-						const type = pm.type || pm.payment_method_type || '';
-						const name = pm.name || '';
-						return (
-							type.toLowerCase().includes('cash') ||
-							name.toLowerCase().includes('cash')
-						);
-					})
-					.map(pm => pm.type || pm.payment_method_type);
-
-				console.log(
-					'Identified cash payment methods:',
-					identifiedCashMethods
-				);
-			}
-		} catch (error) {
-			console.warn('Could not fetch payment methods:', error.message);
-		}
-
-		// Combine identified cash methods with fallback list
-		const allCashMethodsToExclude = [
-			...new Set([
-				...identifiedCashMethods,
-				...cashPaymentMethodsToExclude,
-			]),
-		];
-
-		console.log('Excluding cash payment methods:', allCashMethodsToExclude);
+		console.log(
+			'Using payment method categories to include card payments:',
+			paymentMethodCategories
+		);
 
 		let checkoutPage;
 		try {
@@ -309,7 +262,7 @@ export const initiateVirtualCashPurchase = async req => {
 				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
 				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
 				metadata,
-				paymentMethodTypesExclude: allCashMethodsToExclude,
+				paymentMethodTypeCategories: paymentMethodCategories,
 			};
 
 			console.log(
