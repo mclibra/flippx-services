@@ -963,29 +963,31 @@ export const getPaymentStatusBySessionId = async req => {
 export const handleRapydWebhook = async req => {
 	console.log('Rapyd webhook received', req.body);
 	try {
-		// According to Rapyd webhook documentation:
-		// The webhook structure has headers and body nested in the JSON payload
-		// Headers (timestamp, salt, signature) can be in HTTP headers OR in req.body.headers
-		// Webhook data (type, data) is in req.body.body
+		// Headers (timestamp, salt, signature) are in HTTP headers
+		// Webhook data (id, type, data) is in req.body directly
+		const signature = req.get('signature');
+		const timestamp = req.get('timestamp');
+		const salt = req.get('salt');
 
-		// Try HTTP headers first (standard), then fall back to body structure
-		let signature = req.get('signature');
-		let timestamp = req.get('timestamp');
-		let salt = req.get('salt');
-		let webhookBody = req.body;
-
-		// If headers not in HTTP headers, check body structure
 		if (!signature || !timestamp || !salt) {
-			const bodyHeaders = req.body?.headers || {};
-			signature = signature || bodyHeaders.signature;
-			timestamp = timestamp || bodyHeaders.timestamp;
-			salt = salt || bodyHeaders.salt;
-			webhookBody = req.body?.body || req.body;
+			console.error('Missing webhook headers', {
+				hasSignature: !!signature,
+				hasTimestamp: !!timestamp,
+				hasSalt: !!salt,
+			});
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Missing required webhook headers',
+				},
+			};
 		}
 
-		// The payload for signature verification is the body object stringified
-		// According to docs: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
-		const payload = JSON.stringify(webhookBody);
+		// The payload for signature verification is the entire req.body object stringified
+		// According to Rapyd docs: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
+		// The body is the JSON stringified webhook payload
+		const payload = JSON.stringify(req.body);
 
 		// Verify webhook signature
 		if (
@@ -1014,7 +1016,7 @@ export const handleRapydWebhook = async req => {
 			};
 		}
 
-		const { type, data } = webhookBody;
+		const { type, data } = req.body;
 
 		console.log(`Rapyd webhook received: ${type}`, data);
 

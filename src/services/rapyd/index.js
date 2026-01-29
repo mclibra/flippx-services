@@ -759,10 +759,22 @@ export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 		const expectedSignature = hmac.digest('base64');
 
 		// Compare signatures (both should be base64)
-		return crypto.timingSafeEqual(
-			Buffer.from(signature, 'base64'),
-			Buffer.from(expectedSignature, 'base64')
-		);
+		// Decode both signatures from base64 to compare raw bytes
+		const signatureBuffer = Buffer.from(signature, 'base64');
+		const expectedBuffer = Buffer.from(expectedSignature, 'base64');
+
+		// Check if buffers have the same length before comparing
+		if (signatureBuffer.length !== expectedBuffer.length) {
+			console.error('Signature length mismatch:', {
+				receivedLength: signatureBuffer.length,
+				expectedLength: expectedBuffer.length,
+				signature: signature.substring(0, 50) + '...',
+				expectedSignature: expectedSignature.substring(0, 50) + '...',
+			});
+			return false;
+		}
+
+		return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
 	} catch (error) {
 		console.error('Rapyd webhook signature verification error:', error);
 		return false;
