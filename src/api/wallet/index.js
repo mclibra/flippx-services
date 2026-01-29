@@ -5,8 +5,7 @@ import {
 	getUserBalance,
 	getWalletSummary,
 	initiateVirtualCashPurchase,
-	handlePurchaseSuccess,
-	handlePurchaseCancel,
+	getPaymentStatusBySessionId,
 	handleRapydWebhook,
 	createPayment,
 	createManualPayment,
@@ -35,15 +34,11 @@ router.post(
 	async (req, res) => done(res, await initiateVirtualCashPurchase(req, res))
 );
 
-router.get('/purchase/success', xApi(), async (req, res) =>
-	done(res, await handlePurchaseSuccess(req, res))
+router.get('/purchase/status', xApi(), async (req, res) =>
+	done(res, await getPaymentStatusBySessionId(req))
 );
 
-router.get('/purchase/cancel', xApi(), async (req, res) =>
-	done(res, await handlePurchaseCancel(req, res))
-);
-
-router.post('/webhook/rapyd', xApi(), async (req, res) =>
+router.post('/webhook/rapyd', async (req, res) =>
 	done(res, await handleRapydWebhook(req, res))
 );
 

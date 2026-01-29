@@ -326,12 +326,14 @@ export const initiateVirtualCashPurchase = async req => {
 
 		let checkoutPage;
 		try {
+			// Note: Rapyd requires callback URLs, but we use webhook for payment processing
+			// These URLs can point to a frontend page that polls the status endpoint
 			checkoutPage = await createCheckoutPage({
 				amount,
 				currency,
 				description,
-				completePaymentUrl: `${baseUrl}/api/wallet/purchase/success?session_id=${sessionId}`,
-				errorPaymentUrl: `${baseUrl}/api/wallet/purchase/cancel?session_id=${sessionId}`,
+				completePaymentUrl: `${baseUrl}/payment/status?session_id=${sessionId}`,
+				errorPaymentUrl: `${baseUrl}/payment/status?session_id=${sessionId}`,
 				metadata,
 				country: countryCode,
 			});
@@ -895,7 +897,7 @@ export const getUserPayments = async ({ _id, query }) => {
 	}
 };
 
-export const handlePurchaseSuccess = async req => {
+export const getPaymentStatusBySessionId = async req => {
 	try {
 		const { session_id } = req.query;
 
@@ -913,6 +915,7 @@ export const handlePurchaseSuccess = async req => {
 		const payment = await Payment.findOne({
 			sessionId: session_id,
 		}).populate('plan');
+
 		if (!payment) {
 			return {
 				status: 404,
@@ -923,127 +926,66 @@ export const handlePurchaseSuccess = async req => {
 			};
 		}
 
-		// Check if already processed (via webhook)
-		if (payment.status !== 'PENDING') {
-			return {
-				status: 200,
-				entity: {
-					success: true,
-					message:
-						payment.status === 'COMPLETED'
-							? 'Payment already processed successfully'
-							: `Payment status: ${payment.status}`,
-					payment: {
-						id: payment._id,
-						amount: payment.amount,
-						status: payment.status,
-					},
-				},
-			};
-		}
-
-		console.log(
-			'[Payment Success] User redirected to success page - payment still pending, waiting for webhook:',
-			{
-				paymentId: payment._id,
-				sessionId: payment.sessionId,
-				status: payment.status,
-			}
-		);
-
+		// Return payment status and details
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				message:
-					'Payment received. Your payment is being processed and will be confirmed shortly.',
 				payment: {
 					id: payment._id,
+					sessionId: payment.sessionId,
 					amount: payment.amount,
+					currency: payment.currency,
 					virtualCashAmount: payment.virtualCashAmount,
 					realCashAmount: payment.realCashAmount,
 					plan: payment.plan
 						? { id: payment.plan._id, name: payment.plan.name }
 						: null,
 					status: payment.status,
+					method: payment.method,
+					createdAt: payment.createdAt,
+					updatedAt: payment.updatedAt,
 				},
 			},
 		};
 	} catch (error) {
-		console.error('Handle purchase success error:', error);
+		console.error('Get payment status by session ID error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to process successful payment',
-			},
-		};
-	}
-};
-
-export const handlePurchaseCancel = async req => {
-	try {
-		const { session_id } = req.query;
-
-		if (!session_id) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Session ID is required',
-				},
-			};
-		}
-
-		// Find payment record
-		const payment = await Payment.findOne({ sessionId: session_id });
-		if (!payment) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Payment session not found',
-				},
-			};
-		}
-
-		// Update payment status if not already processed
-		if (payment.status === 'PENDING') {
-			payment.status = 'CANCELLED';
-			await payment.save();
-		}
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				message: 'Payment cancelled successfully',
-				payment: {
-					id: payment._id,
-					amount: payment.amount,
-					status: payment.status,
-				},
-			},
-		};
-	} catch (error) {
-		console.error('Handle purchase cancel error:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error:
-					error.message || 'Failed to process payment cancellation',
+				error: error.message || 'Failed to get payment status',
 			},
 		};
 	}
 };
 
 export const handleRapydWebhook = async req => {
+	console.log('Rapyd webhook received', req.body);
 	try {
-		const signature = req.get('signature');
-		const timestamp = req.get('timestamp');
-		const salt = req.get('salt');
-		const payload = JSON.stringify(req.body);
+		// According to Rapyd webhook documentation:
+		// The webhook structure has headers and body nested in the JSON payload
+		// Headers (timestamp, salt, signature) can be in HTTP headers OR in req.body.headers
+		// Webhook data (type, data) is in req.body.body
+
+		// Try HTTP headers first (standard), then fall back to body structure
+		let signature = req.get('signature');
+		let timestamp = req.get('timestamp');
+		let salt = req.get('salt');
+		let webhookBody = req.body;
+
+		// If headers not in HTTP headers, check body structure
+		if (!signature || !timestamp || !salt) {
+			const bodyHeaders = req.body?.headers || {};
+			signature = signature || bodyHeaders.signature;
+			timestamp = timestamp || bodyHeaders.timestamp;
+			salt = salt || bodyHeaders.salt;
+			webhookBody = req.body?.body || req.body;
+		}
+
+		// The payload for signature verification is the body object stringified
+		// According to docs: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
+		const payload = JSON.stringify(webhookBody);
 
 		// Verify webhook signature
 		if (
@@ -1052,7 +994,17 @@ export const handleRapydWebhook = async req => {
 			!salt ||
 			!verifyWebhookSignature(payload, signature, timestamp, salt)
 		) {
-			console.error('Invalid Rapyd webhook signature');
+			console.error('Invalid Rapyd webhook signature', {
+				hasSignature: !!signature,
+				hasTimestamp: !!timestamp,
+				hasSalt: !!salt,
+				httpHeaders: {
+					signature: req.get('signature'),
+					timestamp: req.get('timestamp'),
+					salt: req.get('salt'),
+				},
+				bodyHeaders: req.body?.headers,
+			});
 			return {
 				status: 401,
 				entity: {
@@ -1062,7 +1014,7 @@ export const handleRapydWebhook = async req => {
 			};
 		}
 
-		const { type, data } = req.body;
+		const { type, data } = webhookBody;
 
 		console.log(`Rapyd webhook received: ${type}`, data);
 

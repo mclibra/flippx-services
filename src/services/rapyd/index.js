@@ -741,6 +741,7 @@ export const getPaymentMethodsByCountry = async (country = 'US') => {
 
 /**
  * Verify webhook signature from Rapyd
+ * According to Rapyd documentation, webhook signature is base64 encoded
  */
 export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 	try {
@@ -749,15 +750,18 @@ export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 
 		// Rapyd webhook signature is calculated as:
 		// HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
+		// The signature is base64 encoded
 		const toSign = salt + timestamp + accessKey + secretKey + payload;
-		const expectedSignature = crypto
-			.createHmac('sha256', secretKey)
-			.update(toSign)
-			.digest('hex');
+		const hmac = crypto.createHmac('sha256', secretKey);
+		hmac.update(toSign);
 
+		// Generate base64 signature (matching Rapyd's format)
+		const expectedSignature = hmac.digest('base64');
+
+		// Compare signatures (both should be base64)
 		return crypto.timingSafeEqual(
-			Buffer.from(signature),
-			Buffer.from(expectedSignature)
+			Buffer.from(signature, 'base64'),
+			Buffer.from(expectedSignature, 'base64')
 		);
 	} catch (error) {
 		console.error('Rapyd webhook signature verification error:', error);
