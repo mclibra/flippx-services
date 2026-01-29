@@ -209,23 +209,6 @@ export const initiateVirtualCashPurchase = async req => {
 			finalVirtualCashAmount = plan.virtualCashAmount || 0;
 			finalRealCashAmount = plan.realCashAmount || 0;
 			description = `Plan Purchase - ${plan.name}`;
-
-			// Check if user already has an active plan of this type
-			const existingUserPlan = await UserPlan.findOne({
-				user: user._id,
-				plan: planId,
-				status: 'ACTIVE',
-			});
-
-			if (existingUserPlan) {
-				return {
-					status: 400,
-					entity: {
-						success: false,
-						error: 'You already have an active subscription to this plan',
-					},
-				};
-			}
 		} else {
 			// Validate cash distribution for non-plan purchases
 			const totalCashAmount =
@@ -263,9 +246,61 @@ export const initiateVirtualCashPurchase = async req => {
 
 		// Determine country code for payment methods lookup
 		// Try user's address country first, then extract from countryCode, fallback to default
+		// Rapyd requires ISO 3166-1 alpha-2 country codes (e.g., 'US', 'GB', 'IN')
 		let countryCode = 'US'; // Default fallback
+
+		// Helper function to convert country names to ISO codes
+		const countryNameToISO = countryName => {
+			if (!countryName) return null;
+			const normalized = countryName.trim().toUpperCase();
+			// If already a 2-letter code, return it
+			if (/^[A-Z]{2}$/.test(normalized)) {
+				return normalized;
+			}
+			// Map common country names to ISO codes
+			const countryNameMap = {
+				'UNITED STATES': 'US',
+				'UNITED STATES OF AMERICA': 'US',
+				USA: 'US',
+				US: 'US',
+				'UNITED KINGDOM': 'GB',
+				UK: 'GB',
+				'GREAT BRITAIN': 'GB',
+				INDIA: 'IN',
+				FRANCE: 'FR',
+				GERMANY: 'DE',
+				CHINA: 'CN',
+				JAPAN: 'JP',
+				MEXICO: 'MX',
+				BRAZIL: 'BR',
+				AUSTRALIA: 'AU',
+				CANADA: 'CA',
+				SPAIN: 'ES',
+				ITALY: 'IT',
+				RUSSIA: 'RU',
+				'SOUTH KOREA': 'KR',
+				KOREA: 'KR',
+			};
+			return countryNameMap[normalized] || null;
+		};
+
 		if (user.address?.country) {
-			countryCode = user.address.country.toUpperCase();
+			const isoCode = countryNameToISO(user.address.country);
+			if (isoCode) {
+				countryCode = isoCode;
+				console.log('[Payment Methods] Country code conversion:', {
+					original: user.address.country,
+					converted: isoCode,
+				});
+			} else {
+				console.warn(
+					'[Payment Methods] Could not convert country name to ISO code:',
+					{
+						country: user.address.country,
+						usingDefault: countryCode,
+					}
+				);
+			}
 		} else if (user.countryCode) {
 			// Map common phone country codes to ISO country codes
 			const countryCodeMap = {
@@ -281,6 +316,15 @@ export const initiateVirtualCashPurchase = async req => {
 				'+61': 'AU',
 			};
 			countryCode = countryCodeMap[user.countryCode] || 'US';
+			console.log('[Payment Methods] Country code from phone code:', {
+				phoneCode: user.countryCode,
+				isoCode: countryCode,
+			});
+		} else {
+			console.log(
+				'[Payment Methods] Using default country code:',
+				countryCode
+			);
 		}
 
 		// Get payment methods for the country
