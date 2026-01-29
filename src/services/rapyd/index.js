@@ -742,6 +742,8 @@ export const getPaymentMethodsByCountry = async (country = 'US') => {
 /**
  * Verify webhook signature from Rapyd
  * According to Rapyd documentation, webhook signature is base64 encoded
+ * The signature is calculated as: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
+ * Then base64 encoded
  */
 export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 	try {
@@ -750,31 +752,34 @@ export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 
 		// Rapyd webhook signature is calculated as:
 		// HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
-		// The signature is base64 encoded
+		// The result is hex (64 characters), then base64 encoded
 		const toSign = salt + timestamp + accessKey + secretKey + payload;
 		const hmac = crypto.createHmac('sha256', secretKey);
 		hmac.update(toSign);
 
-		// Generate base64 signature (matching Rapyd's format)
-		const expectedSignature = hmac.digest('base64');
+		// Get hex representation (64 hex characters as a string)
+		const hashHex = hmac.digest('hex');
+		// Rapyd base64 encodes the hex STRING directly (not the bytes)
+		// So we need to base64 encode the hex string itself as UTF-8
+		const expectedSignature = Buffer.from(hashHex, 'utf8').toString(
+			'base64'
+		);
 
-		// Compare signatures (both should be base64)
-		// Decode both signatures from base64 to compare raw bytes
-		const signatureBuffer = Buffer.from(signature, 'base64');
-		const expectedBuffer = Buffer.from(expectedSignature, 'base64');
+		// Compare the base64 strings directly
+		// Both signatures should be base64 encoded
+		const isValid = signature === expectedSignature;
 
-		// Check if buffers have the same length before comparing
-		if (signatureBuffer.length !== expectedBuffer.length) {
-			console.error('Signature length mismatch:', {
-				receivedLength: signatureBuffer.length,
-				expectedLength: expectedBuffer.length,
-				signature: signature.substring(0, 50) + '...',
-				expectedSignature: expectedSignature.substring(0, 50) + '...',
+		if (!isValid) {
+			console.error('Signature mismatch:', {
+				received: signature.substring(0, 50) + '...',
+				expected: expectedSignature.substring(0, 50) + '...',
+				receivedLength: signature.length,
+				expectedLength: expectedSignature.length,
+				hashHex: hashHex.substring(0, 50) + '...',
 			});
-			return false;
 		}
 
-		return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+		return isValid;
 	} catch (error) {
 		console.error('Rapyd webhook signature verification error:', error);
 		return false;
