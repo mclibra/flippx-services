@@ -408,7 +408,6 @@ export const createCheckoutPage = async ({
 	metadata = {},
 	customerId,
 	paymentMethodTypeCategories = [],
-	paymentMethodTypesExclude = [],
 	country = null,
 }) => {
 	try {
@@ -423,7 +422,6 @@ export const createCheckoutPage = async ({
 			description: String(description),
 			complete_payment_url: String(completePaymentUrl),
 			error_payment_url: String(errorPaymentUrl),
-			// Country is required by Rapyd API
 			country: String(country || rapydConfig.defaultCountry || 'US'),
 		};
 
@@ -449,10 +447,6 @@ export const createCheckoutPage = async ({
 
 		if (paymentMethodTypeCategories.length > 0) {
 			body.payment_method_type_categories = paymentMethodTypeCategories;
-		}
-
-		if (paymentMethodTypesExclude.length > 0) {
-			body.payment_method_types_exclude = paymentMethodTypesExclude;
 		}
 
 		const response = await makeRapydRequest('POST', path, body);
@@ -713,6 +707,43 @@ export const getPayoutMethodTypes = async (country, currency) => {
 };
 
 /**
+ * Get payment methods by country
+ * Returns available payment methods for a specific country
+ */
+export const getPaymentMethodsByCountry = async (country = 'US') => {
+	try {
+		const path = `/v1/payment_methods/countries/${country}`;
+		const response = await makeRapydRequest('GET', path);
+
+		console.log('[Rapyd Payment Methods] API Response:', {
+			country,
+			status: response.status?.status,
+			data: response.data,
+			fullResponse: JSON.stringify(response, null, 2),
+		});
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message ||
+				'Failed to get payment methods by country'
+		);
+	} catch (error) {
+		console.error('Rapyd get payment methods by country error:', {
+			country,
+			error: error.message,
+			response: error.response?.data,
+		});
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get payment methods by country from Rapyd'
+		);
+	}
+};
+
+/**
  * Verify webhook signature from Rapyd
  */
 export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
@@ -776,6 +807,7 @@ export default {
 	createPayout,
 	getPayoutStatus,
 	getPayoutMethodTypes,
+	getPaymentMethodsByCountry,
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,
