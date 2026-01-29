@@ -44,35 +44,7 @@ router.get('/purchase/status', xApi(), async (req, res) =>
 router.post(
 	'/webhook/rapyd',
 	express.raw({ type: 'application/json' }),
-	async (req, res) => {
-		const bodyString = req.body.toString('utf8');
-
-		console.log('========== RAPYD WEBHOOK DEBUG ==========');
-		console.log('Headers:', JSON.stringify(req.headers, null, 2));
-		console.log('Path:', req.path);
-		console.log('Original URL:', req.originalUrl);
-		console.log('Base URL:', req.baseUrl);
-		console.log(
-			'Full URL:',
-			req.protocol + '://' + req.get('host') + req.originalUrl
-		);
-		console.log('Body type:', typeof req.body);
-		console.log('Body length:', bodyString.length);
-		console.log('Body string:', bodyString);
-		console.log('=========================================');
-
-		// Extract signature components
-		const signature = req.headers['x-rapyd-signature'];
-		const salt = req.headers['salt'];
-		const timestamp = req.headers['timestamp'];
-
-		console.log('Signature components:');
-		console.log('  Signature:', signature);
-		console.log('  Salt:', salt);
-		console.log('  Timestamp:', timestamp);
-
-		done(res, await handleRapydWebhook(req, res));
-	}
+	async (req, res) => done(res, await handleRapydWebhook(req, res))
 );
 
 // ===== MANUAL PAYMENT ROUTES (ADMIN) =====
