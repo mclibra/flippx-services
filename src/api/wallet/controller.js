@@ -227,7 +227,8 @@ export const initiateVirtualCashPurchase = async req => {
 		const sessionId = `vcash_${user._id}_${Date.now()}`;
 
 		// Get base URL from environment or use default
-		const baseUrl = process.env.HOST_URL || 'http://localhost:3000';
+		const baseUrl =
+			process.env.HOST_URL || 'https://dev-shop.getflippx.com';
 
 		// Prepare metadata for Rapyd
 		const metadata = {
@@ -332,8 +333,8 @@ export const initiateVirtualCashPurchase = async req => {
 				amount,
 				currency,
 				description,
-				completePaymentUrl: `${baseUrl}/payment/status?session_id=${sessionId}`,
-				errorPaymentUrl: `${baseUrl}/payment/status?session_id=${sessionId}`,
+				completePaymentUrl: `${baseUrl}/payment-status?session_id=${sessionId}`,
+				errorPaymentUrl: `${baseUrl}/payment-status?session_id=${sessionId}`,
 				metadata,
 				country: countryCode,
 			});
@@ -999,16 +1000,23 @@ export const handleRapydWebhook = async req => {
 		console.log('Rapyd webhook received', webhookBody);
 
 		// The payload for signature verification is the raw body string
-		// According to Rapyd docs: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
-		// The body is the raw JSON string as received
+		// According to Rapyd docs: HMAC-SHA256(url_path + salt + timestamp + access_key + secret_key + body_string)
+		// url_path is the entire URL configured for the webhook endpoint
 		const payload = rawBody;
+		const urlPath = req.originalUrl || req.path;
 
 		// Verify webhook signature
 		if (
 			!signature ||
 			!timestamp ||
 			!salt ||
-			!verifyWebhookSignature(payload, signature, timestamp, salt)
+			!verifyWebhookSignature(
+				urlPath,
+				payload,
+				signature,
+				timestamp,
+				salt
+			)
 		) {
 			console.error('Invalid Rapyd webhook signature', {
 				hasSignature: !!signature,

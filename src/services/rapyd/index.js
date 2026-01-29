@@ -741,19 +741,26 @@ export const getPaymentMethodsByCountry = async (country = 'US') => {
 
 /**
  * Verify webhook signature from Rapyd
- * According to Rapyd documentation, webhook signature is base64 encoded
- * The signature is calculated as: HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
- * Then base64 encoded
+ * According to Rapyd documentation:
+ * signature = BASE64 ( HASH ( url_path + salt + timestamp + access_key + secret_key + body_string ) )
+ * where HASH is HMAC-SHA256
  */
-export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
+export const verifyWebhookSignature = (
+	urlPath,
+	payload,
+	signature,
+	timestamp,
+	salt
+) => {
 	try {
 		const secretKey = rapydConfig.secretKey;
 		const accessKey = rapydConfig.accessKey;
 
 		// Rapyd webhook signature is calculated as:
-		// HMAC-SHA256(salt + timestamp + accessKey + secretKey + body)
+		// HMAC-SHA256(url_path + salt + timestamp + access_key + secret_key + body_string)
 		// The result is hex (64 characters), then base64 encoded
-		const toSign = salt + timestamp + accessKey + secretKey + payload;
+		const toSign =
+			urlPath + salt + timestamp + accessKey + secretKey + payload;
 		const hmac = crypto.createHmac('sha256', secretKey);
 		hmac.update(toSign);
 
@@ -776,6 +783,8 @@ export const verifyWebhookSignature = (payload, signature, timestamp, salt) => {
 				receivedLength: signature.length,
 				expectedLength: expectedSignature.length,
 				hashHex: hashHex.substring(0, 50) + '...',
+				urlPath: urlPath,
+				toSignPreview: toSign.substring(0, 100) + '...',
 			});
 		}
 
