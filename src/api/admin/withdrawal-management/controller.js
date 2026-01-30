@@ -90,44 +90,28 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
-			// Get beneficiary details from Rapyd for entity type
-			// NOTE: When using a beneficiary ID, we should NOT send beneficiary_country
-			// Rapyd will use the country from the beneficiary object
-			// Sending beneficiary_country can cause mismatch errors if it doesn't match
-			// the bank account's country as inferred by Rapyd
+			// Get beneficiary details from Rapyd
+			// We need country and entity_type for the payout request
+			let beneficiaryCountry;
 			let beneficiaryEntityType = 'individual';
 
 			try {
 				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
+				// Use the country exactly as stored in Rapyd (preserve case)
+				beneficiaryCountry = beneficiaryDetails.country;
 				beneficiaryEntityType =
 					beneficiaryDetails.entity_type || 'individual';
 				console.log(
-					`[approveWithdrawal] Beneficiary details from Rapyd - country: ${beneficiaryDetails.country}, entity_type: ${beneficiaryEntityType}`
+					`[approveWithdrawal] Beneficiary details from Rapyd - country: ${beneficiaryCountry}, entity_type: ${beneficiaryEntityType}`
 				);
 			} catch (beneficiaryError) {
+				// Fallback to user's country if we can't fetch beneficiary
 				console.warn(
-					`[approveWithdrawal] Could not fetch beneficiary details, using defaults`,
+					`[approveWithdrawal] Could not fetch beneficiary details, using user's country`,
 					beneficiaryError.message
 				);
-			}
-
-			// Get beneficiary country from Rapyd for payout method type selection
-			// We need this to find the correct payout method type
-			let beneficiaryCountry;
-			try {
-				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
-				beneficiaryCountry = beneficiaryDetails.country;
-				console.log(
-					`[approveWithdrawal] Using beneficiary country for payout method type: ${beneficiaryCountry}`
-				);
-			} catch (beneficiaryCountryError) {
-				// Fallback to user's country for payout method type selection
 				beneficiaryCountry = normalizeCountryToISO(
 					user.address?.country || user.countryCode
-				);
-				console.warn(
-					`[approveWithdrawal] Could not fetch beneficiary country, using user's country for payout method type: ${beneficiaryCountry}`,
-					beneficiaryCountryError.message
 				);
 			}
 
@@ -184,6 +168,28 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
+			// Prepare sender information for payout
+			// Sender is the company (FlippX) making the payout
+			const senderCountry = normalizeCountryToISO(
+				process.env.SENDER_COUNTRY || beneficiaryCountry || 'IN'
+			);
+			const senderCurrency = 'USD';
+			const senderEntityType = 'company';
+
+			const sender = {
+				company_name: process.env.COMPANY_NAME || 'FlippX India',
+				country: senderCountry,
+				currency: senderCurrency,
+				address: process.env.COMPANY_ADDRESS || 'Test Address',
+				city: process.env.COMPANY_CITY || 'Delhi',
+				purpose_code:
+					process.env.PAYOUT_PURPOSE_CODE || 'payment_of_services',
+			};
+
+			console.log(
+				`[approveWithdrawal] Sender info - country: ${senderCountry}, company: ${sender.company_name}`
+			);
+
 			// Create payout in Rapyd
 			let payout;
 			try {
@@ -194,10 +200,12 @@ export const approveWithdrawal = async req => {
 					description: `Withdrawal for user ${user.email}`,
 					reference: withdrawal._id.toString(),
 					payoutMethodType, // Use country-specific payout method type
-					// NOTE: Do NOT send beneficiary_country when using beneficiary ID
-					// Rapyd will use the country from the beneficiary object
-					// Sending it can cause ERROR_CREATE_PAYOUT_BENEFICIARY_COUNTRY_AND_BANK_COUNTRY_MISMATCH
+					beneficiaryCountry, // Match beneficiary's country from Rapyd
 					beneficiaryEntityType, // Use beneficiary's actual entity type from Rapyd
+					senderCountry, // Sender (company) country
+					senderCurrency, // Sender currency
+					senderEntityType, // Sender entity type (company)
+					sender, // Sender object with company details
 					metadata: {
 						userId: user._id.toString(),
 						withdrawalId: withdrawal._id.toString(),
@@ -284,23 +292,24 @@ export const approveWithdrawal = async req => {
 					// Update beneficiary ID and retry payout
 					beneficiaryId = newBeneficiary.id;
 
-					// Get the new beneficiary's entity type from Rapyd
+					// Get the new beneficiary's details from Rapyd
+					let newBeneficiaryCountry = beneficiaryCountry; // Use existing country
 					let newBeneficiaryEntityType = 'individual';
 					try {
 						const newBeneficiaryDetails = await getBeneficiary(
 							newBeneficiary.id
 						);
+						newBeneficiaryCountry = newBeneficiaryDetails.country;
 						newBeneficiaryEntityType =
 							newBeneficiaryDetails.entity_type || 'individual';
 					} catch (beneficiaryFetchError) {
 						console.warn(
-							`[approveWithdrawal] Could not fetch new beneficiary details, using default entity type`,
+							`[approveWithdrawal] Could not fetch new beneficiary details, using defaults`,
 							beneficiaryFetchError.message
 						);
 					}
 
-					// Retry payout with new beneficiary (using same payout method type)
-					// NOTE: Do NOT send beneficiary_country - let Rapyd use from beneficiary
+					// Retry payout with new beneficiary (using same payout method type and sender info)
 					payout = await createPayout({
 						beneficiaryId,
 						amount: withdrawal.netAmount,
@@ -308,8 +317,12 @@ export const approveWithdrawal = async req => {
 						description: `Withdrawal for user ${user.email}`,
 						reference: withdrawal._id.toString(),
 						payoutMethodType,
-						// Don't send beneficiaryCountry - let Rapyd use from beneficiary
+						beneficiaryCountry: newBeneficiaryCountry, // Match beneficiary's country
 						beneficiaryEntityType: newBeneficiaryEntityType,
+						senderCountry, // Sender (company) country
+						senderCurrency, // Sender currency
+						senderEntityType, // Sender entity type (company)
+						sender, // Sender object with company details
 						metadata: {
 							userId: user._id.toString(),
 							withdrawalId: withdrawal._id.toString(),

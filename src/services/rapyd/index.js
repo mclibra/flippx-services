@@ -868,14 +868,18 @@ export const createPayout = async ({
 	payoutMethodType,
 	beneficiaryCountry = null,
 	beneficiaryEntityType = 'individual',
+	senderCountry = null,
+	senderCurrency = null,
+	senderEntityType = 'company',
+	sender = null,
 	eWalletId = null,
 }) => {
 	try {
 		const path = '/v1/payouts';
 		const body = {
 			beneficiary: beneficiaryId,
-			amount,
-			currency,
+			payout_amount: amount, // Use payout_amount instead of amount
+			payout_currency: currency, // Use payout_currency instead of currency
 			description,
 			payout_method_type: payoutMethodType,
 			metadata: {
@@ -884,14 +888,36 @@ export const createPayout = async ({
 			},
 		};
 
-		// Add beneficiary_country if provided (required for some payout methods)
+		// Add sender_currency (required)
+		if (senderCurrency) {
+			body.sender_currency = senderCurrency;
+		} else {
+			body.sender_currency = currency; // Default to same as payout currency
+		}
+
+		// Add beneficiary_country (required - must match beneficiary's country)
 		if (beneficiaryCountry) {
 			body.beneficiary_country = beneficiaryCountry;
 		}
 
-		// Add beneficiary_entity_type (required for some payout methods)
+		// Add beneficiary_entity_type (required)
 		if (beneficiaryEntityType) {
 			body.beneficiary_entity_type = beneficiaryEntityType;
+		}
+
+		// Add sender_country (required)
+		if (senderCountry) {
+			body.sender_country = senderCountry;
+		}
+
+		// Add sender_entity_type (required)
+		if (senderEntityType) {
+			body.sender_entity_type = senderEntityType;
+		}
+
+		// Add sender object (required for company payouts)
+		if (sender) {
+			body.sender = sender;
 		}
 
 		// Add eWallet if provided
