@@ -543,9 +543,8 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-
 					referenceIndex,
-					transactionType: 'PENDING_DEBIT',
+					transactionType: 'DEBIT',
 					transactionIdentifier,
 					transactionAmount,
 					previousBalance:
