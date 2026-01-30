@@ -1100,8 +1100,58 @@ export const checkWeeklyWithdrawalLimit = async userId => {
 		}
 		const LOYALTY_TIERS = await TierConfigService.getTierRequirements();
 
-		const tierLimit =
-			LOYALTY_TIERS[loyalty.currentTier].weeklyWithdrawalLimit;
+		// Debug logs
+		console.log('[checkWeeklyWithdrawalLimit] User ID:', userId);
+		console.log('[checkWeeklyWithdrawalLimit] Current tier:', loyalty.currentTier);
+		console.log('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS keys:', LOYALTY_TIERS ? Object.keys(LOYALTY_TIERS) : 'null/undefined');
+		console.log('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS:', JSON.stringify(LOYALTY_TIERS, null, 2));
+
+		// Safety check: verify tier exists in LOYALTY_TIERS
+		if (!LOYALTY_TIERS || typeof LOYALTY_TIERS !== 'object') {
+			console.error('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS is invalid:', LOYALTY_TIERS);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Tier configuration not available. Please contact support.',
+				},
+			};
+		}
+
+		const tierConfig = LOYALTY_TIERS[loyalty.currentTier];
+		if (!tierConfig) {
+			console.error(
+				'[checkWeeklyWithdrawalLimit] Tier not found in configuration. Current tier:',
+				loyalty.currentTier,
+				'Available tiers:',
+				Object.keys(LOYALTY_TIERS)
+			);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: `Tier configuration not found for tier: ${loyalty.currentTier}. Please contact support.`,
+				},
+			};
+		}
+
+		if (typeof tierConfig.weeklyWithdrawalLimit !== 'number') {
+			console.error(
+				'[checkWeeklyWithdrawalLimit] weeklyWithdrawalLimit is not a number for tier:',
+				loyalty.currentTier,
+				'Value:',
+				tierConfig.weeklyWithdrawalLimit
+			);
+			return {
+				status: 500,
+				entity: {
+					success: false,
+					error: 'Invalid withdrawal limit configuration. Please contact support.',
+				},
+			};
+		}
+
+		const tierLimit = tierConfig.weeklyWithdrawalLimit;
 		const remaining = Math.max(0, tierLimit - loyalty.weeklyWithdrawalUsed);
 
 		return {

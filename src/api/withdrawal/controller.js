@@ -32,14 +32,29 @@ export const initiateWithdrawal = async req => {
 
 		// **NEW: Check loyalty-based withdrawal limits**
 		try {
+			console.log(
+				'[initiateWithdrawal] Checking withdrawal limit for user:',
+				user._id
+			);
 			const withdrawalLimitResult =
 				await LoyaltyService.checkUserWithdrawalLimit(user._id);
+			console.log(
+				'[initiateWithdrawal] Withdrawal limit result:',
+				JSON.stringify(withdrawalLimitResult, null, 2)
+			);
+
 			if (!withdrawalLimitResult.success) {
+				console.error(
+					'[initiateWithdrawal] Withdrawal limit check failed:',
+					withdrawalLimitResult.error
+				);
 				return {
 					status: 500,
 					entity: {
 						success: false,
-						error: 'Failed to validate withdrawal limits. Please try again.',
+						error:
+							withdrawalLimitResult.error ||
+							'Failed to validate withdrawal limits. Please try again.',
 					},
 				};
 			}
@@ -62,12 +77,21 @@ export const initiateWithdrawal = async req => {
 				};
 			}
 		} catch (loyaltyError) {
-			console.error('Error checking withdrawal limits:', loyaltyError);
+			console.error(
+				'[initiateWithdrawal] Error checking withdrawal limits:',
+				loyaltyError
+			);
+			console.error(
+				'[initiateWithdrawal] Error stack:',
+				loyaltyError.stack
+			);
 			return {
 				status: 500,
 				entity: {
 					success: false,
-					error: 'Failed to validate withdrawal limits. Please try again.',
+					error:
+						loyaltyError.message ||
+						'Failed to validate withdrawal limits. Please try again.',
 				},
 			};
 		}
