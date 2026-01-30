@@ -95,7 +95,9 @@ export const approveWithdrawal = async req => {
 			let beneficiaryEntityType = 'individual';
 			try {
 				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
-				beneficiaryCountry = beneficiaryDetails.country?.toLowerCase();
+				// Use the country exactly as stored in Rapyd (don't convert to lowercase)
+				// Rapyd stores country codes in uppercase (e.g., "IN", "US")
+				beneficiaryCountry = beneficiaryDetails.country;
 				beneficiaryEntityType =
 					beneficiaryDetails.entity_type || 'individual';
 				console.log(
@@ -109,7 +111,7 @@ export const approveWithdrawal = async req => {
 				);
 				beneficiaryCountry = normalizeCountryToISO(
 					user.address?.country || user.countryCode
-				).toLowerCase();
+				);
 			}
 
 			// Get payout method types from Rapyd API
@@ -120,10 +122,11 @@ export const approveWithdrawal = async req => {
 
 				// Find the appropriate payout method type for the beneficiary country
 				// Filter by beneficiary_country and category='bank'
+				// Compare case-insensitively but use exact case from beneficiary
 				const bankAccountMethod = payoutMethodTypes.find(
 					method =>
 						method.beneficiary_country?.toLowerCase() ===
-							beneficiaryCountry &&
+							beneficiaryCountry?.toLowerCase() &&
 						method.category === 'bank' &&
 						method.status === 1
 				);
@@ -138,7 +141,8 @@ export const approveWithdrawal = async req => {
 					const fallbackMethod = payoutMethodTypes.find(
 						method =>
 							method.beneficiary_country?.toLowerCase() ===
-								beneficiaryCountry && method.category === 'bank'
+								beneficiaryCountry?.toLowerCase() &&
+							method.category === 'bank'
 					);
 
 					if (fallbackMethod) {
@@ -147,16 +151,16 @@ export const approveWithdrawal = async req => {
 							`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
 						);
 					} else {
-						// Last resort: construct from country code
-						payoutMethodType = `${beneficiaryCountry}_standard_bank_account`;
+						// Last resort: construct from country code (use lowercase for payout method type)
+						payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
 						console.warn(
 							`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
 						);
 					}
 				}
 			} catch (payoutMethodError) {
-				// Fallback to constructed method type if API call fails
-				payoutMethodType = `${beneficiaryCountry}_standard_bank_account`;
+				// Fallback to constructed method type if API call fails (use lowercase for payout method type)
+				payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
 				console.warn(
 					`[approveWithdrawal] Error getting payout method types, using fallback: ${payoutMethodType}`,
 					payoutMethodError.message
@@ -262,15 +266,15 @@ export const approveWithdrawal = async req => {
 					beneficiaryId = newBeneficiary.id;
 
 					// Get the new beneficiary's country from Rapyd
-					let newBeneficiaryCountry =
-						isoCountryCodeForRecreation.toLowerCase();
+					// Use exact case from Rapyd (uppercase like "IN", "US")
+					let newBeneficiaryCountry = isoCountryCodeForRecreation;
 					let newBeneficiaryEntityType = 'individual';
 					try {
 						const newBeneficiaryDetails = await getBeneficiary(
 							newBeneficiary.id
 						);
-						newBeneficiaryCountry =
-							newBeneficiaryDetails.country?.toLowerCase();
+						// Use the country exactly as stored in Rapyd (uppercase)
+						newBeneficiaryCountry = newBeneficiaryDetails.country;
 						newBeneficiaryEntityType =
 							newBeneficiaryDetails.entity_type || 'individual';
 					} catch (beneficiaryFetchError) {
