@@ -6,6 +6,7 @@ import {
 	createBankAccountBeneficiary,
 	normalizeCountryToISO,
 	getPayoutMethodTypesByCurrency,
+	getBeneficiary,
 } from '../../../services/rapyd';
 import { User } from '../../user/model';
 
@@ -89,10 +90,27 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
-			// Determine user's country and get appropriate payout method type
-			const isoCountryCode = normalizeCountryToISO(
-				user.address?.country || user.countryCode
-			);
+			// Get beneficiary details from Rapyd to get its actual country
+			let beneficiaryCountry;
+			let beneficiaryEntityType = 'individual';
+			try {
+				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
+				beneficiaryCountry = beneficiaryDetails.country?.toLowerCase();
+				beneficiaryEntityType =
+					beneficiaryDetails.entity_type || 'individual';
+				console.log(
+					`[approveWithdrawal] Beneficiary country from Rapyd: ${beneficiaryCountry}, entity_type: ${beneficiaryEntityType}`
+				);
+			} catch (beneficiaryError) {
+				// Fallback to user's country if we can't fetch beneficiary
+				console.warn(
+					`[approveWithdrawal] Could not fetch beneficiary details, using user's country`,
+					beneficiaryError.message
+				);
+				beneficiaryCountry = normalizeCountryToISO(
+					user.address?.country || user.countryCode
+				).toLowerCase();
+			}
 
 			// Get payout method types from Rapyd API
 			let payoutMethodType;
@@ -105,7 +123,7 @@ export const approveWithdrawal = async req => {
 				const bankAccountMethod = payoutMethodTypes.find(
 					method =>
 						method.beneficiary_country?.toLowerCase() ===
-							isoCountryCode.toLowerCase() &&
+							beneficiaryCountry &&
 						method.category === 'bank' &&
 						method.status === 1
 				);
@@ -113,33 +131,32 @@ export const approveWithdrawal = async req => {
 				if (bankAccountMethod) {
 					payoutMethodType = bankAccountMethod.payout_method_type;
 					console.log(
-						`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${isoCountryCode}`
+						`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
 					);
 				} else {
 					// Fallback: try to find any bank method for the country
 					const fallbackMethod = payoutMethodTypes.find(
 						method =>
 							method.beneficiary_country?.toLowerCase() ===
-								isoCountryCode.toLowerCase() &&
-							method.category === 'bank'
+								beneficiaryCountry && method.category === 'bank'
 					);
 
 					if (fallbackMethod) {
 						payoutMethodType = fallbackMethod.payout_method_type;
 						console.log(
-							`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${isoCountryCode}`
+							`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
 						);
 					} else {
 						// Last resort: construct from country code
-						payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+						payoutMethodType = `${beneficiaryCountry}_standard_bank_account`;
 						console.warn(
-							`[approveWithdrawal] Could not find payout method type for country ${isoCountryCode}, using constructed: ${payoutMethodType}`
+							`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
 						);
 					}
 				}
 			} catch (payoutMethodError) {
 				// Fallback to constructed method type if API call fails
-				payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+				payoutMethodType = `${beneficiaryCountry}_standard_bank_account`;
 				console.warn(
 					`[approveWithdrawal] Error getting payout method types, using fallback: ${payoutMethodType}`,
 					payoutMethodError.message
@@ -156,8 +173,8 @@ export const approveWithdrawal = async req => {
 					description: `Withdrawal for user ${user.email}`,
 					reference: withdrawal._id.toString(),
 					payoutMethodType, // Use country-specific payout method type
-					beneficiaryCountry: isoCountryCode.toLowerCase(), // Required for payout method type validation
-					beneficiaryEntityType: 'individual', // Default to individual
+					beneficiaryCountry, // Use beneficiary's actual country from Rapyd
+					beneficiaryEntityType, // Use beneficiary's actual entity type from Rapyd
 					metadata: {
 						userId: user._id.toString(),
 						withdrawalId: withdrawal._id.toString(),
@@ -197,7 +214,7 @@ export const approveWithdrawal = async req => {
 						'Name';
 
 					// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
-					const isoCountryCode = normalizeCountryToISO(
+					const isoCountryCodeForRecreation = normalizeCountryToISO(
 						userDetails.address?.country || userDetails.countryCode
 					);
 
@@ -207,7 +224,7 @@ export const approveWithdrawal = async req => {
 						lastName,
 						email: userDetails.email || null,
 						phoneNumber: userDetails.phone || null,
-						country: isoCountryCode,
+						country: isoCountryCodeForRecreation,
 						currency: 'USD',
 						bankAccountDetails: {
 							bankName: withdrawal.bankAccount.bankName,
@@ -244,6 +261,25 @@ export const approveWithdrawal = async req => {
 					// Update beneficiary ID and retry payout
 					beneficiaryId = newBeneficiary.id;
 
+					// Get the new beneficiary's country from Rapyd
+					let newBeneficiaryCountry =
+						isoCountryCodeForRecreation.toLowerCase();
+					let newBeneficiaryEntityType = 'individual';
+					try {
+						const newBeneficiaryDetails = await getBeneficiary(
+							newBeneficiary.id
+						);
+						newBeneficiaryCountry =
+							newBeneficiaryDetails.country?.toLowerCase();
+						newBeneficiaryEntityType =
+							newBeneficiaryDetails.entity_type || 'individual';
+					} catch (beneficiaryFetchError) {
+						console.warn(
+							`[approveWithdrawal] Could not fetch new beneficiary details, using fallback country`,
+							beneficiaryFetchError.message
+						);
+					}
+
 					// Retry payout with new beneficiary (using same payout method type)
 					payout = await createPayout({
 						beneficiaryId,
@@ -252,8 +288,8 @@ export const approveWithdrawal = async req => {
 						description: `Withdrawal for user ${user.email}`,
 						reference: withdrawal._id.toString(),
 						payoutMethodType,
-						beneficiaryCountry: isoCountryCode.toLowerCase(),
-						beneficiaryEntityType: 'individual',
+						beneficiaryCountry: newBeneficiaryCountry,
+						beneficiaryEntityType: newBeneficiaryEntityType,
 						metadata: {
 							userId: user._id.toString(),
 							withdrawalId: withdrawal._id.toString(),

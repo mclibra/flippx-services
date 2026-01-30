@@ -940,6 +940,32 @@ export const getPayoutStatus = async payoutId => {
 };
 
 /**
+ * Get beneficiary details from Rapyd
+ * @param {string} beneficiaryId - Rapyd beneficiary ID
+ * @returns {Promise<Object>} Rapyd beneficiary data
+ */
+export const getBeneficiary = async beneficiaryId => {
+	try {
+		const path = `/v1/payouts/beneficiary/${beneficiaryId}`;
+		const response = await makeRapydRequest('GET', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to get beneficiary'
+		);
+	} catch (error) {
+		console.error('Rapyd get beneficiary error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get beneficiary from Rapyd'
+		);
+	}
+};
+
+/**
  * Delete a beneficiary from Rapyd
  * @param {string} beneficiaryId - Rapyd beneficiary ID
  * @returns {Promise<Object>} Rapyd response data
@@ -1250,6 +1276,7 @@ export default {
 	getPayoutMethodTypes,
 	getPayoutMethodTypesByCurrency,
 	getPaymentMethodsByCountry,
+	getBeneficiary,
 	deleteBeneficiary,
 	verifyWebhookSignature,
 	mapPaymentStatus,
