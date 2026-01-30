@@ -1,7 +1,11 @@
 import { Withdrawal } from '../../withdrawal/model';
 import { Transaction } from '../../transaction/model';
 import { makeTransaction } from '../../transaction/controller';
-import { createPayout } from '../../../services/rapyd';
+import {
+	createPayout,
+	createBankAccountBeneficiary,
+	normalizeCountryToISO,
+} from '../../../services/rapyd';
 import { User } from '../../user/model';
 
 export const approveWithdrawal = async req => {
@@ -66,7 +70,7 @@ export const approveWithdrawal = async req => {
 
 		try {
 			// Get beneficiary ID from bank account (should be created when bank account was added)
-			const beneficiaryId =
+			let beneficiaryId =
 				withdrawal.bankAccount.rapydBeneficiaryId ||
 				withdrawal.paymentDetails?.rapydBeneficiaryId;
 
@@ -84,20 +88,131 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
+			// Determine user's country and construct payout method type
+			// The two-letter prefix must match the country code of the beneficiary
+			const isoCountryCode = normalizeCountryToISO(
+				user.address?.country || user.countryCode
+			);
+
+			// Construct payout method type: {country_code}_standard_bank_account
+			const payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+
 			// Create payout in Rapyd
-			const payout = await createPayout({
-				beneficiaryId,
-				amount: withdrawal.netAmount, // Use net amount after fees
-				currency: 'USD',
-				description: `Withdrawal for user ${user.email}`,
-				reference: withdrawal._id.toString(),
-				payoutMethodType: 'us_standard_bank_account', // Should match beneficiary category
-				metadata: {
-					userId: user._id.toString(),
-					withdrawalId: withdrawal._id.toString(),
-					bankAccountId: withdrawal.bankAccount._id.toString(),
-				},
-			});
+			let payout;
+			try {
+				payout = await createPayout({
+					beneficiaryId,
+					amount: withdrawal.netAmount, // Use net amount after fees
+					currency: 'USD',
+					description: `Withdrawal for user ${user.email}`,
+					reference: withdrawal._id.toString(),
+					payoutMethodType, // Use country-specific payout method type
+					metadata: {
+						userId: user._id.toString(),
+						withdrawalId: withdrawal._id.toString(),
+						bankAccountId: withdrawal.bankAccount._id.toString(),
+					},
+				});
+			} catch (payoutError) {
+				// Check if error is due to BIC/SWIFT for US accounts
+				const errorCode =
+					payoutError.response?.data?.status?.error_code || '';
+				const isBicSwiftError =
+					errorCode.includes('BIC_SWIFT') &&
+					payoutError.response?.data?.status?.response_code?.includes(
+						'BIC_SWIFT'
+					);
+
+				// If BIC/SWIFT error and payout method is US standard bank account, recreate beneficiary
+				if (isBicSwiftError) {
+					console.log(
+						`[approveWithdrawal] BIC/SWIFT error detected for US account. Recreating beneficiary without BIC/SWIFT for bank account ${withdrawal.bankAccount._id}`
+					);
+
+					// Get user details for beneficiary recreation
+					const userDetails = await User.findById(user._id);
+					if (!userDetails) {
+						throw new Error('User not found');
+					}
+
+					// Extract name parts
+					const firstName =
+						userDetails.name?.firstName ||
+						userDetails.name?.first ||
+						'User';
+					const lastName =
+						userDetails.name?.lastName ||
+						userDetails.name?.last ||
+						'Name';
+
+					// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
+					const isoCountryCode = normalizeCountryToISO(
+						userDetails.address?.country || userDetails.countryCode
+					);
+
+					// Recreate beneficiary without BIC/SWIFT for US accounts
+					const newBeneficiary = await createBankAccountBeneficiary({
+						firstName,
+						lastName,
+						email: userDetails.email || null,
+						phoneNumber: userDetails.phone || null,
+						country: isoCountryCode,
+						currency: 'USD',
+						bankAccountDetails: {
+							bankName: withdrawal.bankAccount.bankName,
+							accountNumber: withdrawal.bankAccount.accountNumber,
+							accountHolderName:
+								withdrawal.bankAccount.accountHolderName,
+							routingNumber:
+								withdrawal.bankAccount.routingNumber || null,
+							bicSwift: null, // Explicitly set to null for US accounts
+							accountType: withdrawal.bankAccount.accountType,
+						},
+						entityType: 'individual',
+						address: userDetails.address?.address1 || null,
+						city: userDetails.address?.city || null,
+						state: userDetails.address?.state || null,
+						postcode: userDetails.address?.pincode || null,
+						identificationType: 'identification_id',
+						identificationValue:
+							userDetails.sim_nif || 'NOT_PROVIDED',
+						merchantReferenceId:
+							withdrawal.bankAccount._id.toString(),
+					});
+
+					// Update bank account with new beneficiary ID
+					withdrawal.bankAccount.rapydBeneficiaryId =
+						newBeneficiary.id;
+					withdrawal.bankAccount.rapydBeneficiaryError = null;
+					await withdrawal.bankAccount.save();
+
+					console.log(
+						`[approveWithdrawal] Successfully recreated beneficiary ${newBeneficiary.id} without BIC/SWIFT for bank account ${withdrawal.bankAccount._id}`
+					);
+
+					// Update beneficiary ID and retry payout
+					beneficiaryId = newBeneficiary.id;
+
+					// Retry payout with new beneficiary (using same payout method type)
+					payout = await createPayout({
+						beneficiaryId,
+						amount: withdrawal.netAmount,
+						currency: 'USD',
+						description: `Withdrawal for user ${user.email}`,
+						reference: withdrawal._id.toString(),
+						payoutMethodType,
+						metadata: {
+							userId: user._id.toString(),
+							withdrawalId: withdrawal._id.toString(),
+							bankAccountId:
+								withdrawal.bankAccount._id.toString(),
+						},
+					});
+				} else {
+					// Re-throw if it's not a BIC/SWIFT error or not US account
+					throw payoutError;
+				}
+			}
 
 			// Update withdrawal with payout details
 			withdrawal.paymentReference = payout.id;
