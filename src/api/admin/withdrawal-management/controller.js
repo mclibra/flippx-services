@@ -90,28 +90,57 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
-			// Get beneficiary details from Rapyd to get its actual country
+			// Determine beneficiary country from bank account details
+			// Rapyd infers bank account country from details:
+			// - BIC/SWIFT present = international account (use user's country)
+			// - Routing number only = US account
+			// The beneficiary_country in payout must match the bank account's country
 			let beneficiaryCountry;
 			let beneficiaryEntityType = 'individual';
-			try {
-				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
-				// Use the country exactly as stored in Rapyd (don't convert to lowercase)
-				// Rapyd stores country codes in uppercase (e.g., "IN", "US")
-				beneficiaryCountry = beneficiaryDetails.country;
-				beneficiaryEntityType =
-					beneficiaryDetails.entity_type || 'individual';
-				console.log(
-					`[approveWithdrawal] Beneficiary country from Rapyd: ${beneficiaryCountry}, entity_type: ${beneficiaryEntityType}`
-				);
-			} catch (beneficiaryError) {
-				// Fallback to user's country if we can't fetch beneficiary
-				console.warn(
-					`[approveWithdrawal] Could not fetch beneficiary details, using user's country`,
-					beneficiaryError.message
-				);
+
+			// Determine country from bank account details
+			if (
+				withdrawal.bankAccount.bicSwift &&
+				!withdrawal.bankAccount.routingNumber
+			) {
+				// International account (BIC/SWIFT without routing number)
+				// Use user's country
 				beneficiaryCountry = normalizeCountryToISO(
 					user.address?.country || user.countryCode
 				);
+				console.log(
+					`[approveWithdrawal] International account detected (BIC/SWIFT), using user country: ${beneficiaryCountry}`
+				);
+			} else if (
+				withdrawal.bankAccount.routingNumber &&
+				!withdrawal.bankAccount.bicSwift
+			) {
+				// US account (routing number without BIC/SWIFT)
+				beneficiaryCountry = 'US';
+				console.log(
+					`[approveWithdrawal] US account detected (routing number), using country: ${beneficiaryCountry}`
+				);
+			} else {
+				// Try to get from beneficiary, fallback to user's country
+				try {
+					const beneficiaryDetails =
+						await getBeneficiary(beneficiaryId);
+					beneficiaryCountry = beneficiaryDetails.country;
+					beneficiaryEntityType =
+						beneficiaryDetails.entity_type || 'individual';
+					console.log(
+						`[approveWithdrawal] Using beneficiary country from Rapyd: ${beneficiaryCountry}`
+					);
+				} catch (beneficiaryError) {
+					// Fallback to user's country
+					beneficiaryCountry = normalizeCountryToISO(
+						user.address?.country || user.countryCode
+					);
+					console.warn(
+						`[approveWithdrawal] Could not fetch beneficiary details, using user's country: ${beneficiaryCountry}`,
+						beneficiaryError.message
+					);
+				}
 			}
 
 			// Get payout method types from Rapyd API
