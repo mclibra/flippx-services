@@ -633,7 +633,9 @@ export const createBankAccountBeneficiary = async ({
 				body.routing_number = bankAccountDetails.routingNumber;
 			}
 			// For international accounts, bic_swift might be needed
-			if (bankAccountDetails.bicSwift) {
+			// Do NOT include BIC/SWIFT for US accounts (country === 'US')
+			// US standard bank accounts don't support BIC/SWIFT fields
+			if (bankAccountDetails.bicSwift && country !== 'US') {
 				body.bic_swift = bankAccountDetails.bicSwift;
 			}
 			if (bankAccountDetails.bankName) {
