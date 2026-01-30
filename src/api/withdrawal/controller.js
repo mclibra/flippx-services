@@ -33,7 +33,7 @@ export const initiateWithdrawal = async req => {
 		// **NEW: Check loyalty-based withdrawal limits**
 		try {
 			const withdrawalLimitResult =
-				await LoyaltyService.checkWithdrawalLimit(user._id);
+				await LoyaltyService.checkUserWithdrawalLimit(user._id);
 			if (!withdrawalLimitResult.success) {
 				return {
 					status: 500,
@@ -44,15 +44,19 @@ export const initiateWithdrawal = async req => {
 				};
 			}
 
-			if (amount > withdrawalLimitResult.availableAmount) {
+			// Map the returned properties to expected format
+			const availableAmount = withdrawalLimitResult.remaining || 0;
+			const usedAmount = withdrawalLimitResult.used || 0;
+
+			if (amount > availableAmount) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Withdrawal amount exceeds your weekly limit. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
-						availableAmount: withdrawalLimitResult.availableAmount,
+						error: `Withdrawal amount exceeds your weekly limit. Available: $${availableAmount}, Requested: $${amount}`,
+						availableAmount,
 						weeklyLimit: withdrawalLimitResult.weeklyLimit,
-						usedAmount: withdrawalLimitResult.usedAmount,
+						usedAmount,
 						resetDate: withdrawalLimitResult.resetDate,
 					},
 				};
