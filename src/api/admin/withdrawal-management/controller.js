@@ -5,6 +5,7 @@ import {
 	createPayout,
 	createBankAccountBeneficiary,
 	normalizeCountryToISO,
+	getPayoutMethodTypesByCurrency,
 } from '../../../services/rapyd';
 import { User } from '../../user/model';
 
@@ -88,14 +89,62 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
-			// Determine user's country and construct payout method type
-			// The two-letter prefix must match the country code of the beneficiary
+			// Determine user's country and get appropriate payout method type
 			const isoCountryCode = normalizeCountryToISO(
 				user.address?.country || user.countryCode
 			);
 
-			// Construct payout method type: {country_code}_standard_bank_account
-			const payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+			// Get payout method types from Rapyd API
+			let payoutMethodType;
+			try {
+				const payoutMethodTypes =
+					await getPayoutMethodTypesByCurrency('USD');
+
+				// Find the appropriate payout method type for the beneficiary country
+				// Filter by beneficiary_country and category='bank'
+				const bankAccountMethod = payoutMethodTypes.find(
+					method =>
+						method.beneficiary_country?.toLowerCase() ===
+							isoCountryCode.toLowerCase() &&
+						method.category === 'bank' &&
+						method.status === 1
+				);
+
+				if (bankAccountMethod) {
+					payoutMethodType = bankAccountMethod.payout_method_type;
+					console.log(
+						`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${isoCountryCode}`
+					);
+				} else {
+					// Fallback: try to find any bank method for the country
+					const fallbackMethod = payoutMethodTypes.find(
+						method =>
+							method.beneficiary_country?.toLowerCase() ===
+								isoCountryCode.toLowerCase() &&
+							method.category === 'bank'
+					);
+
+					if (fallbackMethod) {
+						payoutMethodType = fallbackMethod.payout_method_type;
+						console.log(
+							`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${isoCountryCode}`
+						);
+					} else {
+						// Last resort: construct from country code
+						payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+						console.warn(
+							`[approveWithdrawal] Could not find payout method type for country ${isoCountryCode}, using constructed: ${payoutMethodType}`
+						);
+					}
+				}
+			} catch (payoutMethodError) {
+				// Fallback to constructed method type if API call fails
+				payoutMethodType = `${isoCountryCode.toLowerCase()}_standard_bank_account`;
+				console.warn(
+					`[approveWithdrawal] Error getting payout method types, using fallback: ${payoutMethodType}`,
+					payoutMethodError.message
+				);
+			}
 
 			// Create payout in Rapyd
 			let payout;

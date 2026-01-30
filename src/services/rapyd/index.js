@@ -955,6 +955,7 @@ export const deleteBeneficiary = async beneficiaryId => {
 
 /**
  * List available payout method types for a country
+ * @deprecated Use getPayoutMethodTypesByCurrency instead
  */
 export const getPayoutMethodTypes = async (country, currency) => {
 	try {
@@ -970,6 +971,35 @@ export const getPayoutMethodTypes = async (country, currency) => {
 		);
 	} catch (error) {
 		console.error('Rapyd get payout method types error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get payout method types from Rapyd'
+		);
+	}
+};
+
+/**
+ * Get all payout method types by currency
+ * @param {string} payoutCurrency - Payout currency (e.g., 'USD')
+ * @returns {Promise<Array>} Array of payout method types
+ */
+export const getPayoutMethodTypesByCurrency = async payoutCurrency => {
+	try {
+		const path = `/v1/payout_method_types?payout_currency=${payoutCurrency}`;
+		const response = await makeRapydRequest('GET', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data || [];
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to get payout method types'
+		);
+	} catch (error) {
+		console.error(
+			'Rapyd get payout method types by currency error:',
+			error
+		);
 		throw new Error(
 			error.response?.data?.status?.message ||
 				'Failed to get payout method types from Rapyd'
@@ -1206,6 +1236,7 @@ export default {
 	createPayout,
 	getPayoutStatus,
 	getPayoutMethodTypes,
+	getPayoutMethodTypesByCurrency,
 	getPaymentMethodsByCountry,
 	deleteBeneficiary,
 	verifyWebhookSignature,
