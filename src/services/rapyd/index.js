@@ -551,6 +551,9 @@ export const createBeneficiary = async ({
 }) => {
 	try {
 		const path = '/v1/payouts/beneficiary';
+
+		let category = cardDetails ? 'card' : 'bank';
+
 		const body = {
 			first_name: firstName,
 			last_name: lastName,
@@ -558,10 +561,15 @@ export const createBeneficiary = async ({
 			phone_number: phoneNumber,
 			country,
 			currency,
-			payout_method_type: payoutMethodType,
+			category, // Required by Rapyd API
 			beneficiary_type: beneficiaryType,
 			metadata,
 		};
+
+		// Add payout_method_type if provided
+		if (payoutMethodType) {
+			body.payout_method_type = payoutMethodType;
+		}
 
 		// Add bank account details if provided
 		if (bankAccountDetails) {

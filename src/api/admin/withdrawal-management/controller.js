@@ -1,11 +1,7 @@
 import { Withdrawal } from '../../withdrawal/model';
 import { Transaction } from '../../transaction/model';
 import { makeTransaction } from '../../transaction/controller';
-import {
-	createBeneficiary,
-	createPayout,
-	normalizeCountryToISO,
-} from '../../../services/rapyd';
+import { createPayout } from '../../../services/rapyd';
 import { User } from '../../user/model';
 
 export const approveWithdrawal = async req => {
@@ -69,88 +65,22 @@ export const approveWithdrawal = async req => {
 		await withdrawal.save();
 
 		try {
-			// Use beneficiary ID from bank account (should be created when bank account was added)
-			let beneficiaryId =
+			// Get beneficiary ID from bank account (should be created when bank account was added)
+			const beneficiaryId =
 				withdrawal.bankAccount.rapydBeneficiaryId ||
 				withdrawal.paymentDetails?.rapydBeneficiaryId;
 
-			// If beneficiary doesn't exist, try to create it (fallback)
-			if (!beneficiaryId) {
-				console.warn(
-					`Beneficiary not found for bank account ${withdrawal.bankAccount._id}, attempting to create one`
-				);
-
-				try {
-					// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
-					// Handles phone codes, full country names, and ISO codes
-					const isoCountryCode = normalizeCountryToISO(
-						user.address?.country || user.countryCode
-					);
-
-					const beneficiary = await createBeneficiary({
-						firstName:
-							user.name?.firstName || user.name?.first || 'User',
-						lastName:
-							user.name?.lastName || user.name?.last || 'Name',
-						email: user.email,
-						phoneNumber: user.phone,
-						country: isoCountryCode,
-						currency: 'USD',
-						bankAccountDetails: {
-							bankName: withdrawal.bankAccount.bankName,
-							accountNumber: withdrawal.bankAccount.accountNumber,
-							accountHolderName:
-								withdrawal.bankAccount.accountHolderName,
-							routingNumber: withdrawal.bankAccount.routingNumber,
-							accountType: withdrawal.bankAccount.accountType,
-						},
-						address: user.address?.address1 || null,
-						city: user.address?.city || null,
-						state: user.address?.state || null,
-						postcode: user.address?.pincode || null,
-						identificationType: 'identification_id',
-						identificationValue: user.sim_nif || 'NOT_PROVIDED',
-						merchantReferenceId:
-							withdrawal.bankAccount._id.toString(),
-						routingNumber: withdrawal.bankAccount.routingNumber,
-					});
-
-					beneficiaryId = beneficiary.id;
-
-					// Update bank account with beneficiary ID
-					withdrawal.bankAccount.rapydBeneficiaryId = beneficiaryId;
-					withdrawal.bankAccount.rapydBeneficiaryError = null;
-					await withdrawal.bankAccount.save();
-
-					// Also store in withdrawal payment details
-					withdrawal.paymentDetails = {
-						...withdrawal.paymentDetails,
-						rapydBeneficiaryId: beneficiaryId,
-					};
-					await withdrawal.save();
-
-					console.log(
-						`Created beneficiary ${beneficiaryId} for bank account ${withdrawal.bankAccount._id}`
-					);
-				} catch (beneficiaryError) {
-					console.error(
-						'Failed to create beneficiary during withdrawal approval:',
-						beneficiaryError
-					);
-					throw new Error(
-						`Beneficiary not found and failed to create: ${
-							beneficiaryError.response?.data?.status?.message ||
-							beneficiaryError.message ||
-							'Unknown error'
-						}`
-					);
-				}
-			}
-
-			// Verify beneficiary ID exists
+			// Verify beneficiary ID exists - it should have been created when bank account was added
 			if (!beneficiaryId) {
 				throw new Error(
-					'Beneficiary ID is required but not found. Please ensure the bank account has a valid beneficiary.'
+					'Beneficiary ID not found. The bank account must have a valid Rapyd beneficiary. Please ensure the bank account was created successfully.'
+				);
+			}
+
+			// Check if there was an error creating the beneficiary
+			if (withdrawal.bankAccount.rapydBeneficiaryError) {
+				throw new Error(
+					`Bank account has a beneficiary creation error: ${withdrawal.bankAccount.rapydBeneficiaryError}. Please contact support.`
 				);
 			}
 
