@@ -866,6 +866,8 @@ export const createPayout = async ({
 	reference,
 	metadata = {},
 	payoutMethodType,
+	beneficiaryCountry = null,
+	beneficiaryEntityType = 'individual',
 	eWalletId = null,
 }) => {
 	try {
@@ -881,6 +883,16 @@ export const createPayout = async ({
 				client_reference_id: reference,
 			},
 		};
+
+		// Add beneficiary_country if provided (required for some payout methods)
+		if (beneficiaryCountry) {
+			body.beneficiary_country = beneficiaryCountry;
+		}
+
+		// Add beneficiary_entity_type (required for some payout methods)
+		if (beneficiaryEntityType) {
+			body.beneficiary_entity_type = beneficiaryEntityType;
+		}
 
 		// Add eWallet if provided
 		if (eWalletId) {

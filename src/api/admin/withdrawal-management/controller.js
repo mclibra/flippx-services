@@ -156,6 +156,8 @@ export const approveWithdrawal = async req => {
 					description: `Withdrawal for user ${user.email}`,
 					reference: withdrawal._id.toString(),
 					payoutMethodType, // Use country-specific payout method type
+					beneficiaryCountry: isoCountryCode.toLowerCase(), // Required for payout method type validation
+					beneficiaryEntityType: 'individual', // Default to individual
 					metadata: {
 						userId: user._id.toString(),
 						withdrawalId: withdrawal._id.toString(),
@@ -250,6 +252,8 @@ export const approveWithdrawal = async req => {
 						description: `Withdrawal for user ${user.email}`,
 						reference: withdrawal._id.toString(),
 						payoutMethodType,
+						beneficiaryCountry: isoCountryCode.toLowerCase(),
+						beneficiaryEntityType: 'individual',
 						metadata: {
 							userId: user._id.toString(),
 							withdrawalId: withdrawal._id.toString(),
