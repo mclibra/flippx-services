@@ -88,58 +88,58 @@ router.post(
 );
 
 /**
- * GET /api/admin/users/requirements/:name
+ * GET /api/admin/users/requirements/:id
  * Get specific tier requirements configuration
- * Params: name
+ * Params: id (MongoDB ObjectId)
  */
 router.get(
-	'/requirements/:name',
+	'/requirements/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await getTierRequirement(req.params.name))
+	async (req, res) => done(res, await getTierRequirement(req.params.id))
 );
 
 /**
- * PUT /api/admin/users/requirements/:name
+ * PUT /api/admin/users/requirements/:id
  * Update tier requirements configuration
- * Params: name
+ * Params: id (MongoDB ObjectId)
  * Body: Partial tier requirements data (same structure as POST)
  */
 router.put(
-	'/requirements/:name',
+	'/requirements/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
 		done(
 			res,
-			await updateTierRequirement(req.params.name, req.body, req.user)
+			await updateTierRequirement(req.params.id, req.body, req.user)
 		)
 );
 
 /**
- * DELETE /api/admin/users/requirements/:name
+ * DELETE /api/admin/users/requirements/:id
  * Deactivate tier requirements configuration (soft delete)
- * Params: name
+ * Params: id (MongoDB ObjectId)
  */
 router.delete(
-	'/requirements/:name',
+	'/requirements/:id',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
-		done(res, await deactivateTierRequirement(req.params.name, req.user))
+		done(res, await deactivateTierRequirement(req.params.id, req.user))
 );
 
 /**
- * POST /api/admin/users/requirements/:name
+ * POST /api/admin/users/requirements/:id/reactivate
  * Reactivate tier requirements configuration (soft delete)
- * Params: name
+ * Params: id (MongoDB ObjectId)
  */
 router.post(
-	'/requirements/:name',
+	'/requirements/:id/reactivate',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
-		done(res, await reactivateTierRequirement(req.params.name, req.user))
+		done(res, await reactivateTierRequirement(req.params.id, req.user))
 );
 
 export default router;

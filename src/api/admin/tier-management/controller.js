@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { TierRequirements } from './model';
 
 // ===== TIER REQUIREMENTS MANAGEMENT =====
@@ -179,11 +180,20 @@ export const getTierRequirements = async query => {
 };
 
 // Get specific tier requirements
-export const getTierRequirement = async name => {
+export const getTierRequirement = async id => {
 	try {
-		const tierRequirement = await TierRequirements.findOne({
-			name: { $regex: new RegExp(`^${name}$`, 'i') },
-		})
+		// Validate MongoDB ObjectId
+		if (!mongoose.Types.ObjectId.isValid(id)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid tier ID format',
+				},
+			};
+		}
+
+		const tierRequirement = await TierRequirements.findById(id)
 			.populate('createdBy', 'name userName')
 			.populate('updatedBy', 'name userName');
 
@@ -325,11 +335,20 @@ export const createTierRequirement = async (body, adminUser) => {
 };
 
 // Update tier requirements
-export const updateTierRequirement = async (name, body, adminUser) => {
+export const updateTierRequirement = async (id, body, adminUser) => {
 	try {
-		const existingTier = await TierRequirements.findOne({
-			name: { $regex: new RegExp(`^${name}$`, 'i') },
-		});
+		// Validate MongoDB ObjectId
+		if (!mongoose.Types.ObjectId.isValid(id)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid tier ID format',
+				},
+			};
+		}
+
+		const existingTier = await TierRequirements.findById(id);
 
 		if (!existingTier) {
 			return {
@@ -407,10 +426,21 @@ export const updateTierRequirement = async (name, body, adminUser) => {
 };
 
 // Deactivate tier requirements (soft delete)
-export const deactivateTierRequirement = async (name, adminUser) => {
+export const deactivateTierRequirement = async (id, adminUser) => {
 	try {
+		// Validate MongoDB ObjectId
+		if (!mongoose.Types.ObjectId.isValid(id)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid tier ID format',
+				},
+			};
+		}
+
 		const tierRequirement = await TierRequirements.findOne({
-			name: { $regex: new RegExp(`^${name}$`, 'i') },
+			_id: id,
 			isActive: true,
 		});
 
@@ -425,7 +455,7 @@ export const deactivateTierRequirement = async (name, adminUser) => {
 		}
 
 		// Prevent deactivating NONE tier
-		if (name.toUpperCase() === 'NONE') {
+		if (tierRequirement.name.toUpperCase() === 'NONE') {
 			return {
 				status: 400,
 				entity: {
@@ -460,10 +490,21 @@ export const deactivateTierRequirement = async (name, adminUser) => {
 };
 
 // Reactivate tier requirements (soft delete)
-export const reactivateTierRequirement = async (name, adminUser) => {
+export const reactivateTierRequirement = async (id, adminUser) => {
 	try {
+		// Validate MongoDB ObjectId
+		if (!mongoose.Types.ObjectId.isValid(id)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid tier ID format',
+				},
+			};
+		}
+
 		const tierRequirement = await TierRequirements.findOne({
-			name: { $regex: new RegExp(`^${name}$`, 'i') },
+			_id: id,
 			isActive: false,
 		});
 
@@ -486,16 +527,16 @@ export const reactivateTierRequirement = async (name, adminUser) => {
 			status: 200,
 			entity: {
 				success: true,
-				message: 'Tier requirement deactivated successfully',
+				message: 'Tier requirement reactivated successfully',
 			},
 		};
 	} catch (error) {
-		console.error('Deactivate tier requirement error:', error);
+		console.error('Reactivate tier requirement error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to deactivate tier requirement',
+				error: error.message || 'Failed to reactivate tier requirement',
 			},
 		};
 	}
