@@ -90,31 +90,44 @@ export const approveWithdrawal = async req => {
 				);
 			}
 
-			// Get beneficiary country from Rapyd
-			// CRITICAL: Always use the beneficiary's country as stored in Rapyd
-			// The beneficiary_country in payout must match the country stored in the beneficiary
-			// Rapyd validates that the beneficiary's country matches the bank account's country
-			let beneficiaryCountry;
+			// Get beneficiary details from Rapyd for entity type
+			// NOTE: When using a beneficiary ID, we should NOT send beneficiary_country
+			// Rapyd will use the country from the beneficiary object
+			// Sending beneficiary_country can cause mismatch errors if it doesn't match
+			// the bank account's country as inferred by Rapyd
 			let beneficiaryEntityType = 'individual';
 
 			try {
 				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
-				// Use the country exactly as stored in Rapyd (don't convert case)
-				// Rapyd stores country codes in uppercase (e.g., "IN", "US")
-				beneficiaryCountry = beneficiaryDetails.country;
 				beneficiaryEntityType =
 					beneficiaryDetails.entity_type || 'individual';
 				console.log(
-					`[approveWithdrawal] Beneficiary country from Rapyd: ${beneficiaryCountry}, entity_type: ${beneficiaryEntityType}`
+					`[approveWithdrawal] Beneficiary details from Rapyd - country: ${beneficiaryDetails.country}, entity_type: ${beneficiaryEntityType}`
 				);
 			} catch (beneficiaryError) {
-				// Fallback to user's country if we can't fetch beneficiary
 				console.warn(
-					`[approveWithdrawal] Could not fetch beneficiary details, using user's country`,
+					`[approveWithdrawal] Could not fetch beneficiary details, using defaults`,
 					beneficiaryError.message
 				);
+			}
+
+			// Get beneficiary country from Rapyd for payout method type selection
+			// We need this to find the correct payout method type
+			let beneficiaryCountry;
+			try {
+				const beneficiaryDetails = await getBeneficiary(beneficiaryId);
+				beneficiaryCountry = beneficiaryDetails.country;
+				console.log(
+					`[approveWithdrawal] Using beneficiary country for payout method type: ${beneficiaryCountry}`
+				);
+			} catch (beneficiaryCountryError) {
+				// Fallback to user's country for payout method type selection
 				beneficiaryCountry = normalizeCountryToISO(
 					user.address?.country || user.countryCode
+				);
+				console.warn(
+					`[approveWithdrawal] Could not fetch beneficiary country, using user's country for payout method type: ${beneficiaryCountry}`,
+					beneficiaryCountryError.message
 				);
 			}
 
@@ -181,7 +194,9 @@ export const approveWithdrawal = async req => {
 					description: `Withdrawal for user ${user.email}`,
 					reference: withdrawal._id.toString(),
 					payoutMethodType, // Use country-specific payout method type
-					beneficiaryCountry, // Use beneficiary's actual country from Rapyd
+					// NOTE: Do NOT send beneficiary_country when using beneficiary ID
+					// Rapyd will use the country from the beneficiary object
+					// Sending it can cause ERROR_CREATE_PAYOUT_BENEFICIARY_COUNTRY_AND_BANK_COUNTRY_MISMATCH
 					beneficiaryEntityType, // Use beneficiary's actual entity type from Rapyd
 					metadata: {
 						userId: user._id.toString(),
@@ -269,26 +284,23 @@ export const approveWithdrawal = async req => {
 					// Update beneficiary ID and retry payout
 					beneficiaryId = newBeneficiary.id;
 
-					// Get the new beneficiary's country from Rapyd
-					// Use exact case from Rapyd (uppercase like "IN", "US")
-					let newBeneficiaryCountry = isoCountryCodeForRecreation;
+					// Get the new beneficiary's entity type from Rapyd
 					let newBeneficiaryEntityType = 'individual';
 					try {
 						const newBeneficiaryDetails = await getBeneficiary(
 							newBeneficiary.id
 						);
-						// Use the country exactly as stored in Rapyd (uppercase)
-						newBeneficiaryCountry = newBeneficiaryDetails.country;
 						newBeneficiaryEntityType =
 							newBeneficiaryDetails.entity_type || 'individual';
 					} catch (beneficiaryFetchError) {
 						console.warn(
-							`[approveWithdrawal] Could not fetch new beneficiary details, using fallback country`,
+							`[approveWithdrawal] Could not fetch new beneficiary details, using default entity type`,
 							beneficiaryFetchError.message
 						);
 					}
 
 					// Retry payout with new beneficiary (using same payout method type)
+					// NOTE: Do NOT send beneficiary_country - let Rapyd use from beneficiary
 					payout = await createPayout({
 						beneficiaryId,
 						amount: withdrawal.netAmount,
@@ -296,7 +308,7 @@ export const approveWithdrawal = async req => {
 						description: `Withdrawal for user ${user.email}`,
 						reference: withdrawal._id.toString(),
 						payoutMethodType,
-						beneficiaryCountry: newBeneficiaryCountry,
+						// Don't send beneficiaryCountry - let Rapyd use from beneficiary
 						beneficiaryEntityType: newBeneficiaryEntityType,
 						metadata: {
 							userId: user._id.toString(),
