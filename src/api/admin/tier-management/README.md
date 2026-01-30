@@ -29,7 +29,7 @@ All admin endpoints require:
 
 Retrieve all tier requirements configurations. Useful for admin dashboard and tier management.
 
-**Endpoint:** `GET /api/admin/users/requirements`
+**Endpoint:** `GET /api/admin/tiers/requirements`
 
 **Authentication:** Required (ADMIN role)
 
@@ -112,13 +112,13 @@ Retrieve all tier requirements configurations. Useful for admin dashboard and ti
 **Example:**
 ```bash
 # Get all active tier requirements
-curl -X GET "https://your-api-domain.com/api/admin/users/requirements" \
+curl -X GET "https://your-api-domain.com/api/admin/tiers/requirements" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 
 # Get all tier requirements including inactive
-curl -X GET "https://your-api-domain.com/api/admin/users/requirements?includeInactive=true" \
+curl -X GET "https://your-api-domain.com/api/admin/tiers/requirements?includeInactive=true" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -136,7 +136,7 @@ curl -X GET "https://your-api-domain.com/api/admin/users/requirements?includeIna
 
 Retrieve a specific tier requirements configuration by its MongoDB ObjectId.
 
-**Endpoint:** `GET /api/admin/users/requirements/:id`
+**Endpoint:** `GET /api/admin/tiers/requirements/:id`
 
 **Authentication:** Required (ADMIN role)
 
@@ -232,7 +232,7 @@ Retrieve a specific tier requirements configuration by its MongoDB ObjectId.
 
 **Example:**
 ```bash
-curl -X GET "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X GET "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -249,7 +249,7 @@ curl -X GET "https://your-api-domain.com/api/admin/users/requirements/507f1f77bc
 
 Create a new tier requirements configuration. This endpoint allows admins to define all aspects of a tier including benefits, upgrade requirements, referral commissions, and downgrade settings.
 
-**Endpoint:** `POST /api/admin/users/requirements`
+**Endpoint:** `POST /api/admin/tiers/requirements`
 
 **Authentication:** Required (ADMIN role)
 
@@ -380,7 +380,7 @@ Create a new tier requirements configuration. This endpoint allows admins to def
 
 **Example:**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
@@ -409,7 +409,7 @@ curl -X POST "https://your-api-domain.com/api/admin/users/requirements" \
 
 Update an existing tier requirements configuration by ID. Only provided fields will be updated (partial update supported).
 
-**Endpoint:** `PUT /api/admin/users/requirements/:id`
+**Endpoint:** `PUT /api/admin/tiers/requirements/:id`
 
 **Authentication:** Required (ADMIN role)
 
@@ -486,7 +486,7 @@ Update an existing tier requirements configuration by ID. Only provided fields w
 
 **Example:**
 ```bash
-curl -X PUT "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X PUT "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
@@ -510,7 +510,7 @@ curl -X PUT "https://your-api-domain.com/api/admin/users/requirements/507f1f77bc
 
 Deactivate a tier requirements configuration (soft delete). The tier will no longer be available for new user upgrades but existing users with this tier will retain it.
 
-**Endpoint:** `DELETE /api/admin/users/requirements/:id`
+**Endpoint:** `DELETE /api/admin/tiers/requirements/:id`
 
 **Authentication:** Required (ADMIN role)
 
@@ -558,7 +558,7 @@ Deactivate a tier requirements configuration (soft delete). The tier will no lon
 
 **Example:**
 ```bash
-curl -X DELETE "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X DELETE "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -577,7 +577,7 @@ curl -X DELETE "https://your-api-domain.com/api/admin/users/requirements/507f1f7
 
 Reactivate a previously deactivated tier requirements configuration. The tier will become available for user upgrades again.
 
-**Endpoint:** `POST /api/admin/users/requirements/:id/reactivate`
+**Endpoint:** `POST /api/admin/tiers/requirements/:id/reactivate`
 
 **Authentication:** Required (ADMIN role)
 
@@ -618,7 +618,7 @@ Reactivate a previously deactivated tier requirements configuration. The tier wi
 
 **Example:**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011/reactivate" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011/reactivate" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -635,7 +635,7 @@ curl -X POST "https://your-api-domain.com/api/admin/users/requirements/507f1f77b
 
 Initialize default tier requirements configuration (one-time setup). This creates all default tier configurations (NONE, SILVER, GOLD, VIP) if none exist.
 
-**Endpoint:** `POST /api/admin/users/requirements/initialize`
+**Endpoint:** `POST /api/admin/tiers/requirements/initialize`
 
 **Authentication:** Required (ADMIN role)
 
@@ -666,7 +666,7 @@ Initialize default tier requirements configuration (one-time setup). This create
 
 **Example:**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements/initialize" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements/initialize" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -785,7 +785,7 @@ The system includes four default tiers:
 
 1. **Initialize Default Tiers (One-time):**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements/initialize" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements/initialize" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
@@ -793,21 +793,21 @@ curl -X POST "https://your-api-domain.com/api/admin/users/requirements/initializ
 
 2. **View All Tiers:**
 ```bash
-curl -X GET "https://your-api-domain.com/api/admin/users/requirements" \
+curl -X GET "https://your-api-domain.com/api/admin/tiers/requirements" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
 3. **Get Specific Tier:**
 ```bash
-curl -X GET "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X GET "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
 4. **Create Custom Tier:**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
@@ -828,7 +828,7 @@ curl -X POST "https://your-api-domain.com/api/admin/users/requirements" \
 
 5. **Update Tier:**
 ```bash
-curl -X PUT "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X PUT "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
@@ -841,14 +841,14 @@ curl -X PUT "https://your-api-domain.com/api/admin/users/requirements/507f1f77bc
 
 6. **Deactivate Tier:**
 ```bash
-curl -X DELETE "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011" \
+curl -X DELETE "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
 7. **Reactivate Tier:**
 ```bash
-curl -X POST "https://your-api-domain.com/api/admin/users/requirements/507f1f77bcf86cd799439011/reactivate" \
+curl -X POST "https://your-api-domain.com/api/admin/tiers/requirements/507f1f77bcf86cd799439011/reactivate" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
