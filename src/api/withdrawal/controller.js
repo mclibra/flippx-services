@@ -3,6 +3,7 @@ import { Wallet } from '../wallet/model';
 import { BankAccount } from '../bank_account/model';
 import { LoyaltyService } from '../loyalty/service';
 import { makeTransaction } from '../transaction/controller';
+import { Transaction } from '../transaction/model';
 
 export const initiateWithdrawal = async req => {
 	try {
@@ -219,4 +220,91 @@ export const getUserWithdrawals = async req => {
 
 export const getWithdrawals = async req => {
 	return await getUserWithdrawals(req);
+};
+
+export const cancelWithdrawal = async req => {
+	try {
+		const { id } = req.params;
+		const user = req.user;
+
+		// Find the withdrawal and verify it belongs to the user
+		const withdrawal = await Withdrawal.findById(id);
+		if (!withdrawal) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Withdrawal not found',
+				},
+			};
+		}
+
+		// Verify the withdrawal belongs to the authenticated user
+		if (withdrawal.user.toString() !== user._id.toString()) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized - This withdrawal does not belong to you',
+				},
+			};
+		}
+
+		// Only allow cancellation of PENDING withdrawals
+		if (withdrawal.status !== 'PENDING') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Cannot cancel withdrawal with status: ${withdrawal.status}. Only PENDING withdrawals can be cancelled.`,
+				},
+			};
+		}
+
+		// Update withdrawal status
+		withdrawal.status = 'REJECTED';
+		withdrawal.rejectionReason = 'Cancelled by user';
+		withdrawal.processedDate = new Date();
+		await withdrawal.save();
+
+		// Create WITHDRAWAL_REJECTED transaction to refund the amount
+		await makeTransaction(
+			user._id.toString(),
+			user.role,
+			'WITHDRAWAL_REJECTED',
+			withdrawal.amount,
+			withdrawal._id.toString(),
+			'REAL'
+		);
+
+		// Update original transaction status
+		await Transaction.updateOne(
+			{
+				transactionIdentifier: 'WITHDRAWAL_PENDING',
+				'transactionData.withdrawalId': withdrawal._id,
+			},
+			{
+				status: 'REJECTED',
+				transactionIdentifier: 'WITHDRAWAL_REJECTED',
+			}
+		);
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				withdrawal,
+				message: 'Withdrawal cancelled and amount refunded',
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: error.message || 'Failed to cancel withdrawal',
+			},
+		};
+	}
 };

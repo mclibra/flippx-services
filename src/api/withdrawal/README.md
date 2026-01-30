@@ -8,7 +8,7 @@ REST API endpoints for users to initiate withdrawal requests and view their with
 
 | Area | What's Covered |
 | --- | --- |
-| [User Endpoints](#user-endpoints) | Initiate withdrawal and view history |
+| [User Endpoints](#user-endpoints) | Initiate withdrawal, view history, and cancel pending withdrawals |
 | [Withdrawal Process](#withdrawal-process) | Complete withdrawal lifecycle |
 | [Data Models](#data-models) | Withdrawal schema structure |
 | [Usage Examples](#usage-examples) | End-to-end workflow examples |
@@ -242,6 +242,101 @@ curl -X GET "https://your-api-domain.com/api/withdrawals?status=PENDING&limit=20
 
 ---
 
+### 3. Cancel Withdrawal
+
+Cancel a pending withdrawal request. This will cancel the withdrawal and automatically refund the amount to the user's wallet.
+
+**Endpoint:** `DELETE /api/withdrawals/:id`
+
+**Authentication:** Required (User token)
+
+**URL Parameters:**
+- `id` (String, required): Withdrawal ID
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "withdrawal": {
+    "_id": "507f1f77bcf86cd799439011",
+    "user": "507f1f77bcf86cd799439012",
+    "bankAccount": "507f1f77bcf86cd799439013",
+    "amount": 100.00,
+    "fee": 0,
+    "netAmount": 100.00,
+    "status": "REJECTED",
+    "requestDate": "2024-01-15T10:30:00.000Z",
+    "processedDate": "2024-01-15T11:00:00.000Z",
+    "rejectionReason": "Cancelled by user",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T11:00:00.000Z"
+  },
+  "message": "Withdrawal cancelled and amount refunded"
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "success": false,
+  "error": "Withdrawal not found"
+}
+```
+
+**Error Response (403):**
+```json
+{
+  "success": false,
+  "error": "Unauthorized - This withdrawal does not belong to you"
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "success": false,
+  "error": "Cannot cancel withdrawal with status: PROCESSING. Only PENDING withdrawals can be cancelled."
+}
+```
+
+**Error Response (500):**
+```json
+{
+  "success": false,
+  "error": "Failed to cancel withdrawal"
+}
+```
+
+**Example:**
+```bash
+curl -X DELETE https://your-api-domain.com/api/withdrawals/507f1f77bcf86cd799439011 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Validation Rules:**
+1. Withdrawal must exist
+2. Withdrawal must belong to the authenticated user
+3. Withdrawal must be in `PENDING` status (cannot cancel PROCESSING, COMPLETED, REJECTED, or FAILED withdrawals)
+
+**Process Flow:**
+1. Validates withdrawal exists and belongs to the authenticated user
+2. Checks withdrawal is in `PENDING` status
+3. Updates withdrawal status to `REJECTED` with reason "Cancelled by user"
+4. Creates `WITHDRAWAL_REJECTED` transaction (refunds amount to user's `realBalanceWithdrawable`)
+5. Updates original `WITHDRAWAL_PENDING` transaction status to `REJECTED`
+
+**Notes:**
+- Only withdrawals with status `PENDING` can be cancelled
+- Once a withdrawal is approved (status becomes `PROCESSING`), it cannot be cancelled by the user
+- Cancelled withdrawals are marked as `REJECTED` with reason "Cancelled by user"
+- Amount is automatically refunded to user's `realBalanceWithdrawable`
+- Original transaction status is updated to `REJECTED`
+- User can see the cancellation in their withdrawal history
+
+---
+
 ## Withdrawal Process
 
 ### Lifecycle Flow
@@ -253,38 +348,47 @@ curl -X GET "https://your-api-domain.com/api/withdrawals?status=PENDING&limit=20
    - Deducts amount from `realBalanceWithdrawable`
    - Creates `WITHDRAWAL_PENDING` transaction
 
-2. **Admin Reviews** (See Admin Withdrawal Management API)
+2. **User Cancels Withdrawal** (`DELETE /api/withdrawals/:id`) - Optional
+   - User can cancel their own pending withdrawal
+   - Status changes to `REJECTED` with reason "Cancelled by user"
+   - Creates `WITHDRAWAL_REJECTED` transaction
+   - Amount is refunded to user's `realBalanceWithdrawable`
+   - Updates original transaction status to `REJECTED`
+   - **Note:** Only `PENDING` withdrawals can be cancelled
+
+3. **Admin Reviews** (See Admin Withdrawal Management API)
    - Admin can view all pending withdrawals
    - Admin can approve or reject withdrawal
 
-3. **Admin Approves** (`POST /api/admin/withdrawal-management/:id/approve`)
+4. **Admin Approves** (`POST /api/admin/withdrawal-management/:id/approve`)
    - Status changes to `PROCESSING`
    - Uses Rapyd beneficiary ID from bank account (created when bank account was added)
    - Creates payout in Rapyd using the beneficiary ID
    - Updates transaction status to `WITHDRAWAL_APPROVED`
    - Funds are transferred to user's bank account via Rapyd
+   - **Note:** Once approved, withdrawal cannot be cancelled by user
 
-4. **Admin Rejects** (`POST /api/admin/withdrawal-management/:id/reject`)
+5. **Admin Rejects** (`POST /api/admin/withdrawal-management/:id/reject`)
    - Status changes to `REJECTED`
    - Creates `WITHDRAWAL_REJECTED` transaction
    - Amount is refunded to user's `realBalanceWithdrawable`
    - Updates original transaction status to `REJECTED`
 
-5. **Completion**
+6. **Completion**
    - Rapyd processes the payout
    - Status may change to `COMPLETED` or `FAILED` based on Rapyd response
    - User receives funds in their bank account
 
 ### Withdrawal Statuses
 
-| Status | Description |
-| --- | --- |
-| `PENDING` | Initial status when user creates withdrawal request |
-| `PROCESSING` | Admin approved, payout initiated with Rapyd |
-| `COMPLETED` | Payout completed successfully |
-| `REJECTED` | Admin rejected the withdrawal |
-| `FAILED` | Payout failed (Rapyd error or other issues) |
-| `APPROVED` | Legacy status (not used in current flow) |
+| Status | Description | User Actions |
+| --- | --- | --- |
+| `PENDING` | Initial status when user creates withdrawal request | Can cancel |
+| `PROCESSING` | Admin approved, payout initiated with Rapyd | Cannot cancel |
+| `COMPLETED` | Payout completed successfully | Cannot cancel |
+| `REJECTED` | Admin rejected or user cancelled the withdrawal | Cannot cancel |
+| `FAILED` | Payout failed (Rapyd error or other issues) | Cannot cancel |
+| `APPROVED` | Legacy status (not used in current flow) | Cannot cancel |
 
 ---
 
@@ -352,9 +456,18 @@ curl -X GET "https://your-api-domain.com/api/withdrawals?status=PENDING" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-5. **Monitor Processing:**
+5. **Cancel Withdrawal (Optional):**
+   - If user wants to cancel before admin approval:
+```bash
+curl -X DELETE https://your-api-domain.com/api/withdrawals/507f1f77bcf86cd799439011 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+6. **Monitor Processing:**
    - User can check withdrawal status periodically
-   - Once status changes to `PROCESSING`, payout has been initiated
+   - Once status changes to `PROCESSING`, payout has been initiated and cannot be cancelled
    - Once status changes to `COMPLETED`, funds should arrive in bank account
 
 ### Handling Weekly Limit Errors
@@ -448,10 +561,11 @@ All endpoints follow a consistent error response format:
 - **Balance Types**: Only `realBalanceWithdrawable` can be withdrawn. `realBalanceNonWithdrawable` cannot be withdrawn directly.
 - **Weekly Limits**: Withdrawal limits are based on user's loyalty tier and reset weekly.
 - **Admin Approval**: All withdrawals require admin approval before processing.
+- **User Cancellation**: Users can cancel their own pending withdrawals. Once a withdrawal is approved (status becomes `PROCESSING`), it cannot be cancelled by the user.
 - **Payment Gateway**: Approved withdrawals are processed through Rapyd payment gateway.
 - **Bank Account Beneficiaries**: Bank accounts are automatically registered as Rapyd beneficiaries when added (see [Bank Account API](../bank_account/README.md)). The beneficiary ID is stored in the bank account record and reused for all withdrawals.
 - **Transaction Tracking**: All withdrawals create transaction records for audit purposes.
-- **Refunds**: Rejected withdrawals automatically refund the amount to user's `realBalanceWithdrawable`.
+- **Refunds**: Rejected or cancelled withdrawals automatically refund the amount to user's `realBalanceWithdrawable`.
 - **Processing Time**: Once approved, payouts typically take 1-3 business days to reach the bank account.
 
 ---
@@ -467,6 +581,11 @@ All endpoints follow a consistent error response format:
 - [ ] Get user withdrawals list
 - [ ] Filter withdrawals by status
 - [ ] Paginate withdrawals with limit and offset
+- [ ] Cancel pending withdrawal (should succeed)
+- [ ] Cancel withdrawal that doesn't belong to user (should fail with 403)
+- [ ] Cancel withdrawal with non-PENDING status (should fail with 400)
+- [ ] Verify cancelled withdrawal refunds amount to wallet
+- [ ] Verify cancelled withdrawal updates transaction status
 - [ ] Verify withdrawal amount is deducted from balance immediately
 - [ ] Verify withdrawal creates transaction record
 - [ ] Verify weekly limit calculation is correct
