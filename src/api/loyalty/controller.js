@@ -462,7 +462,6 @@ export const cleanupOrphanedLoyaltyProfiles = async () => {
 		let cleanedCount = 0;
 		let invalidIdCount = 0;
 
-
 		for (const loyalty of loyaltyProfiles) {
 			try {
 				// Check if user ID is valid ObjectId format
@@ -1102,13 +1101,25 @@ export const checkWeeklyWithdrawalLimit = async userId => {
 
 		// Debug logs
 		console.log('[checkWeeklyWithdrawalLimit] User ID:', userId);
-		console.log('[checkWeeklyWithdrawalLimit] Current tier:', loyalty.currentTier);
-		console.log('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS keys:', LOYALTY_TIERS ? Object.keys(LOYALTY_TIERS) : 'null/undefined');
-		console.log('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS:', JSON.stringify(LOYALTY_TIERS, null, 2));
+		console.log(
+			'[checkWeeklyWithdrawalLimit] Current tier:',
+			loyalty.currentTier
+		);
+		console.log(
+			'[checkWeeklyWithdrawalLimit] LOYALTY_TIERS keys:',
+			LOYALTY_TIERS ? Object.keys(LOYALTY_TIERS) : 'null/undefined'
+		);
+		console.log(
+			'[checkWeeklyWithdrawalLimit] LOYALTY_TIERS:',
+			JSON.stringify(LOYALTY_TIERS, null, 2)
+		);
 
 		// Safety check: verify tier exists in LOYALTY_TIERS
 		if (!LOYALTY_TIERS || typeof LOYALTY_TIERS !== 'object') {
-			console.error('[checkWeeklyWithdrawalLimit] LOYALTY_TIERS is invalid:', LOYALTY_TIERS);
+			console.error(
+				'[checkWeeklyWithdrawalLimit] LOYALTY_TIERS is invalid:',
+				LOYALTY_TIERS
+			);
 			return {
 				status: 500,
 				entity: {
@@ -1118,13 +1129,19 @@ export const checkWeeklyWithdrawalLimit = async userId => {
 			};
 		}
 
-		const tierConfig = LOYALTY_TIERS[loyalty.currentTier];
+		// Case-insensitive tier lookup
+		const tierKeys = Object.keys(LOYALTY_TIERS);
+		const tierKey = tierKeys.find(
+			key => key.toLowerCase() === loyalty.currentTier.toLowerCase()
+		);
+		const tierConfig = tierKey ? LOYALTY_TIERS[tierKey] : null;
+
 		if (!tierConfig) {
 			console.error(
 				'[checkWeeklyWithdrawalLimit] Tier not found in configuration. Current tier:',
 				loyalty.currentTier,
 				'Available tiers:',
-				Object.keys(LOYALTY_TIERS)
+				tierKeys
 			);
 			return {
 				status: 500,
