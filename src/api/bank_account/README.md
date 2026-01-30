@@ -32,7 +32,7 @@ Create a new bank account. The system automatically creates a Rapyd beneficiary 
 
 **Authentication:** Required (User token)
 
-**Request Body:**
+**Request Body (US Account):**
 ```json
 {
   "bankName": "Chase Bank",
@@ -43,12 +43,26 @@ Create a new bank account. The system automatically creates a Rapyd beneficiary 
 }
 ```
 
+**Request Body (International Account):**
+```json
+{
+  "bankName": "Barclays Bank",
+  "accountNumber": "12345678",
+  "accountHolderName": "John Doe",
+  "bicSwift": "BARCGB22XXX",
+  "accountType": "CHECKING"
+}
+```
+
 **Request Parameters:**
 - `bankName` (String, required): Name of the bank
 - `accountNumber` (String, required): Bank account number
 - `accountHolderName` (String, required): Name on the bank account
-- `routingNumber` (String, required): Bank routing number (9 digits for US banks)
+- `routingNumber` (String, conditional): Bank routing number (9 digits for US banks) - Required for US accounts
+- `bicSwift` (String, conditional): BIC/SWIFT code (8-11 characters) - Required for international (non-US) accounts
 - `accountType` (String, required): Account type - must be `CHECKING` or `SAVINGS`
+
+**Note:** Either `routingNumber` (for US accounts) or `bicSwift` (for international accounts) must be provided.
 
 **Success Response (200):**
 ```json
@@ -125,10 +139,11 @@ curl -X POST https://your-api-domain.com/api/bank-accounts \
 ```
 
 **Validation Rules:**
-1. All fields are required
-2. `accountType` must be either `CHECKING` or `SAVINGS`
-3. First bank account added is automatically set as default
-4. Bank account is immediately registered as a Rapyd beneficiary
+1. Bank name, account number, account holder name, and account type are required
+2. Either `routingNumber` (US accounts) or `bicSwift` (international accounts) must be provided
+3. `accountType` must be either `CHECKING` or `SAVINGS`
+4. First bank account added is automatically set as default
+5. Bank account is immediately registered as a Rapyd beneficiary
 
 **Notes:**
 - The bank account is automatically registered as a Rapyd beneficiary upon creation
@@ -374,7 +389,8 @@ For successful beneficiary creation, ensure the user profile has:
   bankName: String,                 // Name of the bank (required)
   accountNumber: String,            // Bank account number (required)
   accountHolderName: String,        // Name on account (required)
-  routingNumber: String,             // Bank routing number (required)
+  routingNumber: String,             // Bank routing number (required for US accounts)
+  bicSwift: String,                  // BIC/SWIFT code (required for international accounts)
   accountType: String,              // "CHECKING" or "SAVINGS" (required)
   isDefault: Boolean,               // Default account flag (default: false)
   isVerified: Boolean,               // Verification status (default: false)
@@ -385,6 +401,8 @@ For successful beneficiary creation, ensure the user profile has:
   updatedAt: Date                  // Last update timestamp
 }
 ```
+
+**Note:** Either `routingNumber` (US accounts) or `bicSwift` (international accounts) must be provided.
 
 ### Response Format
 

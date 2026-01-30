@@ -533,26 +533,54 @@ export const createCustomer = async ({
 };
 
 /**
- * Create a beneficiary for payouts
- * Required before creating payouts
+ * Create a beneficiary for bank account payouts
+ * Required before creating bank account payouts
+ *
+ * @param {Object} params - Beneficiary parameters
+ * @param {string} params.firstName - First name
+ * @param {string} params.lastName - Last name
+ * @param {string} params.email - Email address
+ * @param {string} params.phoneNumber - Phone number
+ * @param {string} params.country - ISO country code (e.g., 'US', 'IN')
+ * @param {string} params.currency - Currency code (e.g., 'USD', 'INR')
+ * @param {string} params.entityType - Entity type ('individual' or 'company')
+ * @param {Object} params.bankAccountDetails - Bank account details
+ * @param {string} params.bankAccountDetails.accountNumber - Account number
+ * @param {string} params.bankAccountDetails.routingNumber - Routing number (for US accounts)
+ * @param {string} [params.bankAccountDetails.bicSwift] - BIC/SWIFT code (for international accounts)
+ * @param {string} [params.bankAccountDetails.bankName] - Bank name
+ * @param {string} [params.address] - Street address
+ * @param {string} [params.city] - City
+ * @param {string} [params.state] - State/Province
+ * @param {string} [params.postcode] - Postal/ZIP code
+ * @param {string} [params.identificationType] - Identification type (default: 'identification_id')
+ * @param {string} [params.identificationValue] - Identification value
+ * @param {string} [params.merchantReferenceId] - Merchant reference ID
+ * @param {string} [params.payoutMethodType] - Payout method type (e.g., 'us_general_bank')
+ * @param {Object} [params.metadata] - Additional metadata
+ * @returns {Promise<Object>} Rapyd beneficiary data
  */
-export const createBeneficiary = async ({
+export const createBankAccountBeneficiary = async ({
 	firstName,
 	lastName,
 	email,
 	phoneNumber,
 	country,
 	currency,
-	payoutMethodType,
-	beneficiaryType = 'individual',
-	bankAccountDetails = null,
-	cardDetails = null,
+	entityType,
+	bankAccountDetails,
+	address = null,
+	city = null,
+	state = null,
+	postcode = null,
+	identificationType = null,
+	identificationValue = null,
+	merchantReferenceId = null,
+	payoutMethodType = null,
 	metadata = {},
 }) => {
 	try {
 		const path = '/v1/payouts/beneficiary';
-
-		let category = cardDetails ? 'card' : 'bank';
 
 		const body = {
 			first_name: firstName,
@@ -561,38 +589,56 @@ export const createBeneficiary = async ({
 			phone_number: phoneNumber,
 			country,
 			currency,
-			category, // Required by Rapyd API
-			beneficiary_type: beneficiaryType,
+			category: 'bank',
+			entity_type: entityType,
 			metadata,
 		};
 
-		// Add payout_method_type if provided
+		// Add address fields if provided
+		if (address) {
+			body.address = address;
+		}
+		if (city) {
+			body.city = city;
+		}
+		if (state) {
+			body.state = state;
+		}
+		if (postcode) {
+			body.postcode = postcode;
+		}
+
+		// Add identification fields if provided
+		if (identificationType) {
+			body.identification_type = identificationType;
+		}
+		if (identificationValue) {
+			body.identification_value = identificationValue;
+		}
+
+		// Add merchant reference ID if provided
+		if (merchantReferenceId) {
+			body.merchant_reference_id = merchantReferenceId;
+		}
+
+		// Add default_payout_method_type if provided
 		if (payoutMethodType) {
-			body.payout_method_type = payoutMethodType;
+			body.default_payout_method_type = payoutMethodType;
 		}
 
-		// Add bank account details if provided
+		// Add bank account details (at root level as per Rapyd API)
 		if (bankAccountDetails) {
-			body.bank_account = {
-				name: bankAccountDetails.accountHolderName,
-				account_number: bankAccountDetails.accountNumber,
-				routing_number: bankAccountDetails.routingNumber,
-				account_type:
-					bankAccountDetails.accountType?.toLowerCase() || 'checking',
-				bank_name: bankAccountDetails.bankName,
-				country: bankAccountDetails.country || country,
-			};
-		}
-
-		// Add card details if provided
-		if (cardDetails) {
-			body.card = {
-				name: cardDetails.cardholderName,
-				number: cardDetails.cardNumber,
-				expiration_month: cardDetails.expirationMonth,
-				expiration_year: cardDetails.expirationYear,
-				cvv: cardDetails.cvv,
-			};
+			body.account_number = bankAccountDetails.accountNumber;
+			if (bankAccountDetails.routingNumber) {
+				body.routing_number = bankAccountDetails.routingNumber;
+			}
+			// For international accounts, bic_swift might be needed
+			if (bankAccountDetails.bicSwift) {
+				body.bic_swift = bankAccountDetails.bicSwift;
+			}
+			if (bankAccountDetails.bankName) {
+				body.bank_name = bankAccountDetails.bankName;
+			}
 		}
 
 		const response = await makeRapydRequest('POST', path, body);
@@ -602,13 +648,206 @@ export const createBeneficiary = async ({
 		}
 
 		throw new Error(
-			response.status?.message || 'Failed to create beneficiary'
+			response.status?.message ||
+				'Failed to create bank account beneficiary'
 		);
 	} catch (error) {
-		console.error('Rapyd create beneficiary error:', error);
+		console.error('Rapyd create bank account beneficiary error:', error);
 		throw new Error(
 			error.response?.data?.status?.message ||
-				'Failed to create beneficiary in Rapyd'
+				'Failed to create bank account beneficiary in Rapyd'
+		);
+	}
+};
+
+/**
+ * Create a beneficiary for card payouts
+ * Required before creating card payouts
+ *
+ * @param {Object} params - Beneficiary parameters
+ * @param {string} params.firstName - First name
+ * @param {string} params.lastName - Last name
+ * @param {string} params.email - Email address
+ * @param {string} params.phoneNumber - Phone number
+ * @param {string} params.country - ISO country code (e.g., 'NG', 'US')
+ * @param {string} params.currency - Currency code (e.g., 'NGN', 'USD')
+ * @param {string} params.entityType - Entity type ('individual' or 'company')
+ * @param {Object} params.cardDetails - Card details
+ * @param {string} params.cardDetails.cardNumber - Card number
+ * @param {string} params.cardDetails.expirationMonth - Expiration month (01-12)
+ * @param {string} params.cardDetails.expirationYear - Expiration year (2 or 4 digits)
+ * @param {string} params.cardDetails.cvv - CVV code
+ * @param {string} [params.address] - Street address
+ * @param {string} [params.city] - City
+ * @param {string} [params.state] - State/Province
+ * @param {string} [params.postcode] - Postal/ZIP code
+ * @param {string} [params.identificationType] - Identification type (default: 'identification_id')
+ * @param {string} [params.identificationValue] - Identification value
+ * @param {string} [params.merchantReferenceId] - Merchant reference ID
+ * @param {string} [params.payoutMethodType] - Payout method type (e.g., 'xx_mastercardglobal_card')
+ * @param {Object} [params.metadata] - Additional metadata
+ * @returns {Promise<Object>} Rapyd beneficiary data
+ */
+export const createCardBeneficiary = async ({
+	firstName,
+	lastName,
+	email,
+	phoneNumber,
+	country,
+	currency,
+	entityType,
+	cardDetails,
+	address = null,
+	city = null,
+	state = null,
+	postcode = null,
+	identificationType = null,
+	identificationValue = null,
+	merchantReferenceId = null,
+	payoutMethodType = null,
+	metadata = {},
+}) => {
+	try {
+		const path = '/v1/payouts/beneficiary';
+
+		const body = {
+			first_name: firstName,
+			last_name: lastName,
+			email,
+			phone_number: phoneNumber,
+			country,
+			currency,
+			category: 'card',
+			entity_type: entityType,
+			metadata,
+		};
+
+		// Add address fields if provided
+		if (address) {
+			body.address = address;
+		}
+		if (city) {
+			body.city = city;
+		}
+		if (state) {
+			body.state = state;
+		}
+		if (postcode) {
+			body.postcode = postcode;
+		}
+
+		// Add identification fields if provided
+		if (identificationType) {
+			body.identification_type = identificationType;
+		}
+		if (identificationValue) {
+			body.identification_value = identificationValue;
+		}
+
+		// Add merchant reference ID if provided
+		if (merchantReferenceId) {
+			body.merchant_reference_id = merchantReferenceId;
+		}
+
+		// Add default_payout_method_type if provided
+		if (payoutMethodType) {
+			body.default_payout_method_type = payoutMethodType;
+		}
+
+		// Add card details (at root level as per Rapyd API)
+		if (cardDetails) {
+			body.card_number = cardDetails.cardNumber;
+			body.card_expiration_month = cardDetails.expirationMonth;
+			body.card_expiration_year = cardDetails.expirationYear;
+			body.card_cvv = cardDetails.cvv;
+		}
+
+		const response = await makeRapydRequest('POST', path, body);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to create card beneficiary'
+		);
+	} catch (error) {
+		console.error('Rapyd create card beneficiary error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to create card beneficiary in Rapyd'
+		);
+	}
+};
+
+/**
+ * Create a beneficiary for payouts (legacy wrapper function)
+ * @deprecated Use createBankAccountBeneficiary or createCardBeneficiary instead
+ */
+export const createBeneficiary = async ({
+	firstName,
+	lastName,
+	email,
+	phoneNumber,
+	country,
+	currency,
+	payoutMethodType,
+	entityType,
+	bankAccountDetails = null,
+	cardDetails = null,
+	metadata = {},
+	address = null,
+	city = null,
+	state = null,
+	postcode = null,
+	identificationType = null,
+	identificationValue = null,
+	merchantReferenceId = null,
+}) => {
+	// Route to appropriate function based on provided details
+	if (cardDetails) {
+		return createCardBeneficiary({
+			firstName,
+			lastName,
+			email,
+			phoneNumber,
+			country,
+			currency,
+			entityType,
+			cardDetails,
+			address,
+			city,
+			state,
+			postcode,
+			identificationType,
+			identificationValue,
+			merchantReferenceId,
+			payoutMethodType,
+			metadata,
+		});
+	} else if (bankAccountDetails) {
+		return createBankAccountBeneficiary({
+			firstName,
+			lastName,
+			email,
+			phoneNumber,
+			country,
+			currency,
+			entityType,
+			bankAccountDetails,
+			address,
+			city,
+			state,
+			postcode,
+			identificationType,
+			identificationValue,
+			merchantReferenceId,
+			payoutMethodType,
+			metadata,
+		});
+	} else {
+		throw new Error(
+			'Either bankAccountDetails or cardDetails must be provided'
 		);
 	}
 };
@@ -933,7 +1172,9 @@ export default {
 	createCheckoutPage,
 	getPaymentStatus,
 	createCustomer,
-	createBeneficiary,
+	createBeneficiary, // Legacy wrapper function
+	createBankAccountBeneficiary,
+	createCardBeneficiary,
 	createPayout,
 	getPayoutStatus,
 	getPayoutMethodTypes,

@@ -8,7 +8,8 @@ const BankAccountSchema = new Schema(
 		bankName: { type: String, required: true },
 		accountNumber: { type: String, required: true },
 		accountHolderName: { type: String, required: true },
-		routingNumber: { type: String, required: true },
+		routingNumber: { type: String, default: null }, // Required for US accounts
+		bicSwift: { type: String, default: null }, // Required for international accounts
 		accountType: { type: String, enum: accountTypes, required: true },
 		isDefault: { type: Boolean, default: false },
 		isVerified: { type: Boolean, default: false },

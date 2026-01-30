@@ -1,6 +1,9 @@
 import { BankAccount } from './model';
 import { Withdrawal } from '../withdrawal/model';
-import { createBeneficiary, normalizeCountryToISO } from '../../services/rapyd';
+import {
+	createBankAccountBeneficiary,
+	normalizeCountryToISO,
+} from '../../services/rapyd';
 import { User } from '../user/model';
 
 export const addBankAccount = async req => {
@@ -10,24 +13,30 @@ export const addBankAccount = async req => {
 			accountNumber,
 			accountHolderName,
 			routingNumber,
+			bicSwift,
 			accountType,
 		} = req.body;
 
 		const user = req.user;
 
 		// Validate required fields
-		if (
-			!bankName ||
-			!accountNumber ||
-			!accountHolderName ||
-			!routingNumber ||
-			!accountType
-		) {
+		if (!bankName || !accountNumber || !accountHolderName || !accountType) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'All bank account fields are required',
+					error: 'Bank name, account number, account holder name, and account type are required',
+				},
+			};
+		}
+
+		// Validate that either routingNumber (US) or bicSwift (international) is provided
+		if (!routingNumber && !bicSwift) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Either routing number (US accounts) or BIC/SWIFT code (international accounts) is required',
 				},
 			};
 		}
@@ -44,7 +53,8 @@ export const addBankAccount = async req => {
 			bankName,
 			accountNumber,
 			accountHolderName,
-			routingNumber,
+			routingNumber: routingNumber || null,
+			bicSwift: bicSwift || null,
 			accountType,
 			isDefault,
 		});
@@ -72,7 +82,7 @@ export const addBankAccount = async req => {
 			);
 
 			// Create beneficiary in Rapyd
-			const beneficiary = await createBeneficiary({
+			const beneficiary = await createBankAccountBeneficiary({
 				firstName,
 				lastName,
 				email: userDetails.email || null,
@@ -83,9 +93,11 @@ export const addBankAccount = async req => {
 					bankName,
 					accountNumber,
 					accountHolderName,
-					routingNumber,
+					routingNumber: routingNumber || null,
+					bicSwift: bicSwift || null,
 					accountType,
 				},
+				entityType: 'individual',
 				address: userDetails.address?.address1 || null,
 				city: userDetails.address?.city || null,
 				state: userDetails.address?.state || null,
@@ -93,7 +105,6 @@ export const addBankAccount = async req => {
 				identificationType: 'identification_id',
 				identificationValue: userDetails.sim_nif || 'NOT_PROVIDED',
 				merchantReferenceId: bankAccount._id.toString(),
-				routingNumber: routingNumber,
 			});
 
 			// Update bank account with beneficiary ID
