@@ -928,6 +928,32 @@ export const getPayoutStatus = async payoutId => {
 };
 
 /**
+ * Delete a beneficiary from Rapyd
+ * @param {string} beneficiaryId - Rapyd beneficiary ID
+ * @returns {Promise<Object>} Rapyd response data
+ */
+export const deleteBeneficiary = async beneficiaryId => {
+	try {
+		const path = `/v1/payouts/beneficiary/${beneficiaryId}`;
+		const response = await makeRapydRequest('DELETE', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to delete beneficiary'
+		);
+	} catch (error) {
+		console.error('Rapyd delete beneficiary error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to delete beneficiary from Rapyd'
+		);
+	}
+};
+
+/**
  * List available payout method types for a country
  */
 export const getPayoutMethodTypes = async (country, currency) => {
@@ -1181,6 +1207,7 @@ export default {
 	getPayoutStatus,
 	getPayoutMethodTypes,
 	getPaymentMethodsByCountry,
+	deleteBeneficiary,
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,

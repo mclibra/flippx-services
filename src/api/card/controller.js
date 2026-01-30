@@ -3,6 +3,7 @@ import { Withdrawal } from '../withdrawal/model';
 import {
 	createCardBeneficiary,
 	normalizeCountryToISO,
+	deleteBeneficiary,
 } from '../../services/rapyd';
 import { User } from '../user/model';
 
@@ -402,6 +403,23 @@ export const removeCard = async req => {
 			if (anotherCard) {
 				anotherCard.isDefault = true;
 				await anotherCard.save();
+			}
+		}
+
+		// Delete the Rapyd beneficiary if it exists
+		if (card.rapydBeneficiaryId) {
+			try {
+				await deleteBeneficiary(card.rapydBeneficiaryId);
+				console.log(
+					`Successfully deleted Rapyd beneficiary ${card.rapydBeneficiaryId} for card ${card._id}`
+				);
+			} catch (beneficiaryError) {
+				// Log the error but don't fail the card deletion
+				// The beneficiary might have already been deleted or might not exist
+				console.error(
+					`Failed to delete Rapyd beneficiary ${card.rapydBeneficiaryId} for card ${card._id}:`,
+					beneficiaryError.message
+				);
 			}
 		}
 

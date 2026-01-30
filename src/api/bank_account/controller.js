@@ -3,6 +3,7 @@ import { Withdrawal } from '../withdrawal/model';
 import {
 	createBankAccountBeneficiary,
 	normalizeCountryToISO,
+	deleteBeneficiary,
 } from '../../services/rapyd';
 import { User } from '../user/model';
 
@@ -285,6 +286,23 @@ export const removeBankAccount = async req => {
 			if (anotherAccount) {
 				anotherAccount.isDefault = true;
 				await anotherAccount.save();
+			}
+		}
+
+		// Delete the Rapyd beneficiary if it exists
+		if (bankAccount.rapydBeneficiaryId) {
+			try {
+				await deleteBeneficiary(bankAccount.rapydBeneficiaryId);
+				console.log(
+					`Successfully deleted Rapyd beneficiary ${bankAccount.rapydBeneficiaryId} for bank account ${bankAccount._id}`
+				);
+			} catch (beneficiaryError) {
+				// Log the error but don't fail the bank account deletion
+				// The beneficiary might have already been deleted or might not exist
+				console.error(
+					`Failed to delete Rapyd beneficiary ${bankAccount.rapydBeneficiaryId} for bank account ${bankAccount._id}:`,
+					beneficiaryError.message
+				);
 			}
 		}
 
