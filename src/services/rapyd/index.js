@@ -1072,6 +1072,61 @@ export const getPayoutMethodTypesByCurrency = async payoutCurrency => {
 };
 
 /**
+ * Get required fields for a payout method type
+ * @param {string} payoutMethodType - Payout method type (e.g., 'us_general_bank')
+ * @param {string} senderCountry - Sender country code (e.g., 'US')
+ * @param {string} senderCurrency - Sender currency (e.g., 'USD')
+ * @param {string} beneficiaryCountry - Beneficiary country code (e.g., 'US')
+ * @param {string} payoutCurrency - Payout currency (e.g., 'USD')
+ * @param {string} senderEntityType - Sender entity type (e.g., 'company')
+ * @param {string} beneficiaryEntityType - Beneficiary entity type (e.g., 'individual')
+ * @param {number} payoutAmount - Payout amount
+ * @returns {Promise<Object>} Required fields for the payout method type
+ */
+export const getPayoutRequiredFields = async ({
+	payoutMethodType,
+	senderCountry,
+	senderCurrency,
+	beneficiaryCountry,
+	payoutCurrency,
+	senderEntityType = 'company',
+	beneficiaryEntityType = 'individual',
+	payoutAmount = 0,
+}) => {
+	try {
+		// Build query string manually for Node.js compatibility
+		const queryParams = [
+			`sender_country=${encodeURIComponent(senderCountry)}`,
+			`sender_currency=${encodeURIComponent(senderCurrency)}`,
+			`beneficiary_country=${encodeURIComponent(beneficiaryCountry)}`,
+			`payout_currency=${encodeURIComponent(payoutCurrency)}`,
+			`sender_entity_type=${encodeURIComponent(senderEntityType)}`,
+			`beneficiary_entity_type=${encodeURIComponent(
+				beneficiaryEntityType
+			)}`,
+			`payout_amount=${encodeURIComponent(String(payoutAmount))}`,
+		].join('&');
+
+		const path = `/v1/payout_methods/${payoutMethodType}/required_fields?${queryParams}`;
+		const response = await makeRapydRequest('GET', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to get payout required fields'
+		);
+	} catch (error) {
+		console.error('Rapyd get payout required fields error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get payout required fields from Rapyd'
+		);
+	}
+};
+
+/**
  * Get payment methods by country
  * Returns available payment methods for a specific country
  */

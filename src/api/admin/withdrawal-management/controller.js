@@ -121,42 +121,78 @@ export const approveWithdrawal = async req => {
 				const payoutMethodTypes =
 					await getPayoutMethodTypesByCurrency('USD');
 
-				// Find the appropriate payout method type for the beneficiary country
-				// Filter by beneficiary_country and category='bank'
-				// Compare case-insensitively but use exact case from beneficiary
-				const bankAccountMethod = payoutMethodTypes.find(
-					method =>
-						method.beneficiary_country?.toLowerCase() ===
-							beneficiaryCountry?.toLowerCase() &&
-						method.category === 'bank' &&
-						method.status === 1
-				);
-
-				if (bankAccountMethod) {
-					payoutMethodType = bankAccountMethod.payout_method_type;
-					console.log(
-						`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+				// For US accounts, prefer us_standard_bank_account over us_general_bank
+				// us_general_bank may require BIC_SWIFT which US accounts don't have
+				if (beneficiaryCountry?.toUpperCase() === 'US') {
+					const usStandardMethod = payoutMethodTypes.find(
+						method =>
+							method.payout_method_type ===
+								'us_standard_bank_account' &&
+							method.category === 'bank' &&
+							method.status === 1
 					);
-				} else {
-					// Fallback: try to find any bank method for the country
-					const fallbackMethod = payoutMethodTypes.find(
+
+					if (usStandardMethod) {
+						payoutMethodType = 'us_standard_bank_account';
+						console.log(
+							`[approveWithdrawal] Using us_standard_bank_account for US account`
+						);
+					} else {
+						// Fallback to us_general_bank if us_standard_bank_account not available
+						const usGeneralMethod = payoutMethodTypes.find(
+							method =>
+								method.payout_method_type ===
+									'us_general_bank' &&
+								method.category === 'bank' &&
+								method.status === 1
+						);
+
+						if (usGeneralMethod) {
+							payoutMethodType = 'us_general_bank';
+							console.log(
+								`[approveWithdrawal] Using us_general_bank for US account (us_standard_bank_account not available)`
+							);
+						}
+					}
+				}
+
+				// If not US or no US-specific method found, find by beneficiary country
+				if (!payoutMethodType) {
+					const bankAccountMethod = payoutMethodTypes.find(
 						method =>
 							method.beneficiary_country?.toLowerCase() ===
 								beneficiaryCountry?.toLowerCase() &&
-							method.category === 'bank'
+							method.category === 'bank' &&
+							method.status === 1
 					);
 
-					if (fallbackMethod) {
-						payoutMethodType = fallbackMethod.payout_method_type;
+					if (bankAccountMethod) {
+						payoutMethodType = bankAccountMethod.payout_method_type;
 						console.log(
-							`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+							`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
 						);
 					} else {
-						// Last resort: construct from country code (use lowercase for payout method type)
-						payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
-						console.warn(
-							`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
+						// Fallback: try to find any bank method for the country
+						const fallbackMethod = payoutMethodTypes.find(
+							method =>
+								method.beneficiary_country?.toLowerCase() ===
+									beneficiaryCountry?.toLowerCase() &&
+								method.category === 'bank'
 						);
+
+						if (fallbackMethod) {
+							payoutMethodType =
+								fallbackMethod.payout_method_type;
+							console.log(
+								`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+							);
+						} else {
+							// Last resort: construct from country code (use lowercase for payout method type)
+							payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
+							console.warn(
+								`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
+							);
+						}
 					}
 				}
 			} catch (payoutMethodError) {
