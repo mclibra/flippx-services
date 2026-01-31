@@ -767,7 +767,14 @@ export const createCardBeneficiary = async ({
 		if (cardDetails) {
 			body.card_number = cardDetails.cardNumber;
 			body.card_expiration_month = cardDetails.expirationMonth;
-			body.card_expiration_year = cardDetails.expirationYear;
+			// Convert 2-digit year to 4-digit year for Rapyd API
+			// Rapyd requires 4-digit year format (e.g., "2030" not "30")
+			let expirationYear = cardDetails.expirationYear;
+			if (expirationYear && expirationYear.length === 2) {
+				// Convert 2-digit year to 4-digit (e.g., "30" -> "2030")
+				expirationYear = '20' + expirationYear;
+			}
+			body.card_expiration_year = expirationYear;
 			body.card_cvv = cardDetails.cvv;
 		}
 
