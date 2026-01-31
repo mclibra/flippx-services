@@ -31,15 +31,48 @@ export const addBankAccount = async req => {
 			};
 		}
 
-		// Validate that either routingNumber (US) or bicSwift (international) is provided
-		if (!routingNumber && !bicSwift) {
+		// Get user details to determine country
+		const userDetails = await User.findById(user._id);
+		if (!userDetails) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+
+		// Normalize country to ISO 3166-1 ALPHA-2 code
+		const isoCountryCode = normalizeCountryToISO(
+			userDetails.address?.country || userDetails.countryCode
+		);
+
+		// BIC/SWIFT is required for ALL bank accounts (US and non-US)
+		if (!bicSwift) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Either routing number (US accounts) or BIC/SWIFT code (international accounts) is required',
+					error: 'BIC/SWIFT code is required for all bank accounts',
 				},
 			};
+		}
+
+		// Validate country-specific requirements
+		const isUSAccount = isoCountryCode?.toUpperCase() === 'US';
+
+		if (isUSAccount) {
+			// US accounts also require routing number
+			if (!routingNumber) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Routing number is required for US bank accounts',
+					},
+				};
+			}
 		}
 
 		// Check if this is the first account (to set as default)
@@ -62,12 +95,6 @@ export const addBankAccount = async req => {
 
 		// Create beneficiary in Rapyd immediately
 		try {
-			// Get user details for beneficiary creation
-			const userDetails = await User.findById(user._id);
-			if (!userDetails) {
-				throw new Error('User not found');
-			}
-
 			// Extract name parts
 			const firstName =
 				userDetails.name?.firstName ||
@@ -76,13 +103,8 @@ export const addBankAccount = async req => {
 			const lastName =
 				userDetails.name?.lastName || userDetails.name?.last || 'Name';
 
-			// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
-			// Handles phone codes, full country names, and ISO codes
-			const isoCountryCode = normalizeCountryToISO(
-				userDetails.address?.country || userDetails.countryCode
-			);
-
 			// Create beneficiary in Rapyd
+			// BIC/SWIFT is required for all accounts (US and non-US)
 			const beneficiary = await createBankAccountBeneficiary({
 				firstName,
 				lastName,
@@ -94,8 +116,8 @@ export const addBankAccount = async req => {
 					bankName,
 					accountNumber,
 					accountHolderName,
-					routingNumber: routingNumber || null,
-					bicSwift: bicSwift || null,
+					routingNumber: isUSAccount ? routingNumber : null,
+					bicSwift: bicSwift, // Required for all accounts
 					accountType,
 				},
 				entityType: 'individual',

@@ -39,6 +39,7 @@ Create a new bank account. The system automatically creates a Rapyd beneficiary 
   "accountNumber": "1234567890",
   "accountHolderName": "John Doe",
   "routingNumber": "021000021",
+  "bicSwift": "CHASUS33XXX",
   "accountType": "CHECKING"
 }
 ```
@@ -58,11 +59,13 @@ Create a new bank account. The system automatically creates a Rapyd beneficiary 
 - `bankName` (String, required): Name of the bank
 - `accountNumber` (String, required): Bank account number
 - `accountHolderName` (String, required): Name on the bank account
-- `routingNumber` (String, conditional): Bank routing number (9 digits for US banks) - Required for US accounts
-- `bicSwift` (String, conditional): BIC/SWIFT code (8-11 characters) - Required for international (non-US) accounts
+- `bicSwift` (String, required): BIC/SWIFT code (8-11 characters) - Required for ALL accounts (US and non-US)
+- `routingNumber` (String, conditional): Bank routing number (9 digits for US banks) - Required for US accounts only
 - `accountType` (String, required): Account type - must be `CHECKING` or `SAVINGS`
 
-**Note:** Either `routingNumber` (for US accounts) or `bicSwift` (for international accounts) must be provided.
+**Note:** 
+- `bicSwift` is required for ALL bank accounts (US and non-US)
+- `routingNumber` is required for US accounts only
 
 **Success Response (200):**
 ```json
@@ -140,10 +143,11 @@ curl -X POST https://your-api-domain.com/api/bank-accounts \
 
 **Validation Rules:**
 1. Bank name, account number, account holder name, and account type are required
-2. Either `routingNumber` (US accounts) or `bicSwift` (international accounts) must be provided
-3. `accountType` must be either `CHECKING` or `SAVINGS`
-4. First bank account added is automatically set as default
-5. Bank account is immediately registered as a Rapyd beneficiary
+2. `bicSwift` is required for ALL bank accounts (US and non-US)
+3. `routingNumber` is required for US accounts only
+4. `accountType` must be either `CHECKING` or `SAVINGS`
+5. First bank account added is automatically set as default
+6. Bank account is immediately registered as a Rapyd beneficiary
 
 **Notes:**
 - The bank account is automatically registered as a Rapyd beneficiary upon creation
@@ -335,7 +339,7 @@ When a bank account is added, the system automatically creates a beneficiary in 
    - User email → `email`
    - User phone → `phone_number`
    - User country code → `country`
-   - Bank account details → `bank_name`, `account_number`, `routing_number`
+   - Bank account details → `bank_name`, `account_number`, `routing_number` (US only), `bic_swift` (all accounts)
    - User address → `address`, `city`, `state`, `postcode`
    - User identification → `identification_type`, `identification_value`
 
@@ -358,6 +362,8 @@ The beneficiary is created with the following structure (matching Rapyd API requ
   "email": "john@example.com",
   "phone_number": "+1234567890",
   "account_number": "1234567890",
+  "routing_number": "021000021",
+  "bic_swift": "CHASUS33XXX",
   "address": "123 Main St",
   "city": "New York",
   "state": "NY",
@@ -389,8 +395,8 @@ For successful beneficiary creation, ensure the user profile has:
   bankName: String,                 // Name of the bank (required)
   accountNumber: String,            // Bank account number (required)
   accountHolderName: String,        // Name on account (required)
-  routingNumber: String,             // Bank routing number (required for US accounts)
-  bicSwift: String,                  // BIC/SWIFT code (required for international accounts)
+  bicSwift: String,                  // BIC/SWIFT code (required for ALL accounts)
+  routingNumber: String,             // Bank routing number (required for US accounts only)
   accountType: String,              // "CHECKING" or "SAVINGS" (required)
   isDefault: Boolean,               // Default account flag (default: false)
   isVerified: Boolean,               // Verification status (default: false)
@@ -402,7 +408,9 @@ For successful beneficiary creation, ensure the user profile has:
 }
 ```
 
-**Note:** Either `routingNumber` (US accounts) or `bicSwift` (international accounts) must be provided.
+**Note:** 
+- `bicSwift` is required for ALL bank accounts (US and non-US)
+- `routingNumber` is required for US accounts only
 
 ### Response Format
 
@@ -416,7 +424,7 @@ Bank account responses mask sensitive information:
 
 ### Complete Workflow: Adding and Using a Bank Account
 
-**Step 1: Add Bank Account**
+**Step 1: Add Bank Account (US Account)**
 ```bash
 curl -X POST https://your-api-domain.com/api/bank-accounts \
   -H "Content-Type: application/json" \
@@ -427,6 +435,22 @@ curl -X POST https://your-api-domain.com/api/bank-accounts \
     "accountNumber": "1234567890",
     "accountHolderName": "John Doe",
     "routingNumber": "021000021",
+    "bicSwift": "CHASUS33XXX",
+    "accountType": "CHECKING"
+  }'
+```
+
+**Step 1: Add Bank Account (International Account)**
+```bash
+curl -X POST https://your-api-domain.com/api/bank-accounts \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "bankName": "Barclays Bank",
+    "accountNumber": "12345678",
+    "accountHolderName": "John Doe",
+    "bicSwift": "BARCGB22XXX",
     "accountType": "CHECKING"
   }'
 ```

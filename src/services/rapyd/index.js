@@ -629,15 +629,22 @@ export const createBankAccountBeneficiary = async ({
 		// Add bank account details (at root level as per Rapyd API)
 		if (bankAccountDetails) {
 			body.account_number = bankAccountDetails.accountNumber;
-			if (bankAccountDetails.routingNumber) {
+
+			// US accounts use routing number
+			if (bankAccountDetails.routingNumber && country === 'US') {
 				body.routing_number = bankAccountDetails.routingNumber;
 			}
-			// For international accounts, bic_swift might be needed
-			// Do NOT include BIC/SWIFT for US accounts (country === 'US')
-			// US standard bank accounts don't support BIC/SWIFT fields
-			if (bankAccountDetails.bicSwift && country !== 'US') {
+
+			// BIC/SWIFT is required for ALL accounts (US and non-US)
+			if (bankAccountDetails.bicSwift) {
 				body.bic_swift = bankAccountDetails.bicSwift;
+			} else {
+				// BIC/SWIFT is required for all accounts
+				throw new Error(
+					'BIC/SWIFT code is required for all bank accounts'
+				);
 			}
+
 			if (bankAccountDetails.bankName) {
 				body.bank_name = bankAccountDetails.bankName;
 			}
