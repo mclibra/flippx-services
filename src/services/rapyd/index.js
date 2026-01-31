@@ -1223,15 +1223,38 @@ export const checkCardEligibility = async ({
 			return response.data;
 		}
 
+		// Log full error response for debugging
+		console.error(
+			'[checkCardEligibility] Rapyd API returned non-success status:',
+			JSON.stringify(response.status, null, 2)
+		);
+
 		throw new Error(
 			response.status?.message || 'Failed to check card eligibility'
 		);
 	} catch (error) {
-		console.error('Rapyd check card eligibility error:', error);
-		throw new Error(
+		// Log full error details for debugging
+		console.error('[checkCardEligibility] Full error details:', {
+			message: error.message,
+			responseStatus: error.response?.status,
+			responseData: error.response?.data,
+			errorCode: error.response?.data?.status?.error_code,
+			errorMessage: error.response?.data?.status?.message,
+			fullResponse: JSON.stringify(error.response?.data, null, 2),
+		});
+
+		// Include error code in the error message for better debugging
+		const errorCode = error.response?.data?.status?.error_code;
+		const errorMessage =
 			error.response?.data?.status?.message ||
-				'Failed to check card eligibility from Rapyd'
-		);
+			error.message ||
+			'Failed to check card eligibility from Rapyd';
+
+		const fullErrorMessage = errorCode
+			? `${errorMessage} (Error Code: ${errorCode})`
+			: errorMessage;
+
+		throw new Error(fullErrorMessage);
 	}
 };
 

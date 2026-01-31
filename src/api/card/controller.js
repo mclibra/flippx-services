@@ -68,6 +68,7 @@ export const addCard = async req => {
 		}
 
 		// Check card eligibility for payout before creating card
+		// This is a BLOCKING check - card creation will fail if eligibility check fails
 		let cardEligibility;
 		try {
 			cardEligibility = await checkCardEligibility({
@@ -78,32 +79,39 @@ export const addCard = async req => {
 				`[addCard] Card eligibility check result:`,
 				JSON.stringify(cardEligibility, null, 2)
 			);
+
+			// Check if card supports AFT (Account Funding Transaction) for payouts
+			// AFT must be true (domestic or international) for the card to be eligible for payout
+			const supportsAFT =
+				cardEligibility.aft?.domestic === true ||
+				cardEligibility.aft?.international === true;
+
+			if (!supportsAFT) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Card is not eligible for payout. The card does not support Account Funding Transactions (AFT).',
+						cardEligibility,
+					},
+				};
+			}
 		} catch (eligibilityError) {
+			// Eligibility check is BLOCKING - return error if check fails
+			const errorCode =
+				eligibilityError.response?.data?.status?.error_code;
+			const errorMessage =
+				eligibilityError.response?.data?.status?.message ||
+				eligibilityError.message;
+
 			return {
 				status: 400,
 				entity: {
 					success: false,
 					error:
-						eligibilityError.response?.data?.status?.message ||
-						eligibilityError.message ||
+						errorMessage ||
 						'Failed to check card eligibility. Card may not be eligible for payout.',
-				},
-			};
-		}
-
-		// Check if card supports AFT (Account Funding Transaction) for payouts
-		// AFT must be true (domestic or international) for the card to be eligible for payout
-		const supportsAFT =
-			cardEligibility.aft?.domestic === true ||
-			cardEligibility.aft?.international === true;
-
-		if (!supportsAFT) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Card is not eligible for payout. The card does not support Account Funding Transactions (AFT).',
-					cardEligibility,
+					errorCode: errorCode || null,
 				},
 			};
 		}
