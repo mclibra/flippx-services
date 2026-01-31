@@ -5,6 +5,7 @@ import {
 	normalizeCountryToISO,
 	deleteBeneficiary,
 	getPaymentMethodRequiredFields,
+	checkCardEligibility,
 } from '../../services/rapyd';
 import { User } from '../user/model';
 
@@ -62,6 +63,47 @@ export const addCard = async req => {
 				entity: {
 					success: false,
 					error: 'Card has expired',
+				},
+			};
+		}
+
+		// Check card eligibility for payout before creating card
+		let cardEligibility;
+		try {
+			cardEligibility = await checkCardEligibility({
+				cardNumber,
+				transactionType: 'all',
+			});
+			console.log(
+				`[addCard] Card eligibility check result:`,
+				JSON.stringify(cardEligibility, null, 2)
+			);
+		} catch (eligibilityError) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						eligibilityError.response?.data?.status?.message ||
+						eligibilityError.message ||
+						'Failed to check card eligibility. Card may not be eligible for payout.',
+				},
+			};
+		}
+
+		// Check if card supports AFT (Account Funding Transaction) for payouts
+		// AFT must be true (domestic or international) for the card to be eligible for payout
+		const supportsAFT =
+			cardEligibility.aft?.domestic === true ||
+			cardEligibility.aft?.international === true;
+
+		if (!supportsAFT) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Card is not eligible for payout. The card does not support Account Funding Transactions (AFT).',
+					cardEligibility,
 				},
 			};
 		}

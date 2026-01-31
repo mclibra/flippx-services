@@ -764,6 +764,10 @@ export const createCardBeneficiary = async ({
 			body.default_payout_method_type = payoutMethodType;
 		}
 
+		// Add payment_type for card beneficiaries (required for some payment methods)
+		// Default to "priority" as per Rapyd API example
+		body.payment_type = 'priority';
+
 		// Add card details (at root level as per Rapyd API)
 		if (cardDetails) {
 			body.card_number = cardDetails.cardNumber;
@@ -1192,6 +1196,41 @@ export const getPayoutRequiredFields = async ({
 		throw new Error(
 			error.response?.data?.status?.message ||
 				'Failed to get payout required fields from Rapyd'
+		);
+	}
+};
+
+/**
+ * Check card eligibility for payout
+ * @param {string} cardNumber - Card number
+ * @param {string} transactionType - Transaction type (default: 'all')
+ * @returns {Promise<Object>} Card eligibility data including AFT (Account Funding Transaction) support
+ */
+export const checkCardEligibility = async ({
+	cardNumber,
+	transactionType = 'all',
+}) => {
+	try {
+		const path = '/v1/cards/eligibility';
+		const body = {
+			card_number: cardNumber,
+			transaction_type: transactionType,
+		};
+
+		const response = await makeRapydRequest('POST', path, body);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to check card eligibility'
+		);
+	} catch (error) {
+		console.error('Rapyd check card eligibility error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to check card eligibility from Rapyd'
 		);
 	}
 };
