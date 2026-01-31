@@ -4,6 +4,7 @@ import {
 	createCardBeneficiary,
 	normalizeCountryToISO,
 	deleteBeneficiary,
+	getPaymentMethodRequiredFields,
 } from '../../services/rapyd';
 import { User } from '../user/model';
 
@@ -50,9 +51,10 @@ export const addCard = async req => {
 		}
 
 		// Validate expiration year (2 or 4 digits)
-		const year = expirationYear.length === 2 
-			? parseInt('20' + expirationYear)
-			: parseInt(expirationYear);
+		const year =
+			expirationYear.length === 2
+				? parseInt('20' + expirationYear)
+				: parseInt(expirationYear);
 		const currentYear = new Date().getFullYear();
 		if (year < currentYear) {
 			return {
@@ -76,9 +78,10 @@ export const addCard = async req => {
 			cardholderName,
 			cardNumber,
 			expirationMonth: String(month).padStart(2, '0'),
-			expirationYear: expirationYear.length === 2 
-				? expirationYear 
-				: expirationYear.slice(-2),
+			expirationYear:
+				expirationYear.length === 2
+					? expirationYear
+					: expirationYear.slice(-2),
 			cvv,
 			isDefault,
 		});
@@ -110,6 +113,27 @@ export const addCard = async req => {
 				currency = 'NGN';
 			}
 
+			// Fetch required fields for the payment method type if provided
+			let requiredFields = null;
+			if (payoutMethodType) {
+				try {
+					requiredFields = await getPaymentMethodRequiredFields({
+						paymentMethodType: payoutMethodType,
+						country: isoCountryCode,
+						currency,
+					});
+					console.log(
+						`[addCard] Required fields for ${payoutMethodType}:`,
+						JSON.stringify(requiredFields, null, 2)
+					);
+				} catch (requiredFieldsError) {
+					console.warn(
+						`[addCard] Could not fetch required fields for ${payoutMethodType}, proceeding with default fields:`,
+						requiredFieldsError.message
+					);
+				}
+			}
+
 			// Create beneficiary in Rapyd
 			const beneficiary = await createCardBeneficiary({
 				firstName,
@@ -121,9 +145,10 @@ export const addCard = async req => {
 				cardDetails: {
 					cardNumber,
 					expirationMonth: String(month).padStart(2, '0'),
-					expirationYear: expirationYear.length === 2 
-						? expirationYear 
-						: expirationYear.slice(-2),
+					expirationYear:
+						expirationYear.length === 2
+							? expirationYear
+							: expirationYear.slice(-2),
 					cvv,
 				},
 				entityType: 'individual',
@@ -135,6 +160,7 @@ export const addCard = async req => {
 				identificationValue: userDetails.sim_nif || 'NOT_PROVIDED',
 				merchantReferenceId: card._id.toString(),
 				payoutMethodType: payoutMethodType || null,
+				requiredFields, // Pass required fields info for validation
 			});
 
 			// Update card with beneficiary ID
@@ -313,9 +339,10 @@ export const updateCard = async req => {
 			card.expirationMonth = String(month).padStart(2, '0');
 		}
 		if (expirationYear) {
-			const year = expirationYear.length === 2 
-				? parseInt('20' + expirationYear)
-				: parseInt(expirationYear);
+			const year =
+				expirationYear.length === 2
+					? parseInt('20' + expirationYear)
+					: parseInt(expirationYear);
 			const currentYear = new Date().getFullYear();
 			if (year < currentYear) {
 				return {
@@ -326,9 +353,10 @@ export const updateCard = async req => {
 					},
 				};
 			}
-			card.expirationYear = expirationYear.length === 2 
-				? expirationYear 
-				: expirationYear.slice(-2);
+			card.expirationYear =
+				expirationYear.length === 2
+					? expirationYear
+					: expirationYear.slice(-2);
 		}
 
 		await card.save();
