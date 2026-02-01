@@ -604,7 +604,7 @@ export const createCardBeneficiary = async ({
 	firstName,
 	lastName,
 	email,
-	phoneNumber,
+	phoneNumber, // Not used - phone_number is not included in request per Rapyd API
 	country,
 	currency,
 	entityType,
@@ -620,6 +620,8 @@ export const createCardBeneficiary = async ({
 	metadata = {},
 	requiredFields = null,
 }) => {
+	// Suppress unused parameter warning
+	void phoneNumber;
 	try {
 		const path = '/v1/payouts/beneficiary';
 
@@ -637,10 +639,8 @@ export const createCardBeneficiary = async ({
 			body.email = email;
 		}
 
-		// Add phone_number if provided (only if allowed by required fields)
-		if (phoneNumber) {
-			body.phone_number = phoneNumber;
-		}
+		// Note: phone_number is NOT included as per Rapyd API example
+		// It should only be added if explicitly required by the required fields API
 
 		// Add metadata only if provided and not empty (only if allowed by required fields)
 		if (metadata && Object.keys(metadata).length > 0) {
@@ -687,12 +687,16 @@ export const createCardBeneficiary = async ({
 		if (cardDetails) {
 			body.card_number = cardDetails.cardNumber;
 			body.card_expiration_month = cardDetails.expirationMonth;
-			// Convert 2-digit year to 4-digit year for Rapyd API
-			// Rapyd requires 4-digit year format (e.g., "2030" not "30")
+			// Rapyd requires 2-digit year format (e.g., "30" not "2030")
+			// Convert 4-digit year to 2-digit if needed
 			let expirationYear = cardDetails.expirationYear;
-			if (expirationYear && expirationYear.length === 2) {
-				// Convert 2-digit year to 4-digit (e.g., "30" -> "2030")
-				expirationYear = '20' + expirationYear;
+			if (expirationYear && expirationYear.length === 4) {
+				// Convert 4-digit year to 2-digit (e.g., "2030" -> "30")
+				expirationYear = expirationYear.slice(-2);
+			}
+			// Ensure it's 2 digits (pad with 0 if needed)
+			if (expirationYear && expirationYear.length === 1) {
+				expirationYear = '0' + expirationYear;
 			}
 			body.card_expiration_year = expirationYear;
 			body.card_cvv = cardDetails.cvv;

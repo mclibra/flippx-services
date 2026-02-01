@@ -1,39 +1,15 @@
 const crypto = require('crypto');
 
-// Provided body (will be converted to compact JSON)
-const body = {
-	first_name: 'Aarav',
-	last_name: 'Sharma',
-	country: 'IN',
-	currency: 'USD',
-	category: 'card',
-	entity_type: 'individual',
-	email: 'aarav_sharma@gmail.com',
-	address: 'Dearka',
-	city: 'Delhi',
-	state: 'Delhi',
-	postcode: '876665',
-	identification_type: 'identification_id',
-	identification_value: 'SIMNIF5437635',
-	merchant_reference_id: '697f18402fc72b916535d9e6',
-	default_payout_method_type: 'xx_visaglobal_card',
-	payment_type: 'priority',
-	card_number: '4895034400003371',
-	card_expiration_month: '03',
-	card_expiration_year: '30',
-	card_cvv: '123',
-};
+// Provided salt
+const salt = '87wr678b3cg46g7c8467864v78686vc87874v6';
 
 // Request details
-const method = 'post';
-const path = '/v1/payouts/beneficiary';
+const method = 'get';
+const path = '/v1/payout_method_types?category=card';
 const timestamp = Math.floor(Date.now() / 1000).toString();
 
-// Provided salt
-const salt = '123d5c414627e1c736ae8e1b5348038b' + timestamp;
-
 // Get credentials from environment or command line arguments
-// Usage: node test-rapyd-signature.js <access_key> <secret_key>
+// Usage: node test-rapyd-signature-get.js <access_key> <secret_key>
 const accessKey = 'rak_00CEBF28AD93F24EE91D';
 const secretKey =
 	'rsk_e6454ed30566cbe411222631cb43d120708c3d6e71da71bc0c5dccfefd3148dd77e3342893fa8ec5';
@@ -43,7 +19,7 @@ if (!accessKey || !secretKey) {
 		'ERROR: RAPYD_ACCESS_KEY and RAPYD_SECRET_KEY must be provided'
 	);
 	console.error(
-		'Usage: node test-rapyd-signature.js <access_key> <secret_key>'
+		'Usage: node test-rapyd-signature-get.js <access_key> <secret_key>'
 	);
 	console.error(
 		'Or set RAPYD_ACCESS_KEY and RAPYD_SECRET_KEY environment variables'
@@ -51,7 +27,7 @@ if (!accessKey || !secretKey) {
 	process.exit(1);
 }
 
-console.log('=== Rapyd Signature Generation ===');
+console.log('=== Rapyd Signature Generation (GET Request) ===');
 console.log('Access Key:', accessKey);
 console.log(
 	'Secret Key:',
@@ -63,18 +39,15 @@ console.log('Method:', method);
 console.log('Path:', path);
 console.log('');
 
-// Convert body to compact JSON string
-const bodyString = JSON.stringify(body);
-console.log('Body String:', bodyString);
+// For GET requests, body string is empty
+const bodyString = '';
+console.log('Body String: (empty for GET requests)');
 console.log('Body String Length:', bodyString.length);
-console.log(
-	'Body String Hex:',
-	Buffer.from(bodyString, 'utf8').toString('hex')
-);
 console.log('');
 
 // Construct the string to sign
 // Format: method + path + salt + timestamp + access_key + secret_key + body_string
+// For GET requests, body_string is empty
 const toSign =
 	method.toLowerCase() +
 	path +
@@ -110,25 +83,22 @@ console.log('access_key:', accessKey);
 console.log('salt:', salt);
 console.log('timestamp:', timestamp);
 console.log('signature:', signature);
-console.log('Content-Type: application/json');
 console.log('');
 
 // Show the full request details
 console.log('=== Full Request Details ===');
 console.log(`URL: https://sandboxapi.rapyd.net${path}`);
-console.log('Method: POST');
-console.log('Body:', bodyString);
+console.log('Method: GET');
+console.log('Body: (none for GET requests)');
 console.log('');
 
 // Generate complete curl command
 const url = `https://sandboxapi.rapyd.net${path}`;
-const curlCommand = `curl -X POST "${url}" \\
+const curlCommand = `curl -X GET "${url}" \\
   -H "access_key: ${accessKey}" \\
   -H "salt: ${salt}" \\
   -H "timestamp: ${timestamp}" \\
-  -H "signature: ${signature}" \\
-  -H "Content-Type: application/json" \\
-  -d '${bodyString}'`;
+  -H "signature: ${signature}"`;
 
 console.log('=== Complete cURL Command ===');
 console.log(curlCommand);
