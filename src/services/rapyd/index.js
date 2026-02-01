@@ -810,6 +810,9 @@ export const createPayout = async ({
 	senderEntityType = 'company',
 	sender = null,
 	eWalletId = null,
+	beneficiaryRelationship = null,
+	purposeCode = null,
+	statementDescriptor = null,
 }) => {
 	try {
 		const path = '/v1/payouts';
@@ -860,6 +863,21 @@ export const createPayout = async ({
 		// Add eWallet if provided
 		if (eWalletId) {
 			body.ewallet = eWalletId;
+		}
+
+		// Add beneficiary_relationship (required for card payouts)
+		if (beneficiaryRelationship) {
+			body.beneficiary_relationship = beneficiaryRelationship;
+		}
+
+		// Add purpose_code (required for card payouts)
+		if (purposeCode) {
+			body.purpose_code = purposeCode;
+		}
+
+		// Add statement_descriptor (optional for card payouts)
+		if (statementDescriptor) {
+			body.statement_descriptor = statementDescriptor;
 		}
 
 		const response = await makeRapydRequest('POST', path, body);

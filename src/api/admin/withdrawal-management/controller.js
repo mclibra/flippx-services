@@ -327,11 +327,11 @@ export const approveWithdrawal = async req => {
 			const senderEntityType = 'company';
 
 			const sender = {
-				company_name: process.env.COMPANY_NAME || 'FlippX India',
+				company_name: process.env.COMPANY_NAME || 'FlippX',
 				country: senderCountry,
 				currency: senderCurrency,
-				address: process.env.COMPANY_ADDRESS || 'Test Address',
-				city: process.env.COMPANY_CITY || 'Delhi',
+				address: process.env.COMPANY_ADDRESS || 'Address',
+				city: process.env.COMPANY_CITY || 'Boston',
 				purpose_code:
 					process.env.PAYOUT_PURPOSE_CODE || 'payment_of_services',
 			};
@@ -356,7 +356,8 @@ export const approveWithdrawal = async req => {
 						withdrawal.bankAccount._id.toString();
 				}
 
-				payout = await createPayout({
+				// Prepare payout parameters
+				const payoutParams = {
 					beneficiaryId,
 					amount: withdrawal.netAmount, // Use net amount after fees
 					currency: 'USD',
@@ -370,7 +371,18 @@ export const approveWithdrawal = async req => {
 					senderEntityType, // Sender entity type (company)
 					sender, // Sender object with company details
 					metadata,
-				});
+				};
+
+				// Add card-specific fields for card withdrawals
+				if (isCardWithdrawal) {
+					payoutParams.beneficiaryRelationship = 'supplier'; // Required for card payouts
+					payoutParams.purposeCode =
+						process.env.PAYOUT_PURPOSE_CODE || 'remittances'; // Required for card payouts
+					payoutParams.statementDescriptor =
+						process.env.STATEMENT_DESCRIPTOR || 'FlippX Payout'; // Optional
+				}
+
+				payout = await createPayout(payoutParams);
 			} catch (payoutError) {
 				// BIC/SWIFT error handling only applies to bank account withdrawals
 				if (!isCardWithdrawal) {
