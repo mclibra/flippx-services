@@ -1149,17 +1149,24 @@ export const getPayoutMethodTypesByCurrency = async payoutCurrency => {
  * Get payout method types by category
  * @param {string} category - Category (e.g., 'card', 'bank')
  * @param {string} payoutCurrency - Optional payout currency filter (e.g., 'USD')
+ * @param {string} beneficiaryCountry - Optional beneficiary country code (e.g., 'US', 'IN')
  * @returns {Promise<Array>} Array of payout method types filtered by category
  */
 export const getPayoutMethodTypesByCategory = async ({
 	category,
 	payoutCurrency = null,
+	beneficiaryCountry = null,
 }) => {
 	try {
 		const queryParams = [`category=${encodeURIComponent(category)}`];
 		if (payoutCurrency) {
 			queryParams.push(
 				`payout_currency=${encodeURIComponent(payoutCurrency)}`
+			);
+		}
+		if (beneficiaryCountry) {
+			queryParams.push(
+				`beneficiary_country=${encodeURIComponent(beneficiaryCountry)}`
 			);
 		}
 		const path = `/v1/payout_method_types?${queryParams.join('&')}`;

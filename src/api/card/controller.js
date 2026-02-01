@@ -174,6 +174,7 @@ export const addCard = async req => {
 						await getPayoutMethodTypesByCategory({
 							category: 'card',
 							payoutCurrency: currency,
+							beneficiaryCountry: isoCountryCode,
 						});
 
 					console.log(
