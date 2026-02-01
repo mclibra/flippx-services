@@ -260,8 +260,8 @@ export const addCard = async req => {
 				}
 			}
 
-			// Create beneficiary in Rapyd
-			const beneficiary = await createCardBeneficiary({
+			// Prepare beneficiary creation data
+			const beneficiaryData = {
 				firstName,
 				lastName,
 				email: userDetails.email || null,
@@ -287,7 +287,26 @@ export const addCard = async req => {
 				merchantReferenceId: card._id.toString(),
 				payoutMethodType: finalPayoutMethodType || null,
 				requiredFields, // Pass required fields info for validation
+			};
+
+			console.log('[addCard] Creating beneficiary with data:', {
+				cardId: card._id.toString(),
+				country: isoCountryCode,
+				currency,
+				payoutMethodType: finalPayoutMethodType,
+				hasRequiredFields: !!requiredFields,
+				beneficiaryData: {
+					...beneficiaryData,
+					cardDetails: {
+						...beneficiaryData.cardDetails,
+						cardNumber: '***' + cardNumber.slice(-4), // Mask card number
+						cvv: '***', // Mask CVV
+					},
+				},
 			});
+
+			// Create beneficiary in Rapyd
+			const beneficiary = await createCardBeneficiary(beneficiaryData);
 
 			// Update card with beneficiary ID
 			card.rapydBeneficiaryId = beneficiary.id;
@@ -298,17 +317,37 @@ export const addCard = async req => {
 				`Successfully created Rapyd beneficiary ${beneficiary.id} for card ${card._id}`
 			);
 		} catch (beneficiaryError) {
-			// Log the error but don't fail the card creation
+			// Log comprehensive error details
+			const errorDetails = {
+				cardId: card._id.toString(),
+				cardType: cardType || 'not provided',
+				errorMessage: beneficiaryError.message,
+				errorStack: beneficiaryError.stack,
+				responseStatus: beneficiaryError.response?.status,
+				responseData: beneficiaryError.response?.data,
+				errorCode: beneficiaryError.response?.data?.status?.error_code,
+				rapydErrorMessage:
+					beneficiaryError.response?.data?.status?.message,
+				rapydOperationId:
+					beneficiaryError.response?.data?.status?.operation_id,
+				fullErrorResponse: JSON.stringify(
+					beneficiaryError.response?.data,
+					null,
+					2
+				),
+			};
+
 			console.error(
-				`Failed to create Rapyd beneficiary for card ${card._id}:`,
-				beneficiaryError
+				`[addCard] Failed to create Rapyd beneficiary for card ${card._id}:`,
+				JSON.stringify(errorDetails, null, 2)
 			);
 
 			// Store the error in the card
-			card.rapydBeneficiaryError =
+			const errorMessage =
 				beneficiaryError.response?.data?.status?.message ||
 				beneficiaryError.message ||
 				'Failed to create beneficiary';
+			card.rapydBeneficiaryError = errorMessage;
 			await card.save();
 
 			// Return success but with a warning
