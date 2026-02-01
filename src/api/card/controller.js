@@ -6,6 +6,7 @@ import {
 	deleteBeneficiary,
 	getPaymentMethodRequiredFields,
 	checkCardEligibility,
+	getPayoutMethodTypesByCategory,
 } from '../../services/rapyd';
 import { User } from '../user/model';
 
@@ -17,7 +18,7 @@ export const addCard = async req => {
 			expirationMonth,
 			expirationYear,
 			cvv,
-			payoutMethodType,
+			cardType, // VISA or MasterCard from UI - required to determine payoutMethodType
 		} = req.body;
 
 		const user = req.user;
@@ -163,22 +164,97 @@ export const addCard = async req => {
 				currency = 'NGN';
 			}
 
+			// Determine payoutMethodType based on cardType
+			// payoutMethodType is always calculated from cardType
+			let finalPayoutMethodType = null;
+			if (cardType) {
+				try {
+					// Fetch payout method types for card category
+					const payoutMethodTypes =
+						await getPayoutMethodTypesByCategory({
+							category: 'card',
+							payoutCurrency: currency,
+						});
+
+					console.log(
+						`[addCard] Fetched payout method types for category=card:`,
+						JSON.stringify(payoutMethodTypes, null, 2)
+					);
+
+					// Normalize card type for matching (VISA, MasterCard, etc.)
+					const normalizedCardType = cardType.toUpperCase();
+
+					// Filter payout method types based on card type
+					// Look for payout method types that match the card type
+					// Common patterns: xx_visa_card, xx_mastercard_card, xx_mastercardglobal_card, etc.
+					const matchingTypes = payoutMethodTypes.filter(type => {
+						const typeName = (type.name || '').toLowerCase();
+						const typeCode = (type.code || '').toLowerCase();
+
+						if (normalizedCardType === 'VISA') {
+							return (
+								typeName.includes('visa') ||
+								typeCode.includes('visa')
+							);
+						} else if (
+							normalizedCardType === 'MASTERCARD' ||
+							normalizedCardType === 'MASTER CARD'
+						) {
+							return (
+								typeName.includes('mastercard') ||
+								typeName.includes('master') ||
+								typeCode.includes('mastercard') ||
+								typeCode.includes('master')
+							);
+						}
+						return false;
+					});
+
+					if (matchingTypes.length > 0) {
+						// Prefer global/mastercardglobal types, then standard types
+						const preferredType =
+							matchingTypes.find(
+								type =>
+									(type.code || '').includes('global') ||
+									(type.name || '').includes('global')
+							) || matchingTypes[0];
+
+						finalPayoutMethodType =
+							preferredType.code || preferredType.name;
+						console.log(
+							`[addCard] Selected payout method type based on card type ${cardType}:`,
+							finalPayoutMethodType
+						);
+					} else {
+						console.warn(
+							`[addCard] No matching payout method type found for card type: ${cardType}`
+						);
+					}
+				} catch (payoutMethodTypesError) {
+					console.warn(
+						`[addCard] Failed to fetch payout method types:`,
+						payoutMethodTypesError.message
+					);
+					// Continue without payoutMethodType - beneficiary creation might still work
+				}
+			}
+
 			// Fetch required fields for the payment method type if provided
 			let requiredFields = null;
-			if (payoutMethodType) {
+			if (finalPayoutMethodType) {
 				try {
 					requiredFields = await getPaymentMethodRequiredFields({
-						paymentMethodType: payoutMethodType,
+						paymentMethodType: finalPayoutMethodType,
 						country: isoCountryCode,
 						currency,
 					});
 					console.log(
-						`[addCard] Required fields for ${payoutMethodType}:`,
+						`[addCard] Required fields for ${finalPayoutMethodType}:`,
 						JSON.stringify(requiredFields, null, 2)
 					);
 				} catch (requiredFieldsError) {
 					console.warn(
-						`[addCard] Could not fetch required fields for ${payoutMethodType}, proceeding with default fields:`,
+						`[addCard] Could not fetch required fields for ${finalPayoutMethodType}, proceeding with default fields:`,
 						requiredFieldsError.message
 					);
 				}
@@ -209,7 +285,7 @@ export const addCard = async req => {
 				identificationType: 'identification_id',
 				identificationValue: userDetails.sim_nif || 'NOT_PROVIDED',
 				merchantReferenceId: card._id.toString(),
-				payoutMethodType: payoutMethodType || null,
+				payoutMethodType: finalPayoutMethodType || null,
 				requiredFields, // Pass required fields info for validation
 			});
 
@@ -347,12 +423,7 @@ export const setDefaultCard = async req => {
 export const updateCard = async req => {
 	try {
 		const { id } = req.params;
-		const {
-			cardholderName,
-			expirationMonth,
-			expirationYear,
-			payoutMethodType,
-		} = req.body;
+		const { cardholderName, expirationMonth, expirationYear } = req.body;
 		const user = req.user;
 
 		// Find the card

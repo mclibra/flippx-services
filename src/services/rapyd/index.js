@@ -1146,6 +1146,45 @@ export const getPayoutMethodTypesByCurrency = async payoutCurrency => {
 };
 
 /**
+ * Get payout method types by category
+ * @param {string} category - Category (e.g., 'card', 'bank')
+ * @param {string} payoutCurrency - Optional payout currency filter (e.g., 'USD')
+ * @returns {Promise<Array>} Array of payout method types filtered by category
+ */
+export const getPayoutMethodTypesByCategory = async ({
+	category,
+	payoutCurrency = null,
+}) => {
+	try {
+		const queryParams = [`category=${encodeURIComponent(category)}`];
+		if (payoutCurrency) {
+			queryParams.push(
+				`payout_currency=${encodeURIComponent(payoutCurrency)}`
+			);
+		}
+		const path = `/v1/payout_method_types?${queryParams.join('&')}`;
+		const response = await makeRapydRequest('GET', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data || [];
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to get payout method types'
+		);
+	} catch (error) {
+		console.error(
+			'Rapyd get payout method types by category error:',
+			error
+		);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to get payout method types from Rapyd'
+		);
+	}
+};
+
+/**
  * Get required fields for a payout method type
  * @param {string} payoutMethodType - Payout method type (e.g., 'us_general_bank')
  * @param {string} senderCountry - Sender country code (e.g., 'US')
@@ -1527,6 +1566,7 @@ export default {
 	getPayoutStatus,
 	getPayoutMethodTypes,
 	getPayoutMethodTypesByCurrency,
+	getPayoutMethodTypesByCategory,
 	getPaymentMethodsByCountry,
 	getBeneficiary,
 	deleteBeneficiary,
