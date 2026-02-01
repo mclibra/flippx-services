@@ -18,7 +18,6 @@ export const addCard = async req => {
 			expirationMonth,
 			expirationYear,
 			cvv,
-			cardType, // VISA or MasterCard from UI - required to determine payoutMethodType
 		} = req.body;
 
 		const user = req.user;
@@ -70,7 +69,9 @@ export const addCard = async req => {
 
 		// Check card eligibility for payout before creating card
 		// This is a BLOCKING check - card creation will fail if eligibility check fails
+		// cardType is extracted from the eligibility check result (scheme field)
 		let cardEligibility;
+		let cardType; // Will be extracted from eligibility check result
 		try {
 			cardEligibility = await checkCardEligibility({
 				cardNumber,
@@ -79,6 +80,24 @@ export const addCard = async req => {
 			console.log(
 				`[addCard] Card eligibility check result:`,
 				JSON.stringify(cardEligibility, null, 2)
+			);
+
+			// Extract card type (scheme) from eligibility check result
+			// scheme can be "VISA", "MasterCard", "AMEX", etc.
+			cardType = cardEligibility.scheme;
+			if (!cardType) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Card eligibility check did not return card scheme. Cannot determine card type.',
+						cardEligibility,
+					},
+				};
+			}
+
+			console.log(
+				`[addCard] Extracted card type (scheme) from eligibility check: ${cardType}`
 			);
 
 			// Check if card supports AFT (Account Funding Transaction) for payouts
