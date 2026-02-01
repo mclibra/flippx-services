@@ -580,7 +580,6 @@ export const createBankAccountBeneficiary = async ({
  * @param {string} params.firstName - First name
  * @param {string} params.lastName - Last name
  * @param {string} params.email - Email address
- * @param {string} params.phoneNumber - Phone number
  * @param {string} params.country - ISO country code (e.g., 'NG', 'US')
  * @param {string} params.currency - Currency code (e.g., 'NGN', 'USD')
  * @param {string} params.entityType - Entity type ('individual' or 'company')
@@ -604,7 +603,6 @@ export const createCardBeneficiary = async ({
 	firstName,
 	lastName,
 	email,
-	phoneNumber, // Not used - phone_number is not included in request per Rapyd API
 	country,
 	currency,
 	entityType,
@@ -620,8 +618,6 @@ export const createCardBeneficiary = async ({
 	metadata = {},
 	requiredFields = null,
 }) => {
-	// Suppress unused parameter warning
-	void phoneNumber;
 	try {
 		const path = '/v1/payouts/beneficiary';
 
@@ -791,78 +787,6 @@ export const createCardBeneficiary = async ({
 		throw new Error(
 			error.response?.data?.status?.message ||
 				'Failed to create card beneficiary in Rapyd'
-		);
-	}
-};
-
-/**
- * Create a beneficiary for payouts (legacy wrapper function)
- * @deprecated Use createBankAccountBeneficiary or createCardBeneficiary instead
- */
-export const createBeneficiary = async ({
-	firstName,
-	lastName,
-	email,
-	phoneNumber,
-	country,
-	currency,
-	payoutMethodType,
-	entityType,
-	bankAccountDetails = null,
-	cardDetails = null,
-	metadata = {},
-	address = null,
-	city = null,
-	state = null,
-	postcode = null,
-	identificationType = null,
-	identificationValue = null,
-	merchantReferenceId = null,
-}) => {
-	// Route to appropriate function based on provided details
-	if (cardDetails) {
-		return createCardBeneficiary({
-			firstName,
-			lastName,
-			email,
-			phoneNumber,
-			country,
-			currency,
-			entityType,
-			cardDetails,
-			address,
-			city,
-			state,
-			postcode,
-			identificationType,
-			identificationValue,
-			merchantReferenceId,
-			payoutMethodType,
-			metadata,
-		});
-	} else if (bankAccountDetails) {
-		return createBankAccountBeneficiary({
-			firstName,
-			lastName,
-			email,
-			phoneNumber,
-			country,
-			currency,
-			entityType,
-			bankAccountDetails,
-			address,
-			city,
-			state,
-			postcode,
-			identificationType,
-			identificationValue,
-			merchantReferenceId,
-			payoutMethodType,
-			metadata,
-		});
-	} else {
-		throw new Error(
-			'Either bankAccountDetails or cardDetails must be provided'
 		);
 	}
 };
@@ -1505,7 +1429,6 @@ export default {
 	createCheckoutPage,
 	getPaymentStatus,
 	createCustomer,
-	createBeneficiary, // Legacy wrapper function
 	createBankAccountBeneficiary,
 	createCardBeneficiary,
 	createPayout,

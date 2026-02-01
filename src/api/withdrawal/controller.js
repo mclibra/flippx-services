@@ -1,13 +1,14 @@
 import { Withdrawal } from './model';
 import { Wallet } from '../wallet/model';
 import { BankAccount } from '../bank_account/model';
+import { Card } from '../card/model';
 import { LoyaltyService } from '../loyalty/service';
 import { makeTransaction } from '../transaction/controller';
 import { Transaction } from '../transaction/model';
 
 export const initiateWithdrawal = async req => {
 	try {
-		const { amount, bankAccountId } = req.body;
+		const { amount, bankAccountId, cardId } = req.body;
 		const user = req.user;
 
 		// Validate input
@@ -21,12 +22,24 @@ export const initiateWithdrawal = async req => {
 			};
 		}
 
-		if (!bankAccountId) {
+		// Either bankAccountId or cardId must be provided
+		if (!bankAccountId && !cardId) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Bank account is required',
+					error: 'Either bank account or card is required',
+				},
+			};
+		}
+
+		// Cannot provide both bankAccountId and cardId
+		if (bankAccountId && cardId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Cannot provide both bank account and card. Please provide either bankAccountId or cardId.',
 				},
 			};
 		}
@@ -116,19 +129,58 @@ export const initiateWithdrawal = async req => {
 			};
 		}
 
-		// Validate bank account
-		const bankAccount = await BankAccount.findById(bankAccountId);
-		if (
-			!bankAccount ||
-			bankAccount.user.toString() !== user._id.toString()
-		) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Invalid bank account',
-				},
-			};
+		// Validate bank account or card
+		let bankAccount = null;
+		let card = null;
+
+		if (bankAccountId) {
+			bankAccount = await BankAccount.findById(bankAccountId);
+			if (
+				!bankAccount ||
+				bankAccount.user.toString() !== user._id.toString()
+			) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Invalid bank account',
+					},
+				};
+			}
+		}
+
+		if (cardId) {
+			card = await Card.findById(cardId);
+			if (!card || card.user.toString() !== user._id.toString()) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Invalid card',
+					},
+				};
+			}
+
+			// Verify card has a valid beneficiary
+			if (!card.rapydBeneficiaryId) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Card does not have a valid beneficiary. Please ensure the card was created successfully.',
+					},
+				};
+			}
+
+			if (card.rapydBeneficiaryError) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Card has a beneficiary creation error: ${card.rapydBeneficiaryError}. Please contact support.`,
+					},
+				};
+			}
 		}
 
 		// Calculate withdrawal fee (if any)
@@ -136,15 +188,24 @@ export const initiateWithdrawal = async req => {
 		const netAmount = amount - fee;
 
 		// Create withdrawal record
-		const withdrawal = await Withdrawal.create({
+		const withdrawalData = {
 			user: user._id,
-			bankAccount: bankAccountId,
 			amount,
 			fee,
 			netAmount,
 			status: 'PENDING',
 			requestDate: new Date(),
-		});
+		};
+
+		if (bankAccountId) {
+			withdrawalData.bankAccount = bankAccountId;
+		}
+
+		if (cardId) {
+			withdrawalData.card = cardId;
+		}
+
+		const withdrawal = await Withdrawal.create(withdrawalData);
 
 		await makeTransaction(
 			user._id.toString(),
@@ -187,6 +248,7 @@ export const getUserWithdrawals = async req => {
 
 		const withdrawals = await Withdrawal.find(query)
 			.populate('bankAccount')
+			.populate('card')
 			.sort({ createdAt: -1 })
 			.limit(parseInt(limit))
 			.skip(parseInt(offset));

@@ -7,6 +7,7 @@ import {
 	normalizeCountryToISO,
 	getPayoutMethodTypesByCurrency,
 	getBeneficiary,
+	getPayoutMethodTypesByCategory,
 } from '../../../services/rapyd';
 import { User } from '../../user/model';
 
@@ -26,10 +27,11 @@ export const approveWithdrawal = async req => {
 			};
 		}
 
-		// Find the withdrawal with bank account and user details
+		// Find the withdrawal with bank account/card and user details
 		const withdrawal = await Withdrawal.findById(id)
 			.populate('user')
-			.populate('bankAccount');
+			.populate('bankAccount')
+			.populate('card');
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -71,23 +73,55 @@ export const approveWithdrawal = async req => {
 		await withdrawal.save();
 
 		try {
-			// Get beneficiary ID from bank account (should be created when bank account was added)
-			let beneficiaryId =
-				withdrawal.bankAccount.rapydBeneficiaryId ||
-				withdrawal.paymentDetails?.rapydBeneficiaryId;
+			// Determine if withdrawal is from bank account or card
+			const isCardWithdrawal = !!withdrawal.card;
+			const isBankAccountWithdrawal = !!withdrawal.bankAccount;
 
-			// Verify beneficiary ID exists - it should have been created when bank account was added
-			if (!beneficiaryId) {
+			if (!isCardWithdrawal && !isBankAccountWithdrawal) {
 				throw new Error(
-					'Beneficiary ID not found. The bank account must have a valid Rapyd beneficiary. Please ensure the bank account was created successfully.'
+					'Withdrawal must have either a bank account or card'
 				);
 			}
 
-			// Check if there was an error creating the beneficiary
-			if (withdrawal.bankAccount.rapydBeneficiaryError) {
-				throw new Error(
-					`Bank account has a beneficiary creation error: ${withdrawal.bankAccount.rapydBeneficiaryError}. Please contact support.`
-				);
+			// Get beneficiary ID from bank account or card
+			let beneficiaryId;
+			if (isCardWithdrawal) {
+				beneficiaryId =
+					withdrawal.card.rapydBeneficiaryId ||
+					withdrawal.paymentDetails?.rapydBeneficiaryId;
+
+				// Verify beneficiary ID exists
+				if (!beneficiaryId) {
+					throw new Error(
+						'Beneficiary ID not found. The card must have a valid Rapyd beneficiary. Please ensure the card was created successfully.'
+					);
+				}
+
+				// Check if there was an error creating the beneficiary
+				if (withdrawal.card.rapydBeneficiaryError) {
+					throw new Error(
+						`Card has a beneficiary creation error: ${withdrawal.card.rapydBeneficiaryError}. Please contact support.`
+					);
+				}
+			} else {
+				// Bank account withdrawal
+				beneficiaryId =
+					withdrawal.bankAccount.rapydBeneficiaryId ||
+					withdrawal.paymentDetails?.rapydBeneficiaryId;
+
+				// Verify beneficiary ID exists
+				if (!beneficiaryId) {
+					throw new Error(
+						'Beneficiary ID not found. The bank account must have a valid Rapyd beneficiary. Please ensure the bank account was created successfully.'
+					);
+				}
+
+				// Check if there was an error creating the beneficiary
+				if (withdrawal.bankAccount.rapydBeneficiaryError) {
+					throw new Error(
+						`Bank account has a beneficiary creation error: ${withdrawal.bankAccount.rapydBeneficiaryError}. Please contact support.`
+					);
+				}
 			}
 
 			// Get beneficiary details from Rapyd
@@ -116,91 +150,171 @@ export const approveWithdrawal = async req => {
 			}
 
 			// Get payout method types from Rapyd API
+			// Different logic for bank accounts vs cards
 			let payoutMethodType;
 			try {
-				const payoutMethodTypes =
-					await getPayoutMethodTypesByCurrency('USD');
+				if (isCardWithdrawal) {
+					// For card withdrawals, fetch payout method types with category=card
+					const payoutMethodTypes =
+						await getPayoutMethodTypesByCategory({
+							category: 'card',
+							payoutCurrency: 'USD',
+							beneficiaryCountry: beneficiaryCountry,
+						});
 
-				// For US accounts, prefer us_standard_bank_account over us_general_bank
-				// us_general_bank may require BIC_SWIFT which US accounts don't have
-				if (beneficiaryCountry?.toUpperCase() === 'US') {
-					const usStandardMethod = payoutMethodTypes.find(
-						method =>
-							method.payout_method_type ===
-								'us_standard_bank_account' &&
-							method.category === 'bank' &&
-							method.status === 1
-					);
+					// Get card scheme from beneficiary details or card eligibility
+					// The beneficiary should have the payout method type stored
+					// Try to get it from the card's stored data first
+					// Note: beneficiaryDetails was already fetched above, but we need the default_payout_method_type
+					// We'll use the beneficiaryDetails from the earlier fetch or get it from card
+					const cardBeneficiaryDetails =
+						await getBeneficiary(beneficiaryId);
+					const cardScheme =
+						cardBeneficiaryDetails.default_payout_method_type ||
+						withdrawal.card?.payoutMethodType;
 
-					if (usStandardMethod) {
-						payoutMethodType = 'us_standard_bank_account';
-						console.log(
-							`[approveWithdrawal] Using us_standard_bank_account for US account`
+					if (cardScheme) {
+						// Find matching payout method type based on scheme
+						const matchingMethod = payoutMethodTypes.find(
+							method =>
+								method.payout_method_type === cardScheme &&
+								method.status === 1
 						);
-					} else {
-						// Fallback to us_general_bank if us_standard_bank_account not available
-						const usGeneralMethod = payoutMethodTypes.find(
+
+						if (matchingMethod) {
+							payoutMethodType =
+								matchingMethod.payout_method_type;
+							console.log(
+								`[approveWithdrawal] Using card payout method type: ${payoutMethodType}`
+							);
+						}
+					}
+
+					// If not found, try to find by beneficiary country
+					if (!payoutMethodType) {
+						const cardMethod = payoutMethodTypes.find(
+							method =>
+								method.beneficiary_country?.toLowerCase() ===
+									beneficiaryCountry?.toLowerCase() &&
+								method.category === 'card' &&
+								method.status === 1
+						);
+
+						if (cardMethod) {
+							payoutMethodType = cardMethod.payout_method_type;
+							console.log(
+								`[approveWithdrawal] Found card payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+							);
+						}
+					}
+				} else {
+					// For bank account withdrawals, use existing logic
+					const payoutMethodTypes =
+						await getPayoutMethodTypesByCurrency('USD');
+
+					// For US accounts, prefer us_standard_bank_account over us_general_bank
+					// us_general_bank may require BIC_SWIFT which US accounts don't have
+					if (beneficiaryCountry?.toUpperCase() === 'US') {
+						const usStandardMethod = payoutMethodTypes.find(
 							method =>
 								method.payout_method_type ===
-									'us_general_bank' &&
+									'us_standard_bank_account' &&
 								method.category === 'bank' &&
 								method.status === 1
 						);
 
-						if (usGeneralMethod) {
-							payoutMethodType = 'us_general_bank';
+						if (usStandardMethod) {
+							payoutMethodType = 'us_standard_bank_account';
 							console.log(
-								`[approveWithdrawal] Using us_general_bank for US account (us_standard_bank_account not available)`
+								`[approveWithdrawal] Using us_standard_bank_account for US account`
 							);
+						} else {
+							// Fallback to us_general_bank if us_standard_bank_account not available
+							const usGeneralMethod = payoutMethodTypes.find(
+								method =>
+									method.payout_method_type ===
+										'us_general_bank' &&
+									method.category === 'bank' &&
+									method.status === 1
+							);
+
+							if (usGeneralMethod) {
+								payoutMethodType = 'us_general_bank';
+								console.log(
+									`[approveWithdrawal] Using us_general_bank for US account (us_standard_bank_account not available)`
+								);
+							}
 						}
 					}
-				}
 
-				// If not US or no US-specific method found, find by beneficiary country
-				if (!payoutMethodType) {
-					const bankAccountMethod = payoutMethodTypes.find(
-						method =>
-							method.beneficiary_country?.toLowerCase() ===
-								beneficiaryCountry?.toLowerCase() &&
-							method.category === 'bank' &&
-							method.status === 1
-					);
-
-					if (bankAccountMethod) {
-						payoutMethodType = bankAccountMethod.payout_method_type;
-						console.log(
-							`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
-						);
-					} else {
-						// Fallback: try to find any bank method for the country
-						const fallbackMethod = payoutMethodTypes.find(
+					// If not US or no US-specific method found, find by beneficiary country
+					if (!payoutMethodType) {
+						const bankAccountMethod = payoutMethodTypes.find(
 							method =>
 								method.beneficiary_country?.toLowerCase() ===
 									beneficiaryCountry?.toLowerCase() &&
-								method.category === 'bank'
+								method.category === 'bank' &&
+								method.status === 1
 						);
 
-						if (fallbackMethod) {
+						if (bankAccountMethod) {
 							payoutMethodType =
-								fallbackMethod.payout_method_type;
+								bankAccountMethod.payout_method_type;
 							console.log(
-								`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+								`[approveWithdrawal] Found payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
 							);
 						} else {
-							// Last resort: construct from country code (use lowercase for payout method type)
-							payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
-							console.warn(
-								`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
+							// Fallback: try to find any bank method for the country
+							const fallbackMethod = payoutMethodTypes.find(
+								method =>
+									method.beneficiary_country?.toLowerCase() ===
+										beneficiaryCountry?.toLowerCase() &&
+									method.category === 'bank'
 							);
+
+							if (fallbackMethod) {
+								payoutMethodType =
+									fallbackMethod.payout_method_type;
+								console.log(
+									`[approveWithdrawal] Using fallback payout method type: ${payoutMethodType} for country: ${beneficiaryCountry}`
+								);
+							} else {
+								// Last resort: construct from country code (use lowercase for payout method type)
+								payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
+								console.warn(
+									`[approveWithdrawal] Could not find payout method type for country ${beneficiaryCountry}, using constructed: ${payoutMethodType}`
+								);
+							}
 						}
 					}
 				}
 			} catch (payoutMethodError) {
-				// Fallback to constructed method type if API call fails (use lowercase for payout method type)
-				payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
-				console.warn(
-					`[approveWithdrawal] Error getting payout method types, using fallback: ${payoutMethodType}`,
-					payoutMethodError.message
+				// Fallback to constructed method type if API call fails
+				if (isCardWithdrawal) {
+					console.warn(
+						`[approveWithdrawal] Error getting card payout method types:`,
+						payoutMethodError.message
+					);
+					// For cards, we can't construct a fallback easily, so throw error
+					throw new Error(
+						`Failed to determine payout method type for card withdrawal: ${payoutMethodError.message}`
+					);
+				} else {
+					// For bank accounts, use constructed fallback
+					payoutMethodType = `${beneficiaryCountry?.toLowerCase()}_standard_bank_account`;
+					console.warn(
+						`[approveWithdrawal] Error getting payout method types, using fallback: ${payoutMethodType}`,
+						payoutMethodError.message
+					);
+				}
+			}
+
+			// Verify payout method type is set
+			if (!payoutMethodType) {
+				throw new Error(
+					`Could not determine payout method type for ${
+						isCardWithdrawal ? 'card' : 'bank account'
+					} withdrawal`
 				);
 			}
 

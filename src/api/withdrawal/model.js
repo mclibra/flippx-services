@@ -15,7 +15,18 @@ const WithdrawalSchema = new Schema(
 		bankAccount: {
 			type: Schema.Types.ObjectId,
 			ref: 'BankAccount',
-			required: true,
+			required: function () {
+				// bankAccount is required if card is not provided
+				return !this.card;
+			},
+		},
+		card: {
+			type: Schema.Types.ObjectId,
+			ref: 'Card',
+			required: function () {
+				// card is required if bankAccount is not provided
+				return !this.bankAccount;
+			},
 		},
 		amount: { type: Number, required: true },
 		fee: { type: Number, default: 0 },

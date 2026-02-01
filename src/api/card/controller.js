@@ -298,7 +298,6 @@ export const addCard = async req => {
 				firstName,
 				lastName,
 				email: userDetails.email || null,
-				phoneNumber: userDetails.phone || null,
 				country: isoCountryCode,
 				currency,
 				cardDetails: {
@@ -321,22 +320,6 @@ export const addCard = async req => {
 				payoutMethodType: finalPayoutMethodType || null,
 				requiredFields, // Pass required fields info for validation
 			};
-
-			console.log('[addCard] Creating beneficiary with data:', {
-				cardId: card._id.toString(),
-				country: isoCountryCode,
-				currency,
-				payoutMethodType: finalPayoutMethodType,
-				hasRequiredFields: !!requiredFields,
-				beneficiaryData: {
-					...beneficiaryData,
-					cardDetails: {
-						...beneficiaryData.cardDetails,
-						cardNumber: '***' + cardNumber.slice(-4), // Mask card number
-						cvv: '***', // Mask CVV
-					},
-				},
-			});
 
 			// Create beneficiary in Rapyd
 			const beneficiary = await createCardBeneficiary(beneficiaryData);
