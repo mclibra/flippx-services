@@ -209,12 +209,14 @@ export const addCard = async req => {
 					// Common patterns: xx_visa_card, xx_mastercard_card, xx_mastercardglobal_card, etc.
 					const matchingTypes = payoutMethodTypes.filter(type => {
 						const typeName = (type.name || '').toLowerCase();
-						const typeCode = (type.code || '').toLowerCase();
+						const payoutMethodType = (
+							type.payout_method_type || ''
+						).toLowerCase();
 
 						if (normalizedCardType === 'VISA') {
 							return (
 								typeName.includes('visa') ||
-								typeCode.includes('visa')
+								payoutMethodType.includes('visa')
 							);
 						} else if (
 							normalizedCardType === 'MASTERCARD' ||
@@ -223,8 +225,8 @@ export const addCard = async req => {
 							return (
 								typeName.includes('mastercard') ||
 								typeName.includes('master') ||
-								typeCode.includes('mastercard') ||
-								typeCode.includes('master')
+								payoutMethodType.includes('mastercard') ||
+								payoutMethodType.includes('master')
 							);
 						}
 						return false;
@@ -235,12 +237,23 @@ export const addCard = async req => {
 						const preferredType =
 							matchingTypes.find(
 								type =>
-									(type.code || '').includes('global') ||
-									(type.name || '').includes('global')
+									(type.payout_method_type || '').includes(
+										'global'
+									) || (type.name || '').includes('global')
 							) || matchingTypes[0];
 
+						// Use payout_method_type field from API response
 						finalPayoutMethodType =
-							preferredType.code || preferredType.name;
+							preferredType.payout_method_type;
+						if (!finalPayoutMethodType) {
+							console.warn(
+								`[addCard] Selected payout method type object does not have payout_method_type field:`,
+								JSON.stringify(preferredType, null, 2)
+							);
+							// Fallback to code or name if payout_method_type is not available
+							finalPayoutMethodType =
+								preferredType.code || preferredType.name;
+						}
 						console.log(
 							`[addCard] Selected payout method type based on card type ${cardType}:`,
 							finalPayoutMethodType

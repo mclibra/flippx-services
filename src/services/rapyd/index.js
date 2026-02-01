@@ -142,57 +142,6 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 		secretKey +
 		bodyString;
 
-	// Detailed logging for signature calculation
-	console.log('[Rapyd Signature] Calculating signature:', {
-		method: method.toLowerCase(),
-		path,
-		pathLength: path.length,
-		salt,
-		timestamp,
-		accessKey: accessKey.substring(0, 10) + '...',
-		secretKeyLength: secretKey.length,
-		bodyStringLength: bodyString.length,
-		bodyStringHex: Buffer.from(bodyString, 'utf8')
-			.toString('hex')
-			.substring(0, 100),
-		bodyStringHasNewlines:
-			bodyString.includes('\n') || bodyString.includes('\r'),
-		bodyStringHasSpaces: bodyString.includes('  '), // double spaces
-		toSignLength: toSign.length,
-		toSignPreview: toSign.substring(0, 100) + '...',
-		// Log the exact components being concatenated
-		toSignComponents: {
-			method: method.toLowerCase(),
-			path,
-			salt,
-			timestamp,
-			accessKey,
-			secretKey: secretKey.substring(0, 10) + '...',
-			bodyString: bodyString.substring(0, 50) + '...',
-		},
-		// Log the full toSign string (be careful with secrets in production)
-		toSignFull: toSign,
-		toSignHex: Buffer.from(toSign, 'utf8').toString('hex'),
-		toSignHexLength: Buffer.from(toSign, 'utf8').toString('hex').length,
-		toSignHasNewlines: toSign.includes('\n') || toSign.includes('\r'),
-		// Log each component's hex to verify exact bytes
-		componentsHex: {
-			method: Buffer.from(method.toLowerCase(), 'utf8').toString('hex'),
-			path: Buffer.from(path, 'utf8').toString('hex'),
-			salt: Buffer.from(salt, 'utf8').toString('hex'),
-			timestamp: Buffer.from(timestamp, 'utf8').toString('hex'),
-			accessKey: Buffer.from(accessKey, 'utf8').toString('hex'),
-			secretKey:
-				Buffer.from(secretKey, 'utf8')
-					.toString('hex')
-					.substring(0, 50) + '...',
-			bodyString:
-				Buffer.from(bodyString, 'utf8')
-					.toString('hex')
-					.substring(0, 100) + '...',
-		},
-	});
-
 	// Generate HMAC-SHA256 signature
 	// CRITICAL: Rapyd requires BASE64 encoding of the HMAC-SHA256 hash
 	// Format: BASE64(HMAC-SHA256(secret_key, toSign))
@@ -200,12 +149,6 @@ const generateSignature = (method, path, salt, timestamp, bodyString = '') => {
 	hmac.update(toSign);
 	// Convert hex digest to BASE64 as per Rapyd documentation
 	const signature = Buffer.from(hmac.digest('hex')).toString('base64');
-
-	console.log('[Rapyd Signature] Generated signature:', {
-		signature: signature.substring(0, 20) + '...',
-		signatureLength: signature.length,
-		signatureFull: signature,
-	});
 
 	return signature;
 };
@@ -241,22 +184,6 @@ const makeRapydRequest = async (method, path, body = null) => {
 		timestamp,
 		bodyString
 	);
-
-	// Debug logging - show what we're about to sign and send
-	console.log('[Rapyd Request] Request preparation:', {
-		method: method.toUpperCase(),
-		path: requestPath,
-		bodyStringLength: bodyString.length,
-		bodyStringPreview:
-			bodyString.substring(0, 100) +
-			(bodyString.length > 100 ? '...' : ''),
-		bodyStringHex: Buffer.from(bodyString, 'utf8')
-			.toString('hex')
-			.substring(0, 100),
-		salt,
-		timestamp,
-		signature: signature.substring(0, 20) + '...',
-	});
 
 	// Generate idempotency key (timestamp-based unique identifier)
 	const idempotency = Date.now().toString();
@@ -334,32 +261,8 @@ const makeRapydRequest = async (method, path, body = null) => {
 
 		// Write the exact body string (no transformation)
 		if (bodyString) {
-			console.log('[Rapyd Request] Writing body to request:', {
-				bodyString,
-				bodyStringLength: bodyString.length,
-				bodyStringBytes: Buffer.from(bodyString, 'utf8')
-					.toString('hex')
-					.substring(0, 200),
-				hasNewlines:
-					bodyString.includes('\n') || bodyString.includes('\r'),
-				hasTabs: bodyString.includes('\t'),
-				hasDoubleSpaces: bodyString.includes('  '),
-				contentLength: Buffer.byteLength(bodyString, 'utf8'),
-			});
 			req.write(bodyString, 'utf8');
-			console.log('[Rapyd Request] Body written successfully');
 		}
-
-		console.log('[Rapyd Request] Request options:', {
-			hostname,
-			port: 443,
-			path: requestPath,
-			method: method.toUpperCase(),
-			headers: {
-				...headers,
-				signature: headers.signature.substring(0, 20) + '...',
-			},
-		});
 
 		req.end();
 	}).catch(error => {
