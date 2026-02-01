@@ -332,6 +332,7 @@ export const approveWithdrawal = async req => {
 				currency: senderCurrency,
 				address: process.env.COMPANY_ADDRESS || 'Address',
 				city: process.env.COMPANY_CITY || 'Boston',
+				state: process.env.COMPANY_STATE || 'Delhi',
 				purpose_code: 'other',
 			};
 
