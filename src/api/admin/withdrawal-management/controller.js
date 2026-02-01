@@ -375,7 +375,7 @@ export const approveWithdrawal = async req => {
 
 				// Add card-specific fields for card withdrawals
 				if (isCardWithdrawal) {
-					payoutParams.beneficiaryRelationship = 'supplier'; // Required for card payouts
+					payoutParams.beneficiaryRelationship = 'self'; // Required for card payouts
 					payoutParams.purposeCode =
 						process.env.PAYOUT_PURPOSE_CODE || 'remittances'; // Required for card payouts
 					payoutParams.statementDescriptor =
@@ -499,8 +499,8 @@ export const approveWithdrawal = async req => {
 								withdrawal.bankAccount._id.toString(),
 						};
 
-						// Retry payout with new beneficiary (using same payout method type and sender info)
-						payout = await createPayout({
+						// Prepare retry payout parameters (same structure as original call)
+						const retryPayoutParams = {
 							beneficiaryId,
 							amount: withdrawal.netAmount,
 							currency: 'USD',
@@ -514,7 +514,11 @@ export const approveWithdrawal = async req => {
 							senderEntityType, // Sender entity type (company)
 							sender, // Sender object with company details
 							metadata: retryMetadata,
-						});
+							// Note: No card-specific fields needed here as this is only for bank account retries
+						};
+
+						// Retry payout with new beneficiary (using same payout method type and sender info)
+						payout = await createPayout(retryPayoutParams);
 					} else {
 						// Re-throw if it's not a BIC/SWIFT error or not US account
 						throw payoutError;
