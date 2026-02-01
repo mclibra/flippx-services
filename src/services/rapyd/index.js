@@ -626,14 +626,26 @@ export const createCardBeneficiary = async ({
 		const body = {
 			first_name: firstName,
 			last_name: lastName,
-			email,
-			phone_number: phoneNumber,
 			country,
 			currency,
 			category: 'card',
 			entity_type: entityType,
-			metadata,
 		};
+
+		// Add email if provided
+		if (email) {
+			body.email = email;
+		}
+
+		// Add phone_number if provided (only if allowed by required fields)
+		if (phoneNumber) {
+			body.phone_number = phoneNumber;
+		}
+
+		// Add metadata only if provided and not empty (only if allowed by required fields)
+		if (metadata && Object.keys(metadata).length > 0) {
+			body.metadata = metadata;
+		}
 
 		// Add address fields if provided
 		if (address) {
@@ -709,15 +721,33 @@ export const createCardBeneficiary = async ({
 			);
 
 			// Filter body to only include allowed fields
+			// CRITICAL: Only include fields that are explicitly in the allowed fields list
 			const filteredBody = {};
 			for (const [key, value] of Object.entries(body)) {
 				// Map our field names to Rapyd field names
 				const rapydFieldName = key; // Most fields match
-				if (
-					allowedFields.includes(rapydFieldName) ||
-					!requiredFields.beneficiary_required_fields.length
-				) {
-					filteredBody[key] = value;
+				// Only include field if it's in the allowed fields list
+				if (allowedFields.includes(rapydFieldName)) {
+					// Only include non-null, non-undefined values
+					if (value !== null && value !== undefined) {
+						// For empty objects (like metadata), check if it has keys
+						if (
+							typeof value === 'object' &&
+							!Array.isArray(value) &&
+							Object.keys(value).length === 0
+						) {
+							// Skip empty objects unless explicitly required
+							if (requiredFieldNames.includes(rapydFieldName)) {
+								filteredBody[key] = value;
+							} else {
+								console.log(
+									`[createCardBeneficiary] Filtering out empty object field: ${key}`
+								);
+							}
+						} else {
+							filteredBody[key] = value;
+						}
+					}
 				} else {
 					console.log(
 						`[createCardBeneficiary] Filtering out unallowed field: ${key}`
@@ -737,7 +767,9 @@ export const createCardBeneficiary = async ({
 				}
 			}
 
-			// Use filtered body
+			// Replace body with filtered body (only allowed fields)
+			// Clear body first, then assign only filtered fields
+			Object.keys(body).forEach(key => delete body[key]);
 			Object.assign(body, filteredBody);
 		}
 
