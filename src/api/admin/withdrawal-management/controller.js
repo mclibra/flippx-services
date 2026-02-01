@@ -332,8 +332,7 @@ export const approveWithdrawal = async req => {
 				currency: senderCurrency,
 				address: process.env.COMPANY_ADDRESS || 'Address',
 				city: process.env.COMPANY_CITY || 'Boston',
-				purpose_code:
-					process.env.PAYOUT_PURPOSE_CODE || 'payment_of_services',
+				purpose_code: 'other',
 			};
 
 			console.log(
@@ -376,10 +375,8 @@ export const approveWithdrawal = async req => {
 				// Add card-specific fields for card withdrawals
 				if (isCardWithdrawal) {
 					payoutParams.beneficiaryRelationship = 'self'; // Required for card payouts
-					payoutParams.purposeCode =
-						process.env.PAYOUT_PURPOSE_CODE || 'remittances'; // Required for card payouts
-					payoutParams.statementDescriptor =
-						process.env.STATEMENT_DESCRIPTOR || 'FlippX Payout'; // Optional
+					payoutParams.purposeCode = 'other'; // Required for card payouts
+					payoutParams.statementDescriptor = 'FlippX Payout'; // Optional
 				}
 
 				payout = await createPayout(payoutParams);
