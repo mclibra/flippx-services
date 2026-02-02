@@ -2,7 +2,6 @@ import { BankAccount } from './model';
 import { Withdrawal } from '../withdrawal/model';
 import {
 	createBankAccountBeneficiary,
-	normalizeCountryToISO,
 	deleteBeneficiary,
 } from '../../services/rapyd';
 import { User } from '../user/model';
@@ -43,10 +42,8 @@ export const addBankAccount = async req => {
 			};
 		}
 
-		// Normalize country to ISO 3166-1 ALPHA-2 code
-		const isoCountryCode = normalizeCountryToISO(
-			userDetails.address?.country || userDetails.countryCode
-		);
+		// Use user's country ISO code (2-digit ISO 3166-1 ALPHA-2)
+		const isoCountryCode = userDetails.countryISO || 'US';
 
 		// BIC/SWIFT is required for ALL bank accounts (US and non-US)
 		if (!bicSwift) {

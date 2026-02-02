@@ -100,7 +100,16 @@ export const verifyOtp = async body => {
 
 export const create = async body => {
 	try {
-		const { countryCode, phone, name, password, dob, refferalCode } = body;
+		const {
+			countryCode,
+			phone,
+			name,
+			password,
+			dob,
+			refferalCode,
+			countryName,
+			countryISO,
+		} = body;
 		const slugName = `${name.firstName}${name.lastName}`;
 
 		// Check if user already exists
@@ -119,15 +128,33 @@ export const create = async body => {
 			};
 		}
 
+		// Validate state code if address is provided
+		if (body.address?.state) {
+			const stateCode = String(body.address.state).trim().toUpperCase();
+			if (!/^[A-Z]{2}$/.test(stateCode)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+					},
+				};
+			}
+			body.address.state = stateCode;
+		}
+
 		// Create the user
 		const user = await User.create({
 			name,
 			slugName,
 			countryCode,
+			countryName,
+			countryISO,
 			dob,
 			password,
 			phone,
 			refferalCode: refferalCode ? refferalCode : null,
+			address: body.address,
 		});
 
 		if (user._id) {
@@ -416,6 +443,22 @@ export const update = async (user, body) => {
 	try {
 		// Handle address updates - merge with existing address if partial update
 		if (body.address) {
+			// Validate state code if provided
+			if (body.address.state) {
+				const stateCode = String(body.address.state)
+					.trim()
+					.toUpperCase();
+				if (!/^[A-Z]{2}$/.test(stateCode)) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+						},
+					};
+				}
+				body.address.state = stateCode;
+			}
 			// If address is provided as an object, merge with existing address
 			user.address = {
 				...(user.address || {}),

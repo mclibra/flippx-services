@@ -19,6 +19,15 @@ const userSchema = new Schema(
 			required: true,
 			trim: true,
 		},
+		countryName: {
+			type: String,
+			trim: true,
+		},
+		countryISO: {
+			type: String,
+			trim: true,
+			uppercase: true,
+		},
 		phone: {
 			type: String,
 			required: true,
@@ -69,7 +78,18 @@ const userSchema = new Schema(
 			address1: { type: String, default: null },
 			address2: { type: String, default: null },
 			city: { type: String, default: null },
-			state: { type: String, default: null },
+			state: {
+				type: String,
+				default: null,
+				uppercase: true,
+				validate: {
+					validator: function (v) {
+						if (!v) return true; // Allow null/empty
+						return /^[A-Z]{2}$/.test(v);
+					},
+					message: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+				},
+			},
 			country: { type: String, default: null },
 			pincode: { type: String, default: null },
 		},

@@ -1,7 +1,7 @@
 import { User } from '../../user/model';
 import { Wallet } from '../../wallet/model';
 import { Transaction } from '../../transaction/model';
-import { LoyaltyProfile, LoyaltyTransaction } from '../../loyalty/model';
+import { LoyaltyProfile } from '../../loyalty/model';
 import { BorletteTicket } from '../../borlette_ticket/model';
 import { MegaMillionTicket } from '../../megamillion_ticket/model';
 import { RouletteTicket } from '../../roulette_ticket/model';
@@ -9,7 +9,7 @@ import { DominoGame } from '../../domino/model';
 import { Payment } from '../../wallet/model';
 import { Withdrawal } from '../../withdrawal/model';
 import { LoyaltyService } from '../../loyalty/service';
-import randtoken from 'rand-token';
+import 'rand-token';
 import bcrypt from 'bcryptjs';
 
 // ===== USER LIST WITH SEARCH & FILTERING =====
@@ -230,6 +230,8 @@ export const createUser = async (body, adminUser) => {
 			email,
 			phone,
 			countryCode,
+			countryName,
+			countryISO,
 			dob,
 			password,
 			role = 'USER',
@@ -280,12 +282,28 @@ export const createUser = async (body, adminUser) => {
 			};
 		}
 
+		// Validate state code if provided
+		if (state) {
+			const stateCode = String(state).trim().toUpperCase();
+			if (!/^[A-Z]{2}$/.test(stateCode)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+					},
+				};
+			}
+		}
+
 		// Create user
 		const userData = {
 			name: { firstName, lastName },
 			email,
 			phone,
 			countryCode,
+			countryName,
+			countryISO,
 			dob,
 			slugName: `${firstName.toLowerCase()}_${lastName.toLowerCase()}`,
 			password,
@@ -295,7 +313,7 @@ export const createUser = async (body, adminUser) => {
 				address1,
 				address2,
 				city,
-				state,
+				state: state ? String(state).trim().toUpperCase() : null,
 				country,
 				pincode,
 			},
@@ -350,7 +368,7 @@ export const createUser = async (body, adminUser) => {
 
 // ===== USER UPDATE =====
 
-export const updateUser = async (userId, body, adminUser) => {
+export const updateUser = async (userId, body) => {
 	try {
 		const user = await User.findById(userId);
 		if (!user) {
@@ -391,12 +409,27 @@ export const updateUser = async (userId, body, adminUser) => {
 			body.country ||
 			body.pincode
 		) {
+			// Validate state code if provided
+			if (body.state) {
+				const stateCode = String(body.state).trim().toUpperCase();
+				if (!/^[A-Z]{2}$/.test(stateCode)) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+						},
+					};
+				}
+			}
 			updateData.address = {
 				...user.address,
 				...(body.address1 && { address1: body.address1 }),
 				...(body.address2 && { address2: body.address2 }),
 				...(body.city && { city: body.city }),
-				...(body.state && { state: body.state }),
+				...(body.state && {
+					state: String(body.state).trim().toUpperCase(),
+				}),
 				...(body.country && { country: body.country }),
 				...(body.pincode && { pincode: body.pincode }),
 			};
@@ -871,7 +904,7 @@ export const getUserDetails = async (userId, query = {}) => {
 		]);
 
 		// 5. Combine all analytics by cash type
-		const combineAnalyticsByCashType = analytics => {
+		const combineAnalyticsByCashType = () => {
 			const result = {
 				REAL: {
 					totalAmountSpent: 0,
@@ -1101,8 +1134,7 @@ export const verifyUserDocument = async (
 
 export const rejectUserDocument = async (
 	userId,
-	{ documentType, rejectionReason },
-	adminUser
+	{ documentType, rejectionReason }
 ) => {
 	try {
 		const user = await User.findById(userId);
@@ -1266,7 +1298,7 @@ export const updateUserLoyalty = async (
 
 // ===== ACCOUNT MANAGEMENT =====
 
-export const resetUserPassword = async (userId, { newPassword }, adminUser) => {
+export const resetUserPassword = async (userId, { newPassword }) => {
 	try {
 		if (!newPassword) {
 			return {
@@ -1325,7 +1357,7 @@ export const resetUserPassword = async (userId, { newPassword }, adminUser) => {
 	}
 };
 
-export const resetUserPin = async (userId, adminUser) => {
+export const resetUserPin = async userId => {
 	try {
 		const user = await User.findById(userId);
 		if (!user) {
@@ -1362,11 +1394,7 @@ export const resetUserPin = async (userId, adminUser) => {
 	}
 };
 
-export const updateUserStatus = async (
-	userId,
-	{ status, reason },
-	adminUser
-) => {
+export const updateUserStatus = async (userId, { status, reason }) => {
 	try {
 		const user = await User.findById(userId);
 		if (!user) {

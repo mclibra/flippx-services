@@ -161,18 +161,22 @@ Create a new user account after OTP verification.
   },
   "password": "password123",
   "dob": "1990-01-01",
+  "countryName": "United States",
+  "countryISO": "US",
   "refferalCode": "REF123" // optional
 }
 ```
 
 **Request Parameters:**
-- `countryCode` (String, required): Country code
+- `countryCode` (String, required): Country dial code (e.g., "+1", "+91")
 - `phone` (String, required): Phone number (unique)
 - `name` (Object, required): User name
   - `firstName` (String, required): First name
   - `lastName` (String, required): Last name
 - `password` (String, required): Password (minimum 6 characters)
 - `dob` (String, required): Date of birth
+- `countryName` (String, optional): Full country name (e.g., "United States", "India")
+- `countryISO` (String, optional): 2-digit ISO 3166-1 ALPHA-2 country code (e.g., "US", "IN")
 - `refferalCode` (String, optional): Referral code
 
 **Success Response (200):**
@@ -190,6 +194,8 @@ Create a new user account after OTP verification.
     "userName": "johndoe123",
     "role": "USER",
     "countryCode": "+1",
+    "countryName": "United States",
+    "countryISO": "US",
     "phone": "1234567890",
     "email": null,
     "createdAt": "2024-01-01T00:00:00.000Z",
@@ -306,8 +312,8 @@ Get the current authenticated user's profile.
       "address1": "123 Main Street",
       "address2": "Apt 4B",
       "city": "New York",
-      "state": "NY",
-      "country": "USA",
+    "state": "NY",
+    "country": "United States",
       "pincode": "10001"
     },
     "sim_nif": "NIF123456",
@@ -392,7 +398,7 @@ Update the current authenticated user's profile. Supports partial updates.
     "address1": "456 Oak Avenue",
     "city": "Los Angeles",
     "state": "CA",
-    "country": "USA",
+    "country": "United States",
     "pincode": "90001"
   }
 }
@@ -454,7 +460,7 @@ All fields are optional. Only include fields you want to update.
   - `address1` (String, optional): Primary address line
   - `address2` (String, optional): Secondary address line
   - `city` (String, optional): City
-  - `state` (String, optional): State/Province
+  - `state` (String, optional): 2-digit uppercase state code (e.g., "NY", "CA", "TX")
   - `country` (String, optional): Country
   - `pincode` (String, optional): Postal/ZIP code
 - `bankAccount` (Array, optional): Bank accounts (replaces entire array)
@@ -951,7 +957,9 @@ curl -X POST https://your-api-domain.com/api/user/verify/pin \
 ```typescript
 {
   _id: ObjectId,
-  countryCode: String, // Required, e.g., "+1"
+  countryCode: String, // Required, dial code e.g., "+1"
+  countryName: String, // Optional, full country name e.g., "United States"
+  countryISO: String, // Optional, 2-digit ISO 3166-1 ALPHA-2 code e.g., "US"
   phone: String, // Required, unique, 7-10 digits
   email: String, // Optional, unique, valid email format
   slugName: String, // Auto-generated from name
@@ -968,7 +976,7 @@ curl -X POST https://your-api-domain.com/api/user/verify/pin \
     address1: String, // Optional
     address2: String, // Optional
     city: String, // Optional
-    state: String, // Optional
+    state: String, // Optional, 2-digit uppercase code (e.g., "NY", "CA")
     country: String, // Optional
     pincode: String // Optional
   },
@@ -1025,6 +1033,11 @@ curl -X POST https://your-api-domain.com/api/user/verify/pin \
 }
 ```
 
+**Common 400 errors:**
+- Invalid state code format (must be 2-digit uppercase code like "NY", "CA")
+- Invalid registration details
+- Password too short (minimum 6 characters)
+
 #### 401 Unauthorized
 ```
 401 Unauthorized
@@ -1079,6 +1092,7 @@ curl -X POST https://your-api-domain.com/api/user/verify/pin \
 - Use partial updates for address fields
 - Only include fields you want to update
 - Existing fields are preserved if not included
+- State code must be a 2-digit uppercase code (e.g., "NY", "CA", "TX")
 
 ### Bank Account Management
 1. Get current profile: `GET /api/user/me`

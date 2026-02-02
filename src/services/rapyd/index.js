@@ -1358,91 +1358,6 @@ export const mapPayoutStatus = rapydStatus => {
 	return statusMap[rapydStatus] || 'PENDING';
 };
 
-/**
- * Normalize country code to ISO 3166-1 ALPHA-2 format
- * Handles phone codes, full country names, and ISO codes
- * @param {string} countryInput - Country code, name, or phone code
- * @returns {string} ISO 3166-1 ALPHA-2 country code (default: 'US')
- */
-export const normalizeCountryToISO = countryInput => {
-	if (!countryInput) {
-		return rapydConfig.defaultCountry || 'US';
-	}
-
-	const normalized = String(countryInput).trim().toUpperCase();
-
-	// If already a 2-letter ISO code, return it
-	if (/^[A-Z]{2}$/.test(normalized)) {
-		return normalized;
-	}
-
-	// Handle phone codes (e.g., +1, +44, +91)
-	if (normalized.startsWith('+')) {
-		const phoneCode = normalized.substring(1);
-		const phoneCodeToCountry = {
-			1: 'US', // United States/Canada
-			44: 'GB', // United Kingdom
-			91: 'IN', // India
-			33: 'FR', // France
-			49: 'DE', // Germany
-			86: 'CN', // China
-			81: 'JP', // Japan
-			52: 'MX', // Mexico
-			55: 'BR', // Brazil
-			61: 'AU', // Australia
-			34: 'ES', // Spain
-			39: 'IT', // Italy
-			7: 'RU', // Russia
-			82: 'KR', // South Korea
-		};
-		if (phoneCodeToCountry[phoneCode]) {
-			return phoneCodeToCountry[phoneCode];
-		}
-	}
-
-	// Map common country names to ISO codes
-	const countryNameMap = {
-		'UNITED STATES': 'US',
-		'UNITED STATES OF AMERICA': 'US',
-		USA: 'US',
-		US: 'US',
-		'UNITED KINGDOM': 'GB',
-		UK: 'GB',
-		'GREAT BRITAIN': 'GB',
-		INDIA: 'IN',
-		FRANCE: 'FR',
-		GERMANY: 'DE',
-		CHINA: 'CN',
-		JAPAN: 'JP',
-		MEXICO: 'MX',
-		BRAZIL: 'BR',
-		AUSTRALIA: 'AU',
-		CANADA: 'CA',
-		SPAIN: 'ES',
-		ITALY: 'IT',
-		RUSSIA: 'RU',
-		'SOUTH KOREA': 'KR',
-		KOREA: 'KR',
-		DOMINICAN: 'DO',
-		'DOMINICAN REPUBLIC': 'DO',
-		HAITI: 'HT',
-		PUERTO: 'PR',
-		'PUERTO RICO': 'PR',
-	};
-
-	if (countryNameMap[normalized]) {
-		return countryNameMap[normalized];
-	}
-
-	// Default fallback
-	console.warn(
-		`[Rapyd] Could not normalize country code: ${countryInput}, using default: ${
-			rapydConfig.defaultCountry || 'US'
-		}`
-	);
-	return rapydConfig.defaultCountry || 'US';
-};
-
 export default {
 	createCheckoutPage,
 	getPaymentStatus,
@@ -1460,5 +1375,4 @@ export default {
 	verifyWebhookSignature,
 	mapPaymentStatus,
 	mapPayoutStatus,
-	normalizeCountryToISO,
 };

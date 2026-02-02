@@ -4,7 +4,6 @@ import { makeTransaction } from '../../transaction/controller';
 import {
 	createPayout,
 	createBankAccountBeneficiary,
-	normalizeCountryToISO,
 	getPayoutMethodTypesByCurrency,
 	getBeneficiary,
 	getPayoutMethodTypesByCategory,
@@ -144,9 +143,7 @@ export const approveWithdrawal = async req => {
 					`[approveWithdrawal] Could not fetch beneficiary details, using user's country`,
 					beneficiaryError.message
 				);
-				beneficiaryCountry = normalizeCountryToISO(
-					user.address?.country || user.countryCode
-				);
+				beneficiaryCountry = user.countryISO || 'US';
 			}
 
 			// Get payout method types from Rapyd API
@@ -320,9 +317,8 @@ export const approveWithdrawal = async req => {
 
 			// Prepare sender information for payout
 			// Sender is the company (FlippX) making the payout
-			const senderCountry = normalizeCountryToISO(
-				process.env.SENDER_COUNTRY || beneficiaryCountry || 'IN'
-			);
+			const senderCountry =
+				process.env.SENDER_COUNTRY || beneficiaryCountry || 'US';
 			const senderCurrency = 'USD';
 			const senderEntityType = 'company';
 
@@ -332,7 +328,6 @@ export const approveWithdrawal = async req => {
 				currency: senderCurrency,
 				address: process.env.COMPANY_ADDRESS || 'Address',
 				city: process.env.COMPANY_CITY || 'Boston',
-				state: process.env.COMPANY_STATE || 'Delhi',
 				purpose_code: 'other',
 			};
 
@@ -415,12 +410,9 @@ export const approveWithdrawal = async req => {
 							userDetails.name?.last ||
 							'Name';
 
-						// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
+						// Use user's country ISO code (2-digit ISO 3166-1 ALPHA-2)
 						const isoCountryCodeForRecreation =
-							normalizeCountryToISO(
-								userDetails.address?.country ||
-									userDetails.countryCode
-							);
+							userDetails.countryISO || 'US';
 
 						// Recreate beneficiary without BIC/SWIFT for US accounts
 						const newBeneficiary =

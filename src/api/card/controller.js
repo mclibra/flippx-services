@@ -2,7 +2,6 @@ import { Card } from './model';
 import { Withdrawal } from '../withdrawal/model';
 import {
 	createCardBeneficiary,
-	normalizeCountryToISO,
 	deleteBeneficiary,
 	getPaymentMethodRequiredFields,
 	checkCardEligibility,
@@ -172,10 +171,8 @@ export const addCard = async req => {
 			const lastName =
 				userDetails.name?.lastName || userDetails.name?.last || 'Name';
 
-			// Normalize country to ISO 3166-1 ALPHA-2 code for Rapyd
-			const isoCountryCode = normalizeCountryToISO(
-				userDetails.address?.country || userDetails.countryCode
-			);
+			// Use user's country ISO code (2-digit ISO 3166-1 ALPHA-2)
+			const isoCountryCode = userDetails.countryISO || 'US';
 
 			// Determine currency based on country (default to USD)
 			let currency = 'USD';
