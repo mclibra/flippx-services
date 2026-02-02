@@ -395,6 +395,12 @@ export const updateUser = async (userId, body) => {
 		if (body.email) updateData.email = body.email;
 		if (body.phone) updateData.phone = body.phone;
 		if (body.countryCode) updateData.countryCode = body.countryCode;
+		if (body.countryName !== undefined)
+			updateData.countryName = body.countryName;
+		if (body.countryISO !== undefined)
+			updateData.countryISO = body.countryISO
+				? String(body.countryISO).trim().toUpperCase()
+				: null;
 		if (body.dob) updateData.dob = body.dob;
 		if (body.role) updateData.role = body.role;
 		if (body.isActive !== undefined) updateData.isActive = body.isActive;

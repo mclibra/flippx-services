@@ -283,6 +283,8 @@ All fields are optional. Only include fields you want to update.
   "email": "jane.doe@example.com",
   "phone": "9876543210",
   "countryCode": "+1",
+  "countryName": "United States",
+  "countryISO": "US",
   "dob": "1992-05-15",
   "role": "USER",
   "isActive": true,
@@ -311,6 +313,8 @@ All fields are optional. Only include fields you want to update.
 | `email` | String | No | User's email address |
 | `phone` | String | No | User's phone number |
 | `countryCode` | String | No | Country dial code |
+| `countryName` | String | No | Full country name (e.g., "United States", "India") |
+| `countryISO` | String | No | 2-digit ISO 3166-1 ALPHA-2 country code (e.g., "US", "IN") |
 | `dob` | String | No | Date of birth |
 | `role` | String | No | User role |
 | `isActive` | Boolean | No | Account active status |

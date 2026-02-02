@@ -387,6 +387,8 @@ Update the current authenticated user's profile. Supports partial updates.
     "lastName": "Doe"
   },
   "email": "jane.doe@example.com",
+  "countryName": "United States",
+  "countryISO": "US",
   "dob": "1992-05-15"
 }
 ```
@@ -454,7 +456,9 @@ All fields are optional. Only include fields you want to update.
   - `lastName` (String, optional): Last name
 - `email` (String, optional): Email address (must be unique if provided)
 - `phone` (String, optional): Phone number (must be unique if provided)
-- `countryCode` (String, optional): Country code
+- `countryCode` (String, optional): Country dial code
+- `countryName` (String, optional): Full country name (e.g., "United States", "India")
+- `countryISO` (String, optional): 2-digit ISO 3166-1 ALPHA-2 country code (e.g., "US", "IN")
 - `dob` (String, optional): Date of birth
 - `address` (Object, optional): Address (merges with existing address)
   - `address1` (String, optional): Primary address line

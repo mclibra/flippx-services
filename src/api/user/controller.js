@@ -483,6 +483,18 @@ export const update = async (user, body) => {
 			delete body.name; // Remove from body to avoid double assignment
 		}
 
+		// Handle country name and ISO code updates
+		if (body.countryName !== undefined) {
+			user.countryName = body.countryName;
+			delete body.countryName;
+		}
+		if (body.countryISO !== undefined) {
+			user.countryISO = body.countryISO
+				? String(body.countryISO).trim().toUpperCase()
+				: null;
+			delete body.countryISO;
+		}
+
 		// Apply all other updates
 		Object.assign(user, body);
 
