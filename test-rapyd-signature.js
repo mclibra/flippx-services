@@ -2,31 +2,38 @@ const crypto = require('crypto');
 
 // Provided body (will be converted to compact JSON)
 const body = {
-	first_name: 'Aarav',
-	last_name: 'Sharma',
-	country: 'IN',
-	currency: 'USD',
-	category: 'card',
-	entity_type: 'individual',
-	email: 'aarav_sharma@gmail.com',
-	address: 'Dearka',
-	city: 'Delhi',
-	state: 'Delhi',
-	postcode: '876665',
-	identification_type: 'identification_id',
-	identification_value: 'SIMNIF5437635',
-	merchant_reference_id: '697f18402fc72b916535d9e6',
-	default_payout_method_type: 'xx_visaglobal_card',
-	payment_type: 'priority',
-	card_number: '4895034400003371',
-	card_expiration_month: '03',
-	card_expiration_year: '30',
-	card_cvv: '123',
+	payout_amount: 5,
+	payout_method_type: 'xx_visaglobal_card',
+	sender_currency: 'USD',
+	sender_country: 'IN',
+	beneficiary_country: 'IN',
+	payout_currency: 'USD',
+	sender_entity_type: 'individual',
+	beneficiary_entity_type: 'individual',
+	sender: {
+		first_name: 'John',
+		last_name: 'Doe',
+		address: '123 First Street',
+		city: 'Anytown',
+		date_of_birth: '22/02/1980',
+	},
+	beneficiary: {
+		first_name: 'Jane',
+		last_name: 'Smith',
+		card_number: '4111111111111111',
+		card_expiration_month: '12',
+		card_expiration_year: '25',
+		state: 'MH',
+	},
+	description: 'Payout to card',
+	purpose_code: 'other',
+	beneficiary_relationship: 'self',
+	statement_descriptor: 'spare parts',
 };
 
 // Request details
 const method = 'post';
-const path = '/v1/payouts/beneficiary';
+const path = '/v1/payouts';
 const timestamp = Math.floor(Date.now() / 1000).toString();
 
 // Provided salt

@@ -1,12 +1,13 @@
 const crypto = require('crypto');
 
-// Provided salt
-const salt = '87wr678b3cg46g7c8467864v78686vc87874v6';
-
 // Request details
 const method = 'get';
-const path = '/v1/payout_method_types?category=card';
+const path =
+	'/v1/payouts/beneficiary/beneficiary_7650447a0d2a8faf65879b4abbeb58ed';
 const timestamp = Math.floor(Date.now() / 1000).toString();
+
+// Provided salt
+const salt = '123d5c414627e1c736ae8e1b5348038b' + timestamp;
 
 // Get credentials from environment or command line arguments
 // Usage: node test-rapyd-signature-get.js <access_key> <secret_key>
