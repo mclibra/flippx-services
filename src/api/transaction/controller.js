@@ -178,32 +178,23 @@ export const transactionSummary = async (user, query) => {
 			};
 		}
 
-		// Get summary statistics with separate real and virtual amounts
+		// Get wallet balance for the user
+		const wallet = await Wallet.findOne({ user: user._id.toString() });
+
+		// Calculate wallet balances
+		const totalRealAmount = wallet
+			? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable
+			: 0;
+		const totalVirtualAmount = wallet ? wallet.virtualBalance : 0;
+		const totalAmount = totalRealAmount + totalVirtualAmount;
+
+		// Get summary statistics for transactions
 		const summary = await Transaction.aggregate([
 			{ $match: params },
 			{
 				$group: {
 					_id: null,
 					totalTransactions: { $sum: 1 },
-					totalAmount: { $sum: '$transactionAmount' },
-					totalRealAmount: {
-						$sum: {
-							$cond: [
-								{ $eq: ['$cashType', 'REAL'] },
-								'$transactionAmount',
-								0,
-							],
-						},
-					},
-					totalVirtualAmount: {
-						$sum: {
-							$cond: [
-								{ $eq: ['$cashType', 'VIRTUAL'] },
-								'$transactionAmount',
-								0,
-							],
-						},
-					},
 					totalCredits: {
 						$sum: {
 							$cond: [
@@ -282,17 +273,27 @@ export const transactionSummary = async (user, query) => {
 			},
 		]);
 
-		const result = summary[0] || {
+		const transactionStats = summary[0] || {
 			totalTransactions: 0,
-			totalAmount: 0,
-			totalRealAmount: 0,
-			totalVirtualAmount: 0,
 			totalCredits: 0,
 			totalCreditsReal: 0,
 			totalCreditsVirtual: 0,
 			totalDebits: 0,
 			totalDebitsReal: 0,
 			totalDebitsVirtual: 0,
+		};
+
+		const result = {
+			totalTransactions: transactionStats.totalTransactions,
+			totalAmount,
+			totalRealAmount,
+			totalVirtualAmount,
+			totalCredits: transactionStats.totalCredits,
+			totalCreditsReal: transactionStats.totalCreditsReal,
+			totalCreditsVirtual: transactionStats.totalCreditsVirtual,
+			totalDebits: transactionStats.totalDebits,
+			totalDebitsReal: transactionStats.totalDebitsReal,
+			totalDebitsVirtual: transactionStats.totalDebitsVirtual,
 		};
 
 		return {
