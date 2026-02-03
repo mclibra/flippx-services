@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { TierRequirements } from './model';
+import TierConfigService from '../../../services/tier/tierConfigService';
 
 // ===== TIER REQUIREMENTS MANAGEMENT =====
 
@@ -314,6 +315,9 @@ export const createTierRequirement = async (body, adminUser) => {
 
 		const tierRequirement = await TierRequirements.create(tierData);
 
+		// Clear cache to ensure new tier configuration is immediately available
+		TierConfigService.clearCache();
+
 		return {
 			status: 201,
 			entity: {
@@ -405,6 +409,9 @@ export const updateTierRequirement = async (id, body, adminUser) => {
 
 		await existingTier.save();
 
+		// Clear cache to ensure updated tier configuration is immediately available
+		TierConfigService.clearCache();
+
 		return {
 			status: 200,
 			entity: {
@@ -470,6 +477,9 @@ export const deactivateTierRequirement = async (id, adminUser) => {
 
 		await tierRequirement.save();
 
+		// Clear cache to ensure tier configuration changes are immediately available
+		TierConfigService.clearCache();
+
 		return {
 			status: 200,
 			entity: {
@@ -522,6 +532,9 @@ export const reactivateTierRequirement = async (id, adminUser) => {
 		tierRequirement.updatedBy = adminUser._id;
 
 		await tierRequirement.save();
+
+		// Clear cache to ensure tier configuration changes are immediately available
+		TierConfigService.clearCache();
 
 		return {
 			status: 200,
