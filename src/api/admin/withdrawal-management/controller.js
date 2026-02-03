@@ -526,7 +526,7 @@ export const approveWithdrawal = async req => {
 				rapydPayoutId: payout.id,
 				rapydPayoutData: payout,
 			};
-			withdrawal.status = 'PROCESSING';
+			withdrawal.status = 'COMPLETED';
 			await withdrawal.save();
 
 			// Update transaction status
@@ -546,8 +546,7 @@ export const approveWithdrawal = async req => {
 				entity: {
 					success: true,
 					withdrawal,
-					message:
-						'Withdrawal approved and payout initiated successfully',
+					message: 'Withdrawal approved and completed successfully',
 					payoutId: payout.id,
 				},
 			};
