@@ -38,7 +38,6 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 ### Role Requirements
 
-- **ADMIN**: Full access to all endpoints
 - **AGENT**: Can initiate/process transactions and view own transactions
 - **DEALER**: Can initiate/process transactions and view own transactions
 
@@ -248,7 +247,7 @@ Retrieve a paginated list of transactions with filtering options.
 
 **Endpoint:** `GET /api/transaction/list`
 
-**Authentication:** Required (ADMIN, AGENT, DEALER roles)
+**Authentication:** Required (AGENT, DEALER roles)
 
 **Query Parameters:**
 - `sortBy` (String, optional): Field to sort by (default: `createdAt`)
@@ -261,7 +260,7 @@ Retrieve a paginated list of transactions with filtering options.
 - `startDate` (String, optional): Start date for date range filter (ISO 8601 format)
 - `endDate` (String, optional): End date for date range filter (ISO 8601 format)
 
-**Note:** Non-ADMIN users can only view their own transactions.
+**Note:** Users can only view their own transactions.
 
 **Success Response (200):**
 ```json
@@ -328,7 +327,7 @@ curl -X GET "https://your-api-domain.com/api/transaction/list?limit=20&offset=0&
 - Returns transactions with populated user information
 - Includes separate `realAmount` and `virtualAmount` fields for easier filtering
 - Populates reference data based on `referenceType` (USER, AGENT, PLAN, PAYMENT)
-- ADMIN users can view all transactions; others see only their own
+- Users can only view their own transactions
 
 ---
 
@@ -338,7 +337,7 @@ Get aggregated summary statistics for transactions with optional filters.
 
 **Endpoint:** `GET /api/transaction/summary`
 
-**Authentication:** Required (ADMIN, AGENT, DEALER roles)
+**Authentication:** Required (AGENT, DEALER roles)
 
 **Query Parameters:**
 - `startDate` (String, optional): Start date for date range filter (ISO 8601 format)
@@ -347,7 +346,7 @@ Get aggregated summary statistics for transactions with optional filters.
 - `transactionType` (String, optional): Filter by transaction type - `CREDIT` or `DEBIT`
 - `status` (String, optional): Filter by status - `PENDING`, `COMPLETED`, `FAILED`, `CANCELLED`
 
-**Note:** Non-ADMIN users can only view summaries for their own transactions.
+**Note:** Users can only view summaries for their own transactions.
 
 **Success Response (200):**
 ```json
@@ -541,7 +540,7 @@ The system supports various transaction identifiers that determine how transacti
 }
 ```
 - Insufficient role permissions
-- Attempting to access another user's transactions (non-ADMIN users)
+- Attempting to access another user's transactions
 
 #### 404 Not Found
 ```json
@@ -591,8 +590,8 @@ The system supports various transaction identifiers that determine how transacti
 
 ### Security
 
-1. **Role-Based Access**: Respect role restrictions (ADMIN, AGENT, DEALER)
-2. **User Isolation**: Non-ADMIN users can only access their own transactions
+1. **Role-Based Access**: Respect role restrictions (AGENT, DEALER)
+2. **User Isolation**: Users can only access their own transactions
 3. **Token Management**: Store and refresh tokens securely
 4. **HTTPS**: Always use HTTPS for API calls
 

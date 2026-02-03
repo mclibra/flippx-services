@@ -27,14 +27,14 @@ router.post(
 router.get(
 	'/list',
 	xApi(),
-	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
+	token({ required: true, roles: ['USER', 'AGENT', 'DEALER'] }),
 	async (req, res) => done(res, await getTransactions(req.user, req.query))
 );
 
 router.get(
 	'/summary',
 	xApi(),
-	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
+	token({ required: true, roles: ['USER', 'AGENT', 'DEALER'] }),
 	async (req, res) => done(res, await transactionSummary(req.user, req.query))
 );
 

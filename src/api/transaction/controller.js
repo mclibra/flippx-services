@@ -1,10 +1,6 @@
-import { generateRandomDigits } from '../../services/helper/utils';
 import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { Transaction } from './model';
-import { sendMessage } from '../text/controller';
-import { BorletteTicket } from '../borlette_ticket/model';
-import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { LoyaltyService } from '../loyalty/service';
 
 const config = {
@@ -16,19 +12,6 @@ const config = {
 	withdrawCommissionAgent: 0.01,
 	withdrawCommissionAdmin: 0.02,
 };
-
-const transactionText = {
-	amountCredited: {
-		user: 'Hi, $crediterName has sent you Gourde $amount. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent: 'Hi, you have successfully sent Gourde $amount to $creditedTo. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-	},
-	amountDebited: {
-		user: 'Hi, $debiterName has withdrawn Gourde $amount from your account. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent: 'Hi, you have successfully withdrawn Gourde $amount from $debitedFrom. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-	},
-};
-
-const tokenReference = {};
 
 export const getTransactions = async (user, query) => {
 	try {
@@ -44,11 +27,9 @@ export const getTransactions = async (user, query) => {
 			endDate,
 		} = query;
 
-		let params = {};
-
-		if (user.role !== 'ADMIN') {
-			params.user = user._id;
-		}
+		let params = {
+			user: user._id,
+		};
 
 		if (cashType) {
 			params.cashType = cashType.toUpperCase();
@@ -132,7 +113,7 @@ export const getTransactions = async (user, query) => {
 						transferTo,
 					};
 				}
-				
+
 				// Add separate realAmount and virtualAmount based on cashType
 				if (item.cashType === 'REAL') {
 					item.realAmount = item.transactionAmount || 0;
@@ -145,7 +126,7 @@ export const getTransactions = async (user, query) => {
 					item.realAmount = 0;
 					item.virtualAmount = item.transactionAmount || 0;
 				}
-				
+
 				return item;
 			})
 		);
@@ -172,19 +153,11 @@ export const getTransactions = async (user, query) => {
 
 export const transactionSummary = async (user, query) => {
 	try {
-		const {
-			startDate,
-			endDate,
-			cashType,
-			transactionType,
-			status,
-		} = query;
+		const { startDate, endDate, cashType, transactionType, status } = query;
 
-		let params = {};
-
-		if (user.role !== 'ADMIN') {
-			params.user = user._id;
-		}
+		let params = {
+			user: user._id,
+		};
 
 		if (cashType) {
 			params.cashType = cashType.toUpperCase();
@@ -335,7 +308,10 @@ export const transactionSummary = async (user, query) => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error.message || 'Failed to get transaction summary',
+				error:
+					error.errors ||
+					error.message ||
+					'Failed to get transaction summary',
 			},
 		};
 	}
@@ -989,7 +965,7 @@ export const makeTransaction = async (
 					}
 
 					// Deduct from target user with priority
-					const deductionResult = deductRealCashWithPriority(
+					deductRealCashWithPriority(
 						targetWalletData,
 						transactionAmount
 					);
@@ -1209,7 +1185,12 @@ export const makeTransaction = async (
 
 export const initiateTransaction = async (user, body) => {
 	try {
-		const { userId, amount, amountType = 'VIRTUAL', transactionType } = body;
+		const {
+			userId,
+			amount,
+			amountType = 'VIRTUAL',
+			transactionType,
+		} = body;
 
 		// Validate inputs
 		if (!userId || !amount || amount <= 0) {
@@ -1255,7 +1236,9 @@ export const initiateTransaction = async (user, body) => {
 		const transaction = await Transaction.create({
 			user: userId,
 			cashType,
-			transactionType: transactionIdentifier.includes('WITHDRAW') ? 'DEBIT' : 'CREDIT',
+			transactionType: transactionIdentifier.includes('WITHDRAW')
+				? 'DEBIT'
+				: 'CREDIT',
 			transactionIdentifier,
 			transactionAmount: amount,
 			status: 'PENDING',
@@ -1375,7 +1358,8 @@ export const processTransaction = async (user, body) => {
 					userId: targetUserId,
 					amount: transactionAmount,
 					realAmount: cashType === 'REAL' ? transactionAmount : 0,
-					virtualAmount: cashType === 'VIRTUAL' ? transactionAmount : 0,
+					virtualAmount:
+						cashType === 'VIRTUAL' ? transactionAmount : 0,
 					amountType: cashType,
 				},
 			},
@@ -1387,66 +1371,6 @@ export const processTransaction = async (user, body) => {
 			entity: {
 				success: false,
 				error: error.message || 'Failed to process transaction',
-			},
-		};
-	}
-};
-
-export const verifyToken = async (user, { verificationToken }) => {
-	try {
-		if (tokenReference[verificationToken]) {
-			delete tokenReference[verificationToken];
-			return {
-				status: 200,
-				entity: {
-					success: true,
-				},
-			};
-		}
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: 'Invalid verification token.',
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const requestToken = async (user, { receiverPhone, countryCode }) => {
-	try {
-		const verificationToken = generateRandomDigits(6);
-		tokenReference[verificationToken] = {
-			user: user._id,
-			receiverPhone,
-			countryCode,
-		};
-		setTimeout(() => {
-			delete tokenReference[verificationToken];
-		}, 900000);
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				verificationToken,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
 			},
 		};
 	}
@@ -1483,8 +1407,4 @@ const deductRealCashWithPriority = (wallet, amount) => {
 		totalDeducted: deductedFromNonWithdrawable + deductedFromWithdrawable,
 		remaining,
 	};
-};
-
-const getTotalRealBalance = wallet => {
-	return wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable;
 };
