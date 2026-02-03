@@ -6,9 +6,6 @@ import {
 	transactionSummary,
 	initiateTransaction,
 	processTransaction,
-	commissionSummaryByAgent,
-	getTierBasedPayoutAnalytics,
-	getRevenueImpactComparison,
 } from './controller';
 
 const router = new Router();
@@ -39,30 +36,6 @@ router.get(
 	xApi(),
 	token({ required: true, roles: ['ADMIN', 'AGENT', 'DEALER'] }),
 	async (req, res) => done(res, await transactionSummary(req.user, req.query))
-);
-
-router.get(
-	'/commission/summary',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await commissionSummaryByAgent(req.user, req.query))
-);
-
-router.get(
-	'/analytics/tier-payouts',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await getTierBasedPayoutAnalytics(req.query, req.user))
-);
-
-router.get(
-	'/analytics/revenue-impact',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await getRevenueImpactComparison(req.query, req.user))
 );
 
 export default router;
