@@ -168,11 +168,10 @@ curl -X GET "https://your-api-domain.com/api/admin/withdrawal-management?userId=
 ### 2. Approve Withdrawal
 
 Approve a pending withdrawal request. This will:
-1. Use the Rapyd beneficiary ID from the bank account (created when bank account was added)
-2. Create a payout in Rapyd if beneficiary exists
-3. Create a beneficiary as fallback if one doesn't exist (for backward compatibility)
-4. Update withdrawal status to `PROCESSING`
-5. Update transaction status to `WITHDRAWAL_APPROVED`
+1. Verify the withdrawal has a payout ID (created during withdrawal initiation)
+2. Complete the payout in Rapyd using the complete payout API
+3. Update withdrawal status to `PROCESSING`
+4. Update transaction status to `WITHDRAWAL_APPROVED`
 
 **Endpoint:** `POST /api/admin/withdrawal-management/:id/approve`
 
@@ -219,7 +218,7 @@ Approve a pending withdrawal request. This will:
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T11:00:00.000Z"
   },
-  "message": "Withdrawal approved and payout initiated successfully",
+  "message": "Withdrawal approved and payout completed successfully",
   "payoutId": "payout_123456789"
 }
 ```
@@ -255,11 +254,19 @@ Approve a pending withdrawal request. This will:
 }
 ```
 
+**Error Response (400):**
+```json
+{
+  "success": false,
+  "error": "Payout not found. Withdrawal must have a payout ID."
+}
+```
+
 **Error Response (500):**
 ```json
 {
   "success": false,
-  "error": "Failed to create payout with Rapyd. Please try again."
+  "error": "Failed to complete payout with Rapyd. Please try again."
 }
 ```
 
@@ -274,20 +281,17 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 **Process Flow:**
 1. Validates admin permissions
 2. Finds withdrawal and validates it's in `PENDING` status
-3. Updates status to `PROCESSING`
-4. Retrieves Rapyd beneficiary ID from bank account (created when bank account was added)
-5. If beneficiary doesn't exist, creates one as fallback (for backward compatibility)
-6. Creates Rapyd payout for `netAmount` using the beneficiary ID
-7. Updates withdrawal with Rapyd payout details
-8. Updates transaction status from `WITHDRAWAL_PENDING` to `WITHDRAWAL_APPROVED`
-9. If Rapyd operations fail, reverts status to `PENDING` and records error
+3. Verifies withdrawal has a payout ID (created during withdrawal initiation)
+4. Calls Rapyd complete payout API to finalize the payout
+5. Updates withdrawal status to `PROCESSING`
+6. Updates transaction status from `WITHDRAWAL_PENDING` to `WITHDRAWAL_APPROVED`
+7. If Rapyd operations fail, reverts status to `PENDING` and records error
 
 **Notes:**
 - Only withdrawals with status `PENDING` can be approved
-- Rapyd beneficiaries are created automatically when bank accounts are added (see [Bank Account API](../bank_account/README.md))
-- The beneficiary ID is stored in the bank account's `rapydBeneficiaryId` field
-- If beneficiary doesn't exist, system attempts to create one as fallback
-- Rapyd payout is created for `netAmount` (amount after fees)
+- Payout must be created during withdrawal initiation (see [Withdrawal API](../withdrawal/README.md))
+- The payout ID is stored in `paymentReference` or `paymentDetails.rapydPayoutId`
+- Rapyd complete payout API finalizes and processes the payout
 - If Rapyd operations fail, withdrawal status is reverted to `PENDING` for retry
 - Transaction status is updated to reflect approval
 
@@ -296,10 +300,11 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 ### 3. Reject Withdrawal
 
 Reject a pending withdrawal request. This will:
-1. Update withdrawal status to `REJECTED`
-2. Create `WITHDRAWAL_REJECTED` transaction
-3. Refund the amount to user's `realBalanceWithdrawable`
-4. Update original transaction status to `REJECTED`
+1. Delete the payout in Rapyd using the delete payout API (if payout exists)
+2. Update withdrawal status to `REJECTED`
+3. Create `WITHDRAWAL_REJECTED` transaction
+4. Refund the amount to user's `realBalanceWithdrawable`
+5. Update original transaction status to `REJECTED`
 
 **Endpoint:** `POST /api/admin/withdrawal-management/:id/reject`
 
@@ -389,12 +394,15 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 **Process Flow:**
 1. Validates admin permissions
 2. Finds withdrawal and validates it's in `PENDING` status
-3. Updates status to `REJECTED` with rejection reason
-4. Creates `WITHDRAWAL_REJECTED` transaction (refunds amount to user)
-5. Updates original `WITHDRAWAL_PENDING` transaction status to `REJECTED`
+3. Retrieves payout ID if it exists (from `paymentReference` or `paymentDetails.rapydPayoutId`)
+4. Calls Rapyd delete payout API to cancel the payout (if payout exists)
+5. Updates status to `REJECTED` with rejection reason
+6. Creates `WITHDRAWAL_REJECTED` transaction (refunds amount to user)
+7. Updates original `WITHDRAWAL_PENDING` transaction status to `REJECTED`
 
 **Notes:**
 - Only withdrawals with status `PENDING` can be rejected
+- Payout deletion is attempted even if payout doesn't exist (errors are logged but don't block rejection)
 - Rejection reason is stored for audit purposes
 - Amount is automatically refunded to user's `realBalanceWithdrawable`
 - Original transaction status is updated to `REJECTED`
@@ -408,8 +416,10 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 
 1. **User Initiates Withdrawal** (User API)
    - User creates withdrawal request via `POST /api/withdrawals`
+   - System creates payout in Rapyd using the beneficiary ID from bank account/card
    - Status: `PENDING`
    - Amount deducted from `realBalanceWithdrawable`
+   - Payout ID stored in withdrawal record
 
 2. **Admin Reviews** (This API)
    - Admin views pending withdrawals via `GET /api/admin/withdrawal-management?status=PENDING`
@@ -419,20 +429,20 @@ curl -X POST https://your-api-domain.com/api/admin/withdrawal-management/507f1f7
 
    **Option A: Approve**
    - Admin calls `POST /api/admin/withdrawal-management/:id/approve`
-   - System uses Rapyd beneficiary ID from bank account (created when bank account was added)
-   - System creates Rapyd payout using the beneficiary ID
+   - System completes the payout in Rapyd using the complete payout API
    - Status: `PROCESSING`
    - Transaction status: `WITHDRAWAL_APPROVED`
    - Funds are transferred via Rapyd
 
    **Option B: Reject**
    - Admin calls `POST /api/admin/withdrawal-management/:id/reject`
+   - System deletes the payout in Rapyd using the delete payout API
    - Status: `REJECTED`
    - Amount refunded to user's `realBalanceWithdrawable`
    - Transaction status: `WITHDRAWAL_REJECTED`
 
 4. **Completion** (Handled by Rapyd)
-   - Rapyd processes payout
+   - Rapyd processes completed payout
    - Status may update to `COMPLETED` or `FAILED` based on Rapyd webhook/status
 
 ### Withdrawal Statuses
@@ -592,11 +602,20 @@ All endpoints follow a consistent error response format:
    ```
    Occurs when trying to approve/reject a withdrawal that's not `PENDING`
 
-4. **Rapyd Errors:**
+4. **Payout Not Found:**
    ```json
    {
      "success": false,
-     "error": "Failed to create payout with Rapyd. Please try again."
+     "error": "Payout not found. Withdrawal must have a payout ID."
+   }
+   ```
+   Occurs when trying to approve a withdrawal that doesn't have a payout ID
+
+5. **Rapyd Errors:**
+   ```json
+   {
+     "success": false,
+     "error": "Failed to complete payout with Rapyd. Please try again."
    }
    ```
    If Rapyd operations fail during approval, withdrawal status is reverted to `PENDING`
@@ -606,14 +625,13 @@ All endpoints follow a consistent error response format:
 ## Notes
 
 - **Admin Only**: All endpoints require ADMIN role
-- **Rapyd Integration**: Approvals use existing Rapyd beneficiaries (created when bank accounts are added) and create payouts via Rapyd
-- **Beneficiary Management**: Beneficiaries are automatically created when users add bank accounts (see [Bank Account API](../bank_account/README.md))
+- **Rapyd Integration**: Approvals complete payouts created during withdrawal initiation, rejections delete payouts
+- **Payout Creation**: Payouts are created during withdrawal initiation (see [Withdrawal API](../withdrawal/README.md))
 - **Error Recovery**: Failed Rapyd operations revert withdrawal to `PENDING` status for retry
 - **Transaction Tracking**: All approvals/rejections update transaction records
 - **Refunds**: Rejected withdrawals automatically refund amounts to users
 - **Audit Trail**: All actions are tracked with `approvedBy` and `processedDate` fields
-- **Beneficiary Storage**: Rapyd beneficiary IDs are stored in bank account records for reuse
-- **Fallback Creation**: If beneficiary doesn't exist, system attempts to create one during approval (for backward compatibility)
+- **Payout Storage**: Rapyd payout IDs are stored in `paymentReference` and `paymentDetails.rapydPayoutId`
 - **Processing Time**: Once approved, payouts typically take 1-3 business days via Rapyd
 
 ---

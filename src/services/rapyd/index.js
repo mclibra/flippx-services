@@ -921,6 +921,60 @@ export const getPayoutStatus = async payoutId => {
 };
 
 /**
+ * Complete a payout
+ * This finalizes and processes a payout that was previously created
+ * @param {string} payoutId - Rapyd payout ID
+ * @returns {Promise<Object>} Rapyd response data
+ */
+export const completePayout = async payoutId => {
+	try {
+		const path = `/v1/payouts/complete/${payoutId}`;
+		const response = await makeRapydRequest('POST', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to complete payout'
+		);
+	} catch (error) {
+		console.error('Rapyd complete payout error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to complete payout with Rapyd'
+		);
+	}
+};
+
+/**
+ * Delete a payout
+ * This cancels/deletes a payout that was previously created
+ * @param {string} payoutId - Rapyd payout ID
+ * @returns {Promise<Object>} Rapyd response data
+ */
+export const deletePayout = async payoutId => {
+	try {
+		const path = `/v1/payouts/${payoutId}`;
+		const response = await makeRapydRequest('DELETE', path);
+
+		if (response.status?.status === 'SUCCESS') {
+			return response.data;
+		}
+
+		throw new Error(
+			response.status?.message || 'Failed to delete payout'
+		);
+	} catch (error) {
+		console.error('Rapyd delete payout error:', error);
+		throw new Error(
+			error.response?.data?.status?.message ||
+				'Failed to delete payout from Rapyd'
+		);
+	}
+};
+
+/**
  * Get beneficiary details from Rapyd
  * @param {string} beneficiaryId - Rapyd beneficiary ID
  * @returns {Promise<Object>} Rapyd beneficiary data
@@ -1366,6 +1420,8 @@ export default {
 	createCardBeneficiary,
 	createPayout,
 	getPayoutStatus,
+	completePayout,
+	deletePayout,
 	getPayoutMethodTypes,
 	getPayoutMethodTypesByCurrency,
 	getPayoutMethodTypesByCategory,
