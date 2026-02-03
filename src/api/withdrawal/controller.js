@@ -44,6 +44,41 @@ export const initiateWithdrawal = async req => {
 			};
 		}
 
+		// Check if user has at least one card or bank account
+		const [userCards, userBankAccounts] = await Promise.all([
+			Card.countDocuments({ user: user._id }),
+			BankAccount.countDocuments({ user: user._id }),
+		]);
+
+		if (userCards === 0 && userBankAccounts === 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'At least one card or bank account is required to initiate a withdrawal. Please add a card or bank account first.',
+				},
+			};
+		}
+
+		// Check if user has address updated
+		const hasAddress =
+			user.address &&
+			user.address.address1 &&
+			user.address.city &&
+			user.address.state &&
+			user.address.country &&
+			user.address.pincode;
+
+		if (!hasAddress) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Address must be updated before initiating a withdrawal. Please update your address first.',
+				},
+			};
+		}
+
 		// **NEW: Check loyalty-based withdrawal limits**
 		try {
 			console.log(
