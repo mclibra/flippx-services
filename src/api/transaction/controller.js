@@ -156,7 +156,7 @@ export const transactionSummary = async (user, query) => {
 		const { startDate, endDate, cashType, transactionType, status } = query;
 
 		let params = {
-			user: user._id,
+			user: user._id.toString(),
 		};
 
 		if (cashType) {
