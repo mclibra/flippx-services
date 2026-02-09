@@ -58,12 +58,24 @@ export const listMegamillion = async query => {
 		}
 
 		// Check if any ticket filters are applied
-		const hasTicketFilters = 
-			(minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') ||
-			(maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') ||
+		const hasTicketFilters =
+			(minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined') ||
+			(maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined') ||
 			(cashType && cashType.trim() !== '' && cashType !== 'undefined') ||
-			(startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') ||
-			(endDate && endDate !== 'undefined' && endDate !== null && endDate !== '');
+			(startDate &&
+				startDate !== 'undefined' &&
+				startDate !== null &&
+				startDate !== '') ||
+			(endDate &&
+				endDate !== 'undefined' &&
+				endDate !== null &&
+				endDate !== '');
 
 		// If ticket filters are applied, we need to filter lotteries by tickets first
 		// Otherwise, we can paginate normally
@@ -84,32 +96,50 @@ export const listMegamillion = async query => {
 			};
 
 			// Add date filters for tickets
-			if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
+			if (
+				(startDate && startDate !== 'undefined') ||
+				(endDate && endDate !== 'undefined')
+			) {
 				const dateFilter = {};
 				let hasDateFilter = false;
-				
-				if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
+
+				if (
+					startDate &&
+					startDate !== 'undefined' &&
+					startDate !== null &&
+					startDate !== ''
+				) {
 					const startTimestamp = parseInt(startDate);
 					if (!isNaN(startTimestamp) && startTimestamp > 0) {
 						dateFilter.$gte = startTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
+				if (
+					endDate &&
+					endDate !== 'undefined' &&
+					endDate !== null &&
+					endDate !== ''
+				) {
 					const endTimestamp = parseInt(endDate);
 					if (!isNaN(endTimestamp) && endTimestamp > 0) {
 						dateFilter.$lte = endTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				
+
 				if (hasDateFilter && Object.keys(dateFilter).length > 0) {
 					ticketMatchFilterTemplate.purchasedOn = dateFilter;
 				}
 			}
 
 			// Add amount filters
-			if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
+			if (
+				minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined'
+			) {
 				const min = parseFloat(minAmount);
 				if (!isNaN(min) && min >= 0) {
 					if (!ticketMatchFilterTemplate.amountPlayed) {
@@ -118,7 +148,12 @@ export const listMegamillion = async query => {
 					ticketMatchFilterTemplate.amountPlayed.$gte = min;
 				}
 			}
-			if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
+			if (
+				maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined'
+			) {
 				const max = parseFloat(maxAmount);
 				if (!isNaN(max) && max >= 0) {
 					if (!ticketMatchFilterTemplate.amountPlayed) {
@@ -129,7 +164,11 @@ export const listMegamillion = async query => {
 			}
 
 			// Add cashType filter
-			if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+			if (
+				cashType &&
+				cashType.trim() !== '' &&
+				cashType !== 'undefined'
+			) {
 				const upperCashType = cashType.toUpperCase().trim();
 				if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
 					ticketMatchFilterTemplate.cashType = upperCashType;
@@ -148,7 +187,9 @@ export const listMegamillion = async query => {
 			);
 
 			// Remove null entries (lotteries with no matching tickets)
-			const filteredLotteries = lotteriesWithTickets.filter(l => l !== null);
+			const filteredLotteries = lotteriesWithTickets.filter(
+				l => l !== null
+			);
 
 			// Apply pagination
 			const skip = (page - 1) * limit;
@@ -169,61 +210,88 @@ export const listMegamillion = async query => {
 
 		// Enrich with ticket statistics
 		const enrichedLotteriesPromises = lotteries.map(async lottery => {
-				const lotteryId = lottery._id.toString();
+			const lotteryId = lottery._id.toString();
 
-				// Build ticket match filter
-				const ticketMatchFilter = {
-					lottery: lotteryId,
-					status: { $ne: 'CANCELLED' },
-				};
+			// Build ticket match filter
+			const ticketMatchFilter = {
+				lottery: lotteryId,
+				status: { $ne: 'CANCELLED' },
+			};
 
-				// Add date filters for tickets (filter by purchasedOn timestamp)
-				if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
-					const dateFilter = {};
-					let hasDateFilter = false;
-					
-					if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
-						const startTimestamp = parseInt(startDate);
-						if (!isNaN(startTimestamp) && startTimestamp > 0) {
-							dateFilter.$gte = startTimestamp;
-							hasDateFilter = true;
-						}
+			// Add date filters for tickets (filter by purchasedOn timestamp)
+			if (
+				(startDate && startDate !== 'undefined') ||
+				(endDate && endDate !== 'undefined')
+			) {
+				const dateFilter = {};
+				let hasDateFilter = false;
+
+				if (
+					startDate &&
+					startDate !== 'undefined' &&
+					startDate !== null &&
+					startDate !== ''
+				) {
+					const startTimestamp = parseInt(startDate);
+					if (!isNaN(startTimestamp) && startTimestamp > 0) {
+						dateFilter.$gte = startTimestamp;
+						hasDateFilter = true;
 					}
-					if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
-						const endTimestamp = parseInt(endDate);
-						if (!isNaN(endTimestamp) && endTimestamp > 0) {
-							dateFilter.$lte = endTimestamp;
-							hasDateFilter = true;
-						}
-					}
-					
-					if (hasDateFilter && Object.keys(dateFilter).length > 0) {
-						ticketMatchFilter.purchasedOn = dateFilter;
+				}
+				if (
+					endDate &&
+					endDate !== 'undefined' &&
+					endDate !== null &&
+					endDate !== ''
+				) {
+					const endTimestamp = parseInt(endDate);
+					if (!isNaN(endTimestamp) && endTimestamp > 0) {
+						dateFilter.$lte = endTimestamp;
+						hasDateFilter = true;
 					}
 				}
 
-				// Add amount filters
-				if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
-					const min = parseFloat(minAmount);
-					if (!isNaN(min) && min >= 0) {
-						if (!ticketMatchFilter.amountPlayed) {
-							ticketMatchFilter.amountPlayed = {};
-						}
-						ticketMatchFilter.amountPlayed.$gte = min;
-					}
+				if (hasDateFilter && Object.keys(dateFilter).length > 0) {
+					ticketMatchFilter.purchasedOn = dateFilter;
 				}
-				if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
-					const max = parseFloat(maxAmount);
-					if (!isNaN(max) && max >= 0) {
-						if (!ticketMatchFilter.amountPlayed) {
-							ticketMatchFilter.amountPlayed = {};
-						}
-						ticketMatchFilter.amountPlayed.$lte = max;
+			}
+
+			// Add amount filters
+			if (
+				minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined'
+			) {
+				const min = parseFloat(minAmount);
+				if (!isNaN(min) && min >= 0) {
+					if (!ticketMatchFilter.amountPlayed) {
+						ticketMatchFilter.amountPlayed = {};
 					}
+					ticketMatchFilter.amountPlayed.$gte = min;
 				}
+			}
+			if (
+				maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined'
+			) {
+				const max = parseFloat(maxAmount);
+				if (!isNaN(max) && max >= 0) {
+					if (!ticketMatchFilter.amountPlayed) {
+						ticketMatchFilter.amountPlayed = {};
+					}
+					ticketMatchFilter.amountPlayed.$lte = max;
+				}
+			}
 
 			// Add cashType filter
-			if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+			if (
+				cashType &&
+				cashType.trim() !== '' &&
+				cashType !== 'undefined'
+			) {
 				const upperCashType = cashType.toUpperCase().trim();
 				if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
 					ticketMatchFilter.cashType = upperCashType;
@@ -232,70 +300,70 @@ export const listMegamillion = async query => {
 
 			// Get ticket statistics with separate real and virtual amounts
 			const ticketStats = await MegaMillionTicket.aggregate([
-					{
-						$match: ticketMatchFilter,
-					},
-					{
-						$group: {
-							_id: null,
-							totalTickets: { $sum: 1 },
-							totalAmountPlayed: { $sum: '$amountPlayed' },
-							totalAmountWon: {
-								$sum: { $ifNull: ['$amountWon', 0] },
+				{
+					$match: ticketMatchFilter,
+				},
+				{
+					$group: {
+						_id: null,
+						totalTickets: { $sum: 1 },
+						totalAmountPlayed: { $sum: '$amountPlayed' },
+						totalAmountWon: {
+							$sum: { $ifNull: ['$amountWon', 0] },
+						},
+						totalRealAmountPlayed: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'REAL'] },
+									'$amountPlayed',
+									0,
+								],
 							},
-							totalRealAmountPlayed: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'REAL'] },
-										'$amountPlayed',
-										0,
-									],
-								},
+						},
+						totalVirtualAmountPlayed: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'VIRTUAL'] },
+									'$amountPlayed',
+									0,
+								],
 							},
-							totalVirtualAmountPlayed: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'VIRTUAL'] },
-										'$amountPlayed',
-										0,
-									],
-								},
+						},
+						totalRealAmountWon: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'REAL'] },
+									{ $ifNull: ['$amountWon', 0] },
+									0,
+								],
 							},
-							totalRealAmountWon: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'REAL'] },
-										{ $ifNull: ['$amountWon', 0] },
-										0,
-									],
-								},
+						},
+						totalVirtualAmountWon: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'VIRTUAL'] },
+									{ $ifNull: ['$amountWon', 0] },
+									0,
+								],
 							},
-							totalVirtualAmountWon: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'VIRTUAL'] },
-										{ $ifNull: ['$amountWon', 0] },
-										0,
-									],
-								},
-							},
-							winningTickets: {
-								$sum: {
-									$cond: [
-										{
-											$gt: [
-												{ $ifNull: ['$amountWon', 0] },
-												0,
-											],
-										},
-										1,
-										0,
-									],
-								},
+						},
+						winningTickets: {
+							$sum: {
+								$cond: [
+									{
+										$gt: [
+											{ $ifNull: ['$amountWon', 0] },
+											0,
+										],
+									},
+									1,
+									0,
+								],
 							},
 						},
 					},
-				]);
+				},
+			]);
 
 			const stats =
 				ticketStats.length > 0
@@ -312,8 +380,10 @@ export const listMegamillion = async query => {
 						};
 
 			const profit = stats.totalAmountPlayed - stats.totalAmountWon;
-			const profitReal = stats.totalRealAmountPlayed - stats.totalRealAmountWon;
-			const profitVirtual = stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
+			const profitReal =
+				stats.totalRealAmountPlayed - stats.totalRealAmountWon;
+			const profitVirtual =
+				stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
 
 			return {
 				...lottery.toObject(),
@@ -332,7 +402,8 @@ export const listMegamillion = async query => {
 							: 0,
 					profitMarginVirtual:
 						stats.totalVirtualAmountPlayed > 0
-							? (profitVirtual / stats.totalVirtualAmountPlayed) * 100
+							? (profitVirtual / stats.totalVirtualAmountPlayed) *
+								100
 							: 0,
 				},
 			};
@@ -405,8 +476,8 @@ export const getMegamillionDetails = async lotteryId => {
 				...ticketObj,
 				amountPlayedReal: isReal ? ticketObj.amountPlayed : 0,
 				amountPlayedVirtual: isVirtual ? ticketObj.amountPlayed : 0,
-				amountWonReal: isReal ? (ticketObj.amountWon || 0) : 0,
-				amountWonVirtual: isVirtual ? (ticketObj.amountWon || 0) : 0,
+				amountWonReal: isReal ? ticketObj.amountWon || 0 : 0,
+				amountWonVirtual: isVirtual ? ticketObj.amountWon || 0 : 0,
 			};
 		});
 
@@ -433,12 +504,20 @@ export const getMegamillionDetails = async lotteryId => {
 					},
 					totalAmountPlayedReal: {
 						$sum: {
-							$cond: [{ $eq: ['$cashType', 'REAL'] }, '$amountPlayed', 0],
+							$cond: [
+								{ $eq: ['$cashType', 'REAL'] },
+								'$amountPlayed',
+								0,
+							],
 						},
 					},
 					totalAmountPlayedVirtual: {
 						$sum: {
-							$cond: [{ $eq: ['$cashType', 'VIRTUAL'] }, '$amountPlayed', 0],
+							$cond: [
+								{ $eq: ['$cashType', 'VIRTUAL'] },
+								'$amountPlayed',
+								0,
+							],
 						},
 					},
 					totalAmountWonReal: {
@@ -777,8 +856,12 @@ export const getMegamillionDetails = async lotteryId => {
 										stats.totalAmountPlayed) *
 									100
 								: 0,
-						profitReal: stats.totalAmountPlayedReal - stats.totalAmountWonReal,
-						profitVirtual: stats.totalAmountPlayedVirtual - stats.totalAmountWonVirtual,
+						profitReal:
+							stats.totalAmountPlayedReal -
+							stats.totalAmountWonReal,
+						profitVirtual:
+							stats.totalAmountPlayedVirtual -
+							stats.totalAmountWonVirtual,
 						profitMarginReal:
 							stats.totalAmountPlayedReal > 0
 								? ((stats.totalAmountPlayedReal -
@@ -1048,7 +1131,7 @@ export const getDefaultJackpotAmount = async () => {
 		// If no config exists, return default value
 		const defaultJackpotAmount = config
 			? config.defaultJackpotAmount
-			: 1000000; // Default to 1 million
+			: '1000000'; // Default to 1 million
 
 		return {
 			status: 200,
@@ -1065,7 +1148,8 @@ export const getDefaultJackpotAmount = async () => {
 			entity: {
 				success: false,
 				error:
-					error.message || 'Failed to retrieve default jackpot amount',
+					error.message ||
+					'Failed to retrieve default jackpot amount',
 			},
 		};
 	}
@@ -1091,28 +1175,15 @@ export const setDefaultJackpotAmount = async (body, user) => {
 			};
 		}
 
-		if (
-			typeof defaultJackpotAmount !== 'number' ||
-			defaultJackpotAmount < 0
-		) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Default jackpot amount must be a positive number',
-				},
-			};
-		}
-
 		// Find or create configuration
 		const config = await LotteryDefaultConfig.findOneAndUpdate(
 			{ lotteryType: 'MEGAMILLION' },
 			{
-				defaultJackpotAmount,
+				defaultJackpotAmount: defaultJackpotAmount,
 				updatedBy: user._id,
 				description:
 					description ||
-					`Default jackpot amount set to $${defaultJackpotAmount.toLocaleString()}`,
+					`Default jackpot amount set to ${defaultJackpotAmount}`,
 			},
 			{
 				new: true,
@@ -1125,7 +1196,7 @@ export const setDefaultJackpotAmount = async (body, user) => {
 			status: 200,
 			entity: {
 				success: true,
-				message: `Default jackpot amount for MEGAMILLION set to $${defaultJackpotAmount.toLocaleString()}`,
+				message: `Default jackpot amount for MEGAMILLION set to ${defaultJackpotAmount}`,
 				config,
 			},
 		};
