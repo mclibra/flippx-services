@@ -52,10 +52,10 @@ const getNextDrawDate = lotteryConfig => {
 };
 
 // Helper function to get the next valid draw time for a lottery config
-// Returns the draw time (moment object) if valid (>3 hours away), null otherwise
+// Returns the draw time (moment object) if valid (>1 hour away), null otherwise
 const getNextValidDrawTime = lotteryConfig => {
 	const now = moment();
-	const threeHoursFromNow = now.clone().add(3, 'hours');
+	const oneHourFromNow = now.clone().add(1, 'hours');
 	const maxDaysToCheck = 7; // Check up to 7 days ahead
 
 	// Start checking from today
@@ -70,8 +70,8 @@ const getNextValidDrawTime = lotteryConfig => {
 				lotteryConfig.drawTimezone
 			);
 
-			// Check if draw time is more than 3 hours away
-			if (drawDateTime.isAfter(threeHoursFromNow)) {
+			// Check if draw time is more than 1 hour away
+			if (drawDateTime.isAfter(oneHourFromNow)) {
 				return drawDateTime;
 			}
 		}
@@ -498,7 +498,6 @@ export const closestUpcomingByState = async type => {
 	}
 };
 
-
 export const lastLottery = async ({
 	type,
 	metadata,
@@ -701,10 +700,6 @@ export const showUserTickets = async (
 	}
 };
 
-
-
-
-
 export const getPopularNumbers = async ({ stateId }) => {
 	try {
 		// If stateId is not provided, return global popular numbers
@@ -835,7 +830,7 @@ export const createLotteriesForState = async state => {
 			if (externalLotteries && externalLotteries.length > 0) {
 				const validCandidates = [];
 
-				// Collect all valid candidates (>3 hours away)
+				// Collect all valid candidates (>1 hour away)
 				for (const lotteryConfig of externalLotteries) {
 					// Skip if missing required game IDs
 					if (!lotteryConfig.pick4GameId) {
@@ -845,7 +840,7 @@ export const createLotteriesForState = async state => {
 						continue;
 					}
 
-					// Get the next valid draw time (>3 hours away)
+					// Get the next valid draw time (>1 hour away)
 					const drawTime = getNextValidDrawTime(lotteryConfig);
 
 					if (!drawTime) {
@@ -1025,4 +1020,3 @@ export const createLotteriesForState = async state => {
 		};
 	}
 };
-
