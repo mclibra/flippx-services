@@ -273,26 +273,31 @@ export const placeBet = async ({ id }, betPlaced, user) => {
 					cashType // Pass cash type to transaction function
 				);
 
-				// **NEW: Record play activity for loyalty tracking**
-				try {
-					const loyaltyResult =
-						await LoyaltyService.recordUserPlayActivity(user._id);
-					if (!loyaltyResult.success) {
-						console.warn(
-							`Failed to record play activity for user ${user._id}:`,
-							loyaltyResult.error
+				// **NEW: Record play activity for loyalty tracking (only for REAL cash)**
+				if (cashType === 'REAL') {
+					try {
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								user._id,
+								totalAmountPlayed
+							);
+						if (!loyaltyResult.success) {
+							console.warn(
+								`Failed to record play activity for user ${user._id}:`,
+								loyaltyResult.error
+							);
+						} else {
+							console.log(
+								`Play activity recorded for user ${user._id} - Roulette bet placement (REAL cash: $${totalAmountPlayed})`
+							);
+						}
+					} catch (loyaltyError) {
+						console.error(
+							`Error recording play activity for user ${user._id}:`,
+							loyaltyError
 						);
-					} else {
-						console.log(
-							`Play activity recorded for user ${user._id} - Roulette bet placement`
-						);
+						// Don't fail bet placement if loyalty tracking fails
 					}
-				} catch (loyaltyError) {
-					console.error(
-						`Error recording play activity for user ${user._id}:`,
-						loyaltyError
-					);
-					// Don't fail bet placement if loyalty tracking fails
 				}
 
 				// **NEW: Award XP for bet placement**

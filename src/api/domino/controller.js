@@ -25,30 +25,37 @@ export const startDominoGame = async room => {
 		room.startedAt = new Date();
 		await room.save();
 
-		// Record play activity for all human players using LoyaltyService
-		for (const player of game.players) {
-			if (player.user && player.playerType === 'HUMAN') {
-				const userId =
-					typeof player.user === 'object'
-						? player.user._id
-						: player.user;
-				try {
-					// Extract user ID string from user object if it's populated
-					const loyaltyResult =
-						await LoyaltyService.recordUserPlayActivity(userId);
-					if (!loyaltyResult.success) {
-						console.warn(
-							`Failed to record play activity for user ${userId}:`,
-							loyaltyResult.error
+		// Record play activity for all human players using LoyaltyService (only for REAL cash)
+		if (room.cashType === 'REAL') {
+			for (const player of game.players) {
+				if (player.user && player.playerType === 'HUMAN') {
+					const userId =
+						typeof player.user === 'object'
+							? player.user._id
+							: player.user;
+					try {
+						// Extract user ID string from user object if it's populated
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								userId,
+								room.entryFee
+							);
+						if (!loyaltyResult.success) {
+							console.warn(
+								`Failed to record play activity for user ${userId}:`,
+								loyaltyResult.error
+							);
+						}
+					} catch (error) {
+						console.error(
+							`Error recording play activity for user ${player.user}:`,
+							error
 						);
+						// Don't fail the game start if loyalty tracking fails
 					}
-				} catch (error) {
-					console.error(
-						`Error recording play activity for user ${player.user}:`,
-						error
-					);
-					// Don't fail the game start if loyalty tracking fails
 				}
+			}
+		}
 
 				sendDominoGameUpdateToUser(
 					userId,
@@ -1110,30 +1117,37 @@ const startNewGameInRoom = async room => {
 		// Create and start the new game
 		const game = await createNewDominoGame(room, nextGameNumber);
 
-		// Record play activity for all human players using LoyaltyService
-		for (const player of game.players) {
-			if (player.user && player.playerType === 'HUMAN') {
-				const userId =
-					typeof player.user === 'object'
-						? player.user._id
-						: player.user;
-				try {
-					// Extract user ID string from user object if it's populated
-					const loyaltyResult =
-						await LoyaltyService.recordUserPlayActivity(userId);
-					if (!loyaltyResult.success) {
-						console.warn(
-							`Failed to record play activity for user ${userId}:`,
-							loyaltyResult.error
+		// Record play activity for all human players using LoyaltyService (only for REAL cash)
+		if (room.cashType === 'REAL') {
+			for (const player of game.players) {
+				if (player.user && player.playerType === 'HUMAN') {
+					const userId =
+						typeof player.user === 'object'
+							? player.user._id
+							: player.user;
+					try {
+						// Extract user ID string from user object if it's populated
+						const loyaltyResult =
+							await LoyaltyService.recordUserPlayActivity(
+								userId,
+								room.entryFee
+							);
+						if (!loyaltyResult.success) {
+							console.warn(
+								`Failed to record play activity for user ${userId}:`,
+								loyaltyResult.error
+							);
+						}
+					} catch (error) {
+						console.error(
+							`Error recording play activity for user ${player.user}:`,
+							error
 						);
+						// Don't fail the game start if loyalty tracking fails
 					}
-				} catch (error) {
-					console.error(
-						`Error recording play activity for user ${player.user}:`,
-						error
-					);
-					// Don't fail the game start if loyalty tracking fails
 				}
+			}
+		}
 
 				sendDominoGameUpdateToUser(
 					userId,

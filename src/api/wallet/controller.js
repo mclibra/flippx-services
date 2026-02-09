@@ -10,6 +10,7 @@ import {
 	mapPayoutStatus,
 } from '../../services/rapyd';
 import { Withdrawal } from '../withdrawal/model';
+import { LoyaltyService } from '../loyalty/service';
 
 export const getUserBalance = async user => {
 	try {
@@ -1331,5 +1332,31 @@ const processPaymentCompletion = async payment => {
 		console.log(
 			`Created user plan ${userPlan._id} for payment ${payment._id}`
 		);
+
+		// Record deposit for loyalty tier tracking if plan has real cash amount
+		if (payment.plan.realCashAmount > 0) {
+			try {
+				const depositResult = await LoyaltyService.recordUserDeposit(
+					payment.user,
+					payment.plan.realCashAmount
+				);
+				if (depositResult.success) {
+					console.log(
+						`Recorded deposit of $${payment.plan.realCashAmount} for loyalty tier tracking`
+					);
+				} else {
+					console.error(
+						`Failed to record deposit for loyalty tier:`,
+						depositResult.error
+					);
+				}
+			} catch (error) {
+				console.error(
+					`Error recording deposit for loyalty tier:`,
+					error
+				);
+				// Don't fail payment processing if loyalty tracking fails
+			}
+		}
 	}
 };

@@ -818,28 +818,31 @@ export const placeBet = async ({ id }, body, user) => {
 						cashType // Pass cash type to transaction function
 					);
 
-					// **NEW: Record play activity for loyalty tracking**
-					try {
-						const loyaltyResult =
-							await LoyaltyService.recordUserPlayActivity(
-								user._id
+					// **NEW: Record play activity for loyalty tracking (only for REAL cash)**
+					if (cashType === 'REAL') {
+						try {
+							const loyaltyResult =
+								await LoyaltyService.recordUserPlayActivity(
+									user._id,
+									body.totalAmountPlayed
+								);
+							if (!loyaltyResult.success) {
+								console.warn(
+									`Failed to record play activity for user ${user._id}:`,
+									loyaltyResult.error
+								);
+							} else {
+								console.log(
+									`Play activity recorded for user ${user._id} - Borlette ticket purchase (REAL cash: $${body.totalAmountPlayed})`
+								);
+							}
+						} catch (loyaltyError) {
+							console.error(
+								`Error recording play activity for user ${user._id}:`,
+								loyaltyError
 							);
-						if (!loyaltyResult.success) {
-							console.warn(
-								`Failed to record play activity for user ${user._id}:`,
-								loyaltyResult.error
-							);
-						} else {
-							console.log(
-								`Play activity recorded for user ${user._id} - Borlette ticket purchase`
-							);
+							// Don't fail ticket creation if loyalty tracking fails
 						}
-					} catch (loyaltyError) {
-						console.error(
-							`Error recording play activity for user ${user._id}:`,
-							loyaltyError
-						);
-						// Don't fail ticket creation if loyalty tracking fails
 					}
 
 					// **NEW: Award XP for ticket purchase**

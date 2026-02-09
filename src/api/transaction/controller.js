@@ -732,14 +732,16 @@ export const makeTransaction = async (
 					);
 				}
 
-				// Track spending for loyalty tier requirements
-				try {
-					await LoyaltyService.recordUserPlayActivity(
-						userId,
-						transactionAmount
-					);
-				} catch (error) {
-					console.error('Error tracking play activity:', error);
+				// Track spending and plays for loyalty tier requirements (only for REAL cash)
+				if (cashType === 'REAL') {
+					try {
+						await LoyaltyService.recordUserPlayActivity(
+							userId,
+							transactionAmount
+						);
+					} catch (error) {
+						console.error('Error tracking play activity:', error);
+					}
 				}
 
 				break;
