@@ -42,14 +42,20 @@ export const listBorlette = async query => {
 			filter.state = stateId;
 		}
 
-		// Date range filters
+		// Date range filters - filter by scheduledTime (when lottery is scheduled) not createdAt
 		if (startDate || endDate) {
-			filter.createdAt = {};
+			filter.scheduledTime = {};
 			if (startDate) {
-				filter.createdAt.$gte = moment(parseInt(startDate)).toDate();
+				const startTimestamp = parseInt(startDate);
+				if (!isNaN(startTimestamp) && startTimestamp > 0) {
+					filter.scheduledTime.$gte = startTimestamp;
+				}
 			}
 			if (endDate) {
-				filter.createdAt.$lte = moment(parseInt(endDate)).toDate();
+				const endTimestamp = parseInt(endDate);
+				if (!isNaN(endTimestamp) && endTimestamp > 0) {
+					filter.scheduledTime.$lte = endTimestamp;
+				}
 			}
 		}
 
@@ -62,12 +68,24 @@ export const listBorlette = async query => {
 		}
 
 		// Check if any ticket filters are applied
-		const hasTicketFilters = 
-			(minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') ||
-			(maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') ||
+		const hasTicketFilters =
+			(minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined') ||
+			(maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined') ||
 			(cashType && cashType.trim() !== '' && cashType !== 'undefined') ||
-			(startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') ||
-			(endDate && endDate !== 'undefined' && endDate !== null && endDate !== '');
+			(startDate &&
+				startDate !== 'undefined' &&
+				startDate !== null &&
+				startDate !== '') ||
+			(endDate &&
+				endDate !== 'undefined' &&
+				endDate !== null &&
+				endDate !== '');
 
 		// If ticket filters are applied, we need to filter lotteries by tickets first
 		// Otherwise, we can paginate normally
@@ -88,32 +106,50 @@ export const listBorlette = async query => {
 			};
 
 			// Add date filters for tickets
-			if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
+			if (
+				(startDate && startDate !== 'undefined') ||
+				(endDate && endDate !== 'undefined')
+			) {
 				const dateFilter = {};
 				let hasDateFilter = false;
-				
-				if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
+
+				if (
+					startDate &&
+					startDate !== 'undefined' &&
+					startDate !== null &&
+					startDate !== ''
+				) {
 					const startTimestamp = parseInt(startDate);
 					if (!isNaN(startTimestamp) && startTimestamp > 0) {
 						dateFilter.$gte = startTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
+				if (
+					endDate &&
+					endDate !== 'undefined' &&
+					endDate !== null &&
+					endDate !== ''
+				) {
 					const endTimestamp = parseInt(endDate);
 					if (!isNaN(endTimestamp) && endTimestamp > 0) {
 						dateFilter.$lte = endTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				
+
 				if (hasDateFilter && Object.keys(dateFilter).length > 0) {
 					ticketMatchFilterTemplate.purchasedOn = dateFilter;
 				}
 			}
 
 			// Add amount filters
-			if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
+			if (
+				minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined'
+			) {
 				const min = parseFloat(minAmount);
 				if (!isNaN(min) && min >= 0) {
 					if (!ticketMatchFilterTemplate.totalAmountPlayed) {
@@ -122,7 +158,12 @@ export const listBorlette = async query => {
 					ticketMatchFilterTemplate.totalAmountPlayed.$gte = min;
 				}
 			}
-			if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
+			if (
+				maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined'
+			) {
 				const max = parseFloat(maxAmount);
 				if (!isNaN(max) && max >= 0) {
 					if (!ticketMatchFilterTemplate.totalAmountPlayed) {
@@ -133,7 +174,11 @@ export const listBorlette = async query => {
 			}
 
 			// Add cashType filter
-			if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+			if (
+				cashType &&
+				cashType.trim() !== '' &&
+				cashType !== 'undefined'
+			) {
 				const upperCashType = cashType.toUpperCase().trim();
 				if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
 					ticketMatchFilterTemplate.cashType = upperCashType;
@@ -152,7 +197,9 @@ export const listBorlette = async query => {
 			);
 
 			// Remove null entries (lotteries with no matching tickets)
-			const filteredLotteries = lotteriesWithTickets.filter(l => l !== null);
+			const filteredLotteries = lotteriesWithTickets.filter(
+				l => l !== null
+			);
 
 			// Apply pagination
 			const skip = (page - 1) * limit;
@@ -182,32 +229,50 @@ export const listBorlette = async query => {
 			};
 
 			// Add date filters for tickets (filter by purchasedOn timestamp)
-			if ((startDate && startDate !== 'undefined') || (endDate && endDate !== 'undefined')) {
+			if (
+				(startDate && startDate !== 'undefined') ||
+				(endDate && endDate !== 'undefined')
+			) {
 				const dateFilter = {};
 				let hasDateFilter = false;
-				
-				if (startDate && startDate !== 'undefined' && startDate !== null && startDate !== '') {
+
+				if (
+					startDate &&
+					startDate !== 'undefined' &&
+					startDate !== null &&
+					startDate !== ''
+				) {
 					const startTimestamp = parseInt(startDate);
 					if (!isNaN(startTimestamp) && startTimestamp > 0) {
 						dateFilter.$gte = startTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				if (endDate && endDate !== 'undefined' && endDate !== null && endDate !== '') {
+				if (
+					endDate &&
+					endDate !== 'undefined' &&
+					endDate !== null &&
+					endDate !== ''
+				) {
 					const endTimestamp = parseInt(endDate);
 					if (!isNaN(endTimestamp) && endTimestamp > 0) {
 						dateFilter.$lte = endTimestamp;
 						hasDateFilter = true;
 					}
 				}
-				
+
 				if (hasDateFilter && Object.keys(dateFilter).length > 0) {
 					ticketMatchFilter.purchasedOn = dateFilter;
 				}
 			}
 
 			// Add amount filters
-			if (minAmount !== undefined && minAmount !== null && minAmount !== '' && minAmount !== 'undefined') {
+			if (
+				minAmount !== undefined &&
+				minAmount !== null &&
+				minAmount !== '' &&
+				minAmount !== 'undefined'
+			) {
 				const min = parseFloat(minAmount);
 				if (!isNaN(min) && min >= 0) {
 					if (!ticketMatchFilter.totalAmountPlayed) {
@@ -216,7 +281,12 @@ export const listBorlette = async query => {
 					ticketMatchFilter.totalAmountPlayed.$gte = min;
 				}
 			}
-			if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '' && maxAmount !== 'undefined') {
+			if (
+				maxAmount !== undefined &&
+				maxAmount !== null &&
+				maxAmount !== '' &&
+				maxAmount !== 'undefined'
+			) {
 				const max = parseFloat(maxAmount);
 				if (!isNaN(max) && max >= 0) {
 					if (!ticketMatchFilter.totalAmountPlayed) {
@@ -227,7 +297,11 @@ export const listBorlette = async query => {
 			}
 
 			// Add cashType filter
-			if (cashType && cashType.trim() !== '' && cashType !== 'undefined') {
+			if (
+				cashType &&
+				cashType.trim() !== '' &&
+				cashType !== 'undefined'
+			) {
 				const upperCashType = cashType.toUpperCase().trim();
 				if (upperCashType === 'REAL' || upperCashType === 'VIRTUAL') {
 					ticketMatchFilter.cashType = upperCashType;
@@ -236,75 +310,72 @@ export const listBorlette = async query => {
 
 			// Get ticket statistics with separate real and virtual amounts
 			const ticketStats = await BorletteTicket.aggregate([
-					{
-						$match: ticketMatchFilter,
-					},
-					{
-						$group: {
-							_id: null,
-							totalTickets: { $sum: 1 },
-							totalAmountPlayed: { $sum: '$totalAmountPlayed' },
-							totalAmountWon: {
-								$sum: { $ifNull: ['$totalAmountWon', 0] },
+				{
+					$match: ticketMatchFilter,
+				},
+				{
+					$group: {
+						_id: null,
+						totalTickets: { $sum: 1 },
+						totalAmountPlayed: { $sum: '$totalAmountPlayed' },
+						totalAmountWon: {
+							$sum: { $ifNull: ['$totalAmountWon', 0] },
+						},
+						totalRealAmountPlayed: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'REAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
 							},
-							totalRealAmountPlayed: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'REAL'] },
-										'$totalAmountPlayed',
-										0,
-									],
-								},
+						},
+						totalVirtualAmountPlayed: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'VIRTUAL'] },
+									'$totalAmountPlayed',
+									0,
+								],
 							},
-							totalVirtualAmountPlayed: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'VIRTUAL'] },
-										'$totalAmountPlayed',
-										0,
-									],
-								},
+						},
+						totalRealAmountWon: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'REAL'] },
+									{ $ifNull: ['$totalAmountWon', 0] },
+									0,
+								],
 							},
-							totalRealAmountWon: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'REAL'] },
-										{ $ifNull: ['$totalAmountWon', 0] },
-										0,
-									],
-								},
+						},
+						totalVirtualAmountWon: {
+							$sum: {
+								$cond: [
+									{ $eq: ['$cashType', 'VIRTUAL'] },
+									{ $ifNull: ['$totalAmountWon', 0] },
+									0,
+								],
 							},
-							totalVirtualAmountWon: {
-								$sum: {
-									$cond: [
-										{ $eq: ['$cashType', 'VIRTUAL'] },
-										{ $ifNull: ['$totalAmountWon', 0] },
-										0,
-									],
-								},
-							},
-							winningTickets: {
-								$sum: {
-									$cond: [
-										{
-											$gt: [
-												{
-													$ifNull: [
-														'$totalAmountWon',
-														0,
-													],
-												},
-												0,
-											],
-										},
-										1,
-										0,
-									],
-								},
+						},
+						winningTickets: {
+							$sum: {
+								$cond: [
+									{
+										$gt: [
+											{
+												$ifNull: ['$totalAmountWon', 0],
+											},
+											0,
+										],
+									},
+									1,
+									0,
+								],
 							},
 						},
 					},
-				]);
+				},
+			]);
 
 			const stats =
 				ticketStats.length > 0
@@ -321,8 +392,10 @@ export const listBorlette = async query => {
 						};
 
 			const profit = stats.totalAmountPlayed - stats.totalAmountWon;
-			const profitReal = stats.totalRealAmountPlayed - stats.totalRealAmountWon;
-			const profitVirtual = stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
+			const profitReal =
+				stats.totalRealAmountPlayed - stats.totalRealAmountWon;
+			const profitVirtual =
+				stats.totalVirtualAmountPlayed - stats.totalVirtualAmountWon;
 
 			return {
 				...lottery.toObject(),
@@ -341,7 +414,8 @@ export const listBorlette = async query => {
 							: 0,
 					profitMarginVirtual:
 						stats.totalVirtualAmountPlayed > 0
-							? (profitVirtual / stats.totalVirtualAmountPlayed) * 100
+							? (profitVirtual / stats.totalVirtualAmountPlayed) *
+								100
 							: 0,
 				},
 			};
@@ -413,15 +487,19 @@ export const getBorletteDetails = async lotteryId => {
 			return {
 				...ticketObj,
 				totalAmountPlayedReal: isReal ? ticketObj.totalAmountPlayed : 0,
-				totalAmountPlayedVirtual: isVirtual ? ticketObj.totalAmountPlayed : 0,
-				totalAmountWonReal: isReal ? (ticketObj.totalAmountWon || 0) : 0,
-				totalAmountWonVirtual: isVirtual ? (ticketObj.totalAmountWon || 0) : 0,
+				totalAmountPlayedVirtual: isVirtual
+					? ticketObj.totalAmountPlayed
+					: 0,
+				totalAmountWonReal: isReal ? ticketObj.totalAmountWon || 0 : 0,
+				totalAmountWonVirtual: isVirtual
+					? ticketObj.totalAmountWon || 0
+					: 0,
 				numbers: ticketObj.numbers.map(num => ({
 					...num,
 					amountPlayedReal: isReal ? num.amountPlayed : 0,
 					amountPlayedVirtual: isVirtual ? num.amountPlayed : 0,
-					amountWonReal: isReal ? (num.amountWon || 0) : 0,
-					amountWonVirtual: isVirtual ? (num.amountWon || 0) : 0,
+					amountWonReal: isReal ? num.amountWon || 0 : 0,
+					amountWonVirtual: isVirtual ? num.amountWon || 0 : 0,
 				})),
 			};
 		});
@@ -449,12 +527,20 @@ export const getBorletteDetails = async lotteryId => {
 					},
 					totalAmountPlayedReal: {
 						$sum: {
-							$cond: [{ $eq: ['$cashType', 'REAL'] }, '$totalAmountPlayed', 0],
+							$cond: [
+								{ $eq: ['$cashType', 'REAL'] },
+								'$totalAmountPlayed',
+								0,
+							],
 						},
 					},
 					totalAmountPlayedVirtual: {
 						$sum: {
-							$cond: [{ $eq: ['$cashType', 'VIRTUAL'] }, '$totalAmountPlayed', 0],
+							$cond: [
+								{ $eq: ['$cashType', 'VIRTUAL'] },
+								'$totalAmountPlayed',
+								0,
+							],
 						},
 					},
 					totalAmountWonReal: {
@@ -684,8 +770,12 @@ export const getBorletteDetails = async lotteryId => {
 										stats.totalAmountPlayed) *
 									100
 								: 0,
-						profitReal: stats.totalAmountPlayedReal - stats.totalAmountWonReal,
-						profitVirtual: stats.totalAmountPlayedVirtual - stats.totalAmountWonVirtual,
+						profitReal:
+							stats.totalAmountPlayedReal -
+							stats.totalAmountWonReal,
+						profitVirtual:
+							stats.totalAmountPlayedVirtual -
+							stats.totalAmountWonVirtual,
 						profitMarginReal:
 							stats.totalAmountPlayedReal > 0
 								? ((stats.totalAmountPlayedReal -
