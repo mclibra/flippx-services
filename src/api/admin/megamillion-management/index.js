@@ -40,19 +40,6 @@ router.get(
 );
 
 /**
- * GET /api/admin/megamillion-management/:id
- * Get detailed megamillion lottery information
- * Includes: all tickets, winning numbers, winning amount, lottery configuration and restrictions
- * Params: id - Lottery ID
- */
-router.get(
-	'/:id',
-	xApi(),
-	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await getMegamillionDetails(req.params.id))
-);
-
-/**
  * POST /api/admin/megamillion-management/restrictions
  * Create lottery restrictions for a megamillion lottery
  * Body: {
@@ -117,8 +104,7 @@ router.get(
 	'/default-jackpot',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) =>
-		done(res, await getDefaultJackpotAmount())
+	async (req, res) => done(res, await getDefaultJackpotAmount())
 );
 
 /**
@@ -135,6 +121,19 @@ router.put(
 	token({ required: true, roles: ['ADMIN'] }),
 	async (req, res) =>
 		done(res, await setDefaultJackpotAmount(req.body, req.user))
+);
+
+/**
+ * GET /api/admin/megamillion-management/:id
+ * Get detailed megamillion lottery information
+ * Includes: all tickets, winning numbers, winning amount, lottery configuration and restrictions
+ * Params: id - Lottery ID
+ */
+router.get(
+	'/:id',
+	xApi(),
+	token({ required: true, roles: ['ADMIN'] }),
+	async (req, res) => done(res, await getMegamillionDetails(req.params.id))
 );
 
 export default router;
