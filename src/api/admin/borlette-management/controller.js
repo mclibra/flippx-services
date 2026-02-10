@@ -68,6 +68,8 @@ export const listBorlette = async query => {
 		}
 
 		// Check if any ticket filters are applied
+		// Note: startDate/endDate alone should filter by lottery scheduledTime, not ticket purchasedOn
+		// Only treat dates as ticket filters when combined with other ticket filters (minAmount, maxAmount, cashType)
 		const hasTicketFilters =
 			(minAmount !== undefined &&
 				minAmount !== null &&
@@ -77,15 +79,7 @@ export const listBorlette = async query => {
 				maxAmount !== null &&
 				maxAmount !== '' &&
 				maxAmount !== 'undefined') ||
-			(cashType && cashType.trim() !== '' && cashType !== 'undefined') ||
-			(startDate &&
-				startDate !== 'undefined' &&
-				startDate !== null &&
-				startDate !== '') ||
-			(endDate &&
-				endDate !== 'undefined' &&
-				endDate !== null &&
-				endDate !== '');
+			(cashType && cashType.trim() !== '' && cashType !== 'undefined');
 
 		// If ticket filters are applied, we need to filter lotteries by tickets first
 		// Otherwise, we can paginate normally
@@ -229,9 +223,12 @@ export const listBorlette = async query => {
 			};
 
 			// Add date filters for tickets (filter by purchasedOn timestamp)
+			// Only apply date filters to tickets when other ticket filters are present
+			// When only dates are provided, they filter lotteries by scheduledTime, not tickets
 			if (
-				(startDate && startDate !== 'undefined') ||
-				(endDate && endDate !== 'undefined')
+				hasTicketFilters &&
+				((startDate && startDate !== 'undefined') ||
+					(endDate && endDate !== 'undefined'))
 			) {
 				const dateFilter = {};
 				let hasDateFilter = false;
