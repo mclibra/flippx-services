@@ -4,6 +4,7 @@ import { Wallet } from '../wallet/model';
 import { Lottery } from '../lottery/model';
 import { MegaMillionTicket } from './model';
 import { LoyaltyService } from '../loyalty/service';
+import { LotteryDefaultConfig } from '../lottery-default-config/model';
 
 const MEGAMILLION_TICKET_AMOUNT = 2;
 
@@ -823,6 +824,39 @@ export const commissionSummary = async ({ id }, user) => {
 			status: 500,
 			entity: {
 				error: typeof error === 'string' ? error : 'An error occurred',
+			},
+		};
+	}
+};
+
+// ===== GET JACKPOT AMOUNT =====
+
+export const getJackpotAmount = async () => {
+	try {
+		const config = await LotteryDefaultConfig.findOne({
+			lotteryType: 'MEGAMILLION',
+		});
+
+		// If no config exists, return default value
+		const jackpotAmount = config
+			? config.defaultJackpotAmount
+			: '1000000'; // Default to 1 million
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				jackpotAmount,
+			},
+		};
+	} catch (error) {
+		console.error('Get jackpot amount error:', error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error:
+					error.message || 'Failed to retrieve jackpot amount',
 			},
 		};
 	}

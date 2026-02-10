@@ -10,6 +10,7 @@ import {
 	cancelTicket,
 	cashoutTicket,
 	commissionSummary,
+	getJackpotAmount,
 } from './controller';
 
 const router = new Router();
@@ -30,6 +31,10 @@ router.get(
 	xApi(),
 	token({ required: true }),
 	async (req, res) => done(res, await commissionSummary(req.params, req.user))
+);
+
+router.get('/jackpot', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getJackpotAmount())
 );
 
 router.get(
