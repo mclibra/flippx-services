@@ -1125,17 +1125,24 @@ export const getDefaultJackpotAmount = async () => {
 			lotteryType: 'MEGAMILLION',
 		});
 
-		// If no config exists, return default value
-		const defaultJackpotAmount = config
-			? config.defaultJackpotAmount
-			: '1000000'; // Default to 1 million
+		// If no config exists or no jackpot amount, return error
+		if (!config || !config.jackpotAmount) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Default jackpot amount is not configured for MEGAMILLION',
+				},
+			};
+		}
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				defaultJackpotAmount,
-				config: config || null,
+				jackpotAmount: config.jackpotAmount,
+				description: config.description || '',
+				config: config,
 			},
 		};
 	} catch (error) {
@@ -1156,18 +1163,31 @@ export const getDefaultJackpotAmount = async () => {
 
 export const setDefaultJackpotAmount = async (body, user) => {
 	try {
-		const { defaultJackpotAmount, description } = body;
+		const { jackpotAmount, description } = body;
 
 		// Validation
-		if (
-			defaultJackpotAmount === undefined ||
-			defaultJackpotAmount === null
-		) {
+		if (jackpotAmount === undefined || jackpotAmount === null) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Default jackpot amount is required',
+					error: 'Jackpot amount is required',
+				},
+			};
+		}
+
+		// Ensure jackpotAmount is a number
+		const amount =
+			typeof jackpotAmount === 'string'
+				? parseFloat(jackpotAmount)
+				: jackpotAmount;
+
+		if (isNaN(amount)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Jackpot amount must be a valid number',
 				},
 			};
 		}
@@ -1176,11 +1196,9 @@ export const setDefaultJackpotAmount = async (body, user) => {
 		const config = await LotteryDefaultConfig.findOneAndUpdate(
 			{ lotteryType: 'MEGAMILLION' },
 			{
-				defaultJackpotAmount: defaultJackpotAmount,
+				jackpotAmount: amount,
+				description: description || '',
 				updatedBy: user._id,
-				description:
-					description ||
-					`Default jackpot amount set to ${defaultJackpotAmount}`,
 			},
 			{
 				new: true,
@@ -1193,7 +1211,9 @@ export const setDefaultJackpotAmount = async (body, user) => {
 			status: 200,
 			entity: {
 				success: true,
-				message: `Default jackpot amount for MEGAMILLION set to ${defaultJackpotAmount}`,
+				message: `Default jackpot amount for MEGAMILLION set to ${amount}`,
+				jackpotAmount: config.jackpotAmount,
+				description: config.description,
 				config,
 			},
 		};

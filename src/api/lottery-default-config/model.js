@@ -8,10 +8,10 @@ const LotteryDefaultConfigSchema = new Schema(
 			required: true,
 			unique: true,
 		},
-		defaultJackpotAmount: {
-			type: String,
+		jackpotAmount: {
+			type: Number,
 			required: true,
-			default: '10 Thousand',
+			default: 10000,
 		},
 		updatedBy: {
 			type: String,

@@ -422,7 +422,7 @@ Create a new lottery. Only one lottery of the same type can exist per state at a
 | `type` | string | Yes | Lottery type: `BORLETTE` or `MEGAMILLION` |
 | `scheduledTime` | number | Yes | Scheduled draw time (Unix timestamp) |
 | `state` | string | Yes | State ID |
-| `jackpotAmount` | number | No | Jackpot amount (required for MEGAMILLION, auto-set if not provided) |
+| `jackpotAmount` | number | No | Jackpot amount as a number (required for MEGAMILLION, auto-set if not provided) |
 | `metadata` | string | No | Lottery metadata (e.g., "morning", "afternoon", "evening") |
 | `restrictions` | object | No | Lottery restrictions (see structure above) |
 | `externalGameIds` | object | No | External game IDs for integration |
@@ -439,6 +439,7 @@ Create a new lottery. Only one lottery of the same type can exist per state at a
     "type": "BORLETTE",
     "scheduledTime": 1234567890,
     "state": "507f1f77bcf86cd799439011",
+    "jackpotAmount": 1000000,
     "status": "SCHEDULED",
     "createdBy": "507f1f77bcf86cd799439011",
     "createdAt": "2024-01-01T00:00:00.000Z"

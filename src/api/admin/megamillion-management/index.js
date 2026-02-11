@@ -111,7 +111,7 @@ router.get(
  * PUT /api/admin/megamillion-management/default-jackpot
  * Set the default jackpot amount for MEGAMILLION lotteries
  * Body: {
- *   defaultJackpotAmount: number (required),
+ *   jackpotAmount: number (required),
  *   description: string (optional)
  * }
  */

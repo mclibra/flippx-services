@@ -3,8 +3,6 @@ import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { BorletteTicket } from '../borlette_ticket/model';
 import { Lottery, LotteryRestriction, PopularNumbers } from './model';
 import { State } from '../admin/state-management/model';
-import { publishResult } from '../../services/lottery/resultPublisher';
-import PayoutService from '../../services/payout/payoutService';
 import { LotteryDefaultConfig } from '../lottery-default-config/model';
 
 // Helper function to get default jackpot amount for MEGAMILLION
@@ -13,10 +11,17 @@ const getDefaultJackpotAmount = async () => {
 		const config = await LotteryDefaultConfig.findOne({
 			lotteryType: 'MEGAMILLION',
 		});
-		return config ? config.defaultJackpotAmount : 1000000; // Default to 1 million if not configured
+
+		if (!config || !config.jackpotAmount) {
+			throw new Error(
+				'Default jackpot amount is not configured for MEGAMILLION'
+			);
+		}
+
+		return config.jackpotAmount;
 	} catch (error) {
 		console.error('Error getting default jackpot amount:', error);
-		return 1000000; // Fallback to 1 million on error
+		throw error;
 	}
 };
 

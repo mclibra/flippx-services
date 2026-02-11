@@ -20,7 +20,7 @@ const getDefaultJackpotAmount = async () => {
 		const config = await LotteryDefaultConfig.findOne({
 			lotteryType: 'MEGAMILLION',
 		});
-		return config ? config.defaultJackpotAmount : 1000000; // Default to 1 million if not configured
+		return config ? config.jackpotAmount : 1000000; // Default to 1 million if not configured
 	} catch (error) {
 		console.error('Error getting default jackpot amount:', error);
 		return 1000000; // Fallback to 1 million on error

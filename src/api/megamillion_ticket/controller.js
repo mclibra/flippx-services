@@ -451,10 +451,11 @@ export const placeBet = async ({ id }, body, user) => {
 		// **NEW: Record play activity for loyalty tracking (only for REAL cash)**
 		if (cashType === 'REAL') {
 			try {
-				const loyaltyResult = await LoyaltyService.recordUserPlayActivity(
-					user._id,
-					totalAmountPlayed
-				);
+				const loyaltyResult =
+					await LoyaltyService.recordUserPlayActivity(
+						user._id,
+						totalAmountPlayed
+					);
 				if (!loyaltyResult.success) {
 					console.warn(
 						`Failed to record play activity for user ${user._id}:`,
@@ -837,16 +838,23 @@ export const getJackpotAmount = async () => {
 			lotteryType: 'MEGAMILLION',
 		});
 
-		// If no config exists, return default value
-		const jackpotAmount = config
-			? config.defaultJackpotAmount
-			: '1000000'; // Default to 1 million
+		// If no config exists or no jackpot amount, return error
+		if (!config || !config.jackpotAmount) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'Default jackpot amount is not configured for MEGAMILLION',
+				},
+			};
+		}
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				jackpotAmount,
+				jackpotAmount: config.jackpotAmount,
+				description: config.description || '',
 			},
 		};
 	} catch (error) {
@@ -855,8 +863,7 @@ export const getJackpotAmount = async () => {
 			status: 500,
 			entity: {
 				success: false,
-				error:
-					error.message || 'Failed to retrieve jackpot amount',
+				error: error.message || 'Failed to retrieve jackpot amount',
 			},
 		};
 	}
