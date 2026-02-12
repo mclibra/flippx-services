@@ -284,6 +284,7 @@ export const makeMove = async ({ gameId }, { tile, side, drawnTile }, user) => {
 						'game-update',
 						{
 							gameId: game._id,
+							gameState: game.gameState,
 							players: game.players.map(gamePlayer => ({
 								position: gamePlayer.position,
 								playerType: gamePlayer.playerType,
@@ -421,6 +422,7 @@ export const handleTurnTimeout = async (gameId, currentPlayer) => {
 						'game-update',
 						{
 							gameId: game._id,
+							gameState: game.gameState,
 							players: game.players.map(gamePlayer => ({
 								position: gamePlayer.position,
 								playerType: gamePlayer.playerType,
@@ -910,6 +912,7 @@ const handleStandardGameCompletion = async (game, room) => {
 		const gameCompletedData = {
 			gameId: game._id,
 			roomId: room.roomId,
+			gameState: game.gameState,
 			winner: game.winner,
 			winnerPayout: game.winnerPayout,
 			winnerDetails: winnerPlayer
@@ -983,6 +986,7 @@ const completePointBasedChallenge = async (game, room, winnerPlayer) => {
 		const challengeCompletedData = {
 			gameId: game._id,
 			roomId: room.roomId,
+			gameState: game.gameState,
 			winner: {
 				position: winnerPlayer.position,
 				playerName: winnerPlayer.playerName,
@@ -1023,6 +1027,7 @@ const startNewGameCountdown = async (game, room, delaySeconds) => {
 		broadcastDominoGameUpdateToRoom(room.roomId, 'round-completed', {
 			gameId: game._id,
 			roomId: room.roomId,
+			gameState: game.gameState,
 			roundNumber: game.gameNumber,
 			finalScores: game.finalScores.map(score => {
 				const roomPlayer = updatedRoomForLeaderboard.players.find(

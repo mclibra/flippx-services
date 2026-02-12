@@ -1671,6 +1671,7 @@ class CronScheduler {
 				'game-update',
 				{
 					gameId: updatedGame._id,
+					gameState: updatedGame.gameState,
 					players: updatedGame.players.map(player => ({
 						position: player.position,
 						user: player.user,
