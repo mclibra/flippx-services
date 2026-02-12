@@ -387,6 +387,19 @@ export class DominoGameEngine {
 	}
 
 	static checkGameBlocked(gameState) {
+		// TEMPORARY: Force BLOCKED state after 8 moves for UI testing
+		// TODO: Remove this temporary feature after testing
+		const totalMoves = gameState.totalMoves || gameState.moves?.length || 0;
+		if (totalMoves >= 8) {
+			console.log(
+				'[TEMPORARY] Forcing BLOCKED state after 8 moves for UI testing'
+			);
+			return {
+				isBlocked: true,
+				reason: 'TEMPORARY_TEST_BLOCKED',
+			};
+		}
+
 		// Check condition 1: No players have playable tiles AND no tiles to draw
 		const noPlayableTiles = gameState.players.every(
 			player => !this.hasValidMoves(player.hand, gameState.board)
