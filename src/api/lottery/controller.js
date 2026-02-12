@@ -509,6 +509,8 @@ export const lastLottery = async ({
 	stateId,
 	offset = 0,
 	count = 1,
+	startDate,
+	endDate,
 }) => {
 	try {
 		const params = {
@@ -523,6 +525,23 @@ export const lastLottery = async ({
 			// For other lottery types, filter by state as usual
 			if (type.toUpperCase() !== 'MEGAMILLION') {
 				params.state = stateId;
+			}
+		}
+		if (startDate || endDate) {
+			params['$and'] = params['$and'] || [];
+			if (startDate) {
+				params['$and'].push({
+					scheduledTime: {
+						$gte: parseInt(startDate),
+					},
+				});
+			}
+			if (endDate) {
+				params['$and'].push({
+					scheduledTime: {
+						$lte: parseInt(endDate),
+					},
+				});
 			}
 		}
 
