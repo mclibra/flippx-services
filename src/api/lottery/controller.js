@@ -875,12 +875,24 @@ export const createLotteriesForState = async state => {
 					}
 
 					// Check for duplicate (unique index constraint)
+					// Only check for duplicates in SCHEDULED/WAITING status, not COMPLETED ones
 					let duplicateCheck = null;
 					if (lotteryConfig.pick3GameId) {
 						duplicateCheck = await Lottery.findOne({
 							state: state._id,
 							'externalGameIds.pick3': lotteryConfig.pick3GameId,
 							scheduledTime: drawTime.valueOf(),
+							status: { $in: ['SCHEDULED', 'WAITING'] },
+						});
+					}
+
+					// Also check pick4GameId constraint (required field)
+					if (!duplicateCheck) {
+						duplicateCheck = await Lottery.findOne({
+							state: state._id,
+							'externalGameIds.pick4': lotteryConfig.pick4GameId,
+							scheduledTime: drawTime.valueOf(),
+							status: { $in: ['SCHEDULED', 'WAITING'] },
 						});
 					}
 
@@ -891,13 +903,20 @@ export const createLotteriesForState = async state => {
 							scheduledTime: drawTime.valueOf(),
 						});
 					} else {
+						const duplicateType =
+							duplicateCheck.externalGameIds?.pick4 ===
+							lotteryConfig.pick4GameId
+								? 'pick4'
+								: 'pick3';
 						console.log(
 							`BORLETTE lottery for ${state.name} ${
 								lotteryConfig.name
 							} would violate unique constraint (state: ${
 								state._id
-							}, pick3: ${
-								lotteryConfig.pick3GameId
+							}, ${duplicateType}: ${
+								duplicateType === 'pick4'
+									? lotteryConfig.pick4GameId
+									: lotteryConfig.pick3GameId
 							}, time: ${drawTime.valueOf()})`
 						);
 					}
