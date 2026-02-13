@@ -125,7 +125,8 @@ export const list = async (queryParams, user) => {
 					totalVirtualAmountWon,
 					netResult: totalAmountWon - totalAmountPlayed,
 					netResultReal: totalRealAmountWon - totalRealAmountPlayed,
-					netResultVirtual: totalVirtualAmountWon - totalVirtualAmountPlayed,
+					netResultVirtual:
+						totalVirtualAmountWon - totalVirtualAmountPlayed,
 				},
 			},
 		};
@@ -301,7 +302,7 @@ export const ticketByLottery = async ({ id }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'Lottery not found.',
+					error: 'Draw not found.',
 				},
 			};
 		}
@@ -666,7 +667,7 @@ export const placeBet = async ({ id }, body, user) => {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid cash type. Must be REAL or VIRTUAL',
+					error: 'Invalid payment type. Must be REAL or VIRTUAL',
 				},
 			};
 		}
@@ -700,15 +701,20 @@ export const placeBet = async ({ id }, body, user) => {
 			const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
 
 			if (minutesUntilDraw <= 3) {
+				const nextEntryTime = scheduledTime.clone().add(1, 'day');
+				const minutesUntilNextEntry = nextEntryTime.diff(
+					currentTime,
+					'minutes'
+				);
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Lottery purchases are closed for ${
-							lottery.state.name
-						}. Tickets must be purchased at least 3 minutes before the scheduled draw time (${scheduledTime.format(
-							'MM/DD/YYYY h:mm A'
-						)}).`,
+						error: `The entry window for this Borlette draw has ended. You can participate in the upcoming draw once the next entry period opens${
+							minutesUntilNextEntry > 0
+								? ` in ${minutesUntilNextEntry} minutes`
+								: ''
+						}.`,
 					},
 				};
 			}
@@ -923,7 +929,9 @@ export const placeBet = async ({ id }, body, user) => {
 					status: 500,
 					entity: {
 						success: false,
-						error: `Insufficient ${cashType.toLowerCase()} balance.`,
+						error: `Insufficient ${
+							cashType === 'REAL' ? 'funds' : 'virtual credits'
+						} balance.`,
 					},
 				};
 			}
@@ -933,8 +941,8 @@ export const placeBet = async ({ id }, body, user) => {
 				entity: {
 					success: false,
 					error: lottery._id
-						? 'Lottery is closed.'
-						: 'Invalid lottery ID.',
+						? 'The entry window for this draw has ended.'
+						: 'Invalid draw ID.',
 				},
 			};
 		}
@@ -970,7 +978,7 @@ export const createMultiState = async (body, user) => {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid cash type. Must be REAL or VIRTUAL',
+					error: 'Invalid payment type. Must be REAL or VIRTUAL',
 				},
 			};
 		}
@@ -1059,7 +1067,7 @@ export const createMultiState = async (body, user) => {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Lottery ${purchase.lotteryId} is not available for play`,
+						error: `This draw is not available for entries at this time`,
 					},
 				};
 			}
@@ -1070,15 +1078,20 @@ export const createMultiState = async (body, user) => {
 			const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
 
 			if (minutesUntilDraw <= 3) {
+				const nextEntryTime = scheduledTime.clone().add(1, 'day');
+				const minutesUntilNextEntry = nextEntryTime.diff(
+					currentTime,
+					'minutes'
+				);
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Lottery purchases are closed for ${
-							lottery.state.name
-						}. Tickets must be purchased at least 3 minutes before the scheduled draw time (${scheduledTime.format(
-							'MM/DD/YYYY h:mm A'
-						)}).`,
+						error: `The entry window for this Borlette draw has ended. You can participate in the upcoming draw once the next entry period opens${
+							minutesUntilNextEntry > 0
+								? ` in ${minutesUntilNextEntry} minutes`
+								: ''
+						}.`,
 					},
 				};
 			}
@@ -1199,7 +1212,9 @@ export const createMultiState = async (body, user) => {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Insufficient ${cashType.toLowerCase()} balance. Required: ${totalAmount}, Available: ${balanceToCheck}`,
+					error: `Insufficient ${
+						cashType === 'REAL' ? 'funds' : 'virtual credits'
+					} balance. Required: ${totalAmount}, Available: ${balanceToCheck}`,
 					totalRequired: totalAmount,
 					availableBalance: balanceToCheck,
 				},
@@ -1449,7 +1464,7 @@ export const cashoutTicket = async ({ id }, user) => {
 		}
 
 		if (!['ADMIN', 'DEALER'].includes(user.role)) {
-			throw new Error('You are not authorized to cashout ticket.');
+			throw new Error('You are not authorized to claim this entry.');
 		}
 		const borletteTicket = await BorletteTicket.findById(id)
 			.populate('user')
@@ -1465,7 +1480,7 @@ export const cashoutTicket = async ({ id }, user) => {
 			throw new Error('This ticket does not exist.');
 		}
 		if (borletteTicket.user.role !== 'AGENT') {
-			throw new Error('You are not authorized to cashout this ticket.');
+			throw new Error('You are not authorized to claim this entry.');
 		}
 		if (borletteTicket.isAmountDisbursed) {
 			throw new Error('This ticket has already been claimed.');

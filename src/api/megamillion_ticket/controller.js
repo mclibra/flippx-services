@@ -189,7 +189,7 @@ export const ticketByLottery = async ({ id }, user) => {
 				status: 404,
 				entity: {
 					success: false,
-					error: 'Lottery not found.',
+					error: 'Draw not found.',
 				},
 			};
 		}
@@ -308,7 +308,7 @@ export const placeBet = async ({ id }, body, user) => {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid cash type. Must be REAL or VIRTUAL',
+					error: 'Invalid payment type. Must be REAL or VIRTUAL',
 				},
 			};
 		}
@@ -384,7 +384,9 @@ export const placeBet = async ({ id }, body, user) => {
 				status: 500,
 				entity: {
 					success: false,
-					error: `Insufficient ${cashType.toLowerCase()} balance for ${ticketCount} ticket${
+					error: `Insufficient ${
+						cashType === 'REAL' ? 'funds' : 'virtual credits'
+					} balance for ${ticketCount} ticket${
 						ticketCount > 1 ? 's' : ''
 					}.`,
 				},
@@ -408,13 +410,20 @@ export const placeBet = async ({ id }, body, user) => {
 		const minutesUntilDraw = scheduledTime.diff(currentTime, 'minutes');
 
 		if (minutesUntilDraw <= 15) {
+			const nextEntryTime = scheduledTime.clone().add(1, 'day');
+			const minutesUntilNextEntry = nextEntryTime.diff(
+				currentTime,
+				'minutes'
+			);
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: `Lottery purchases are closed. Tickets must be purchased at least 15 minutes before the scheduled draw time (${scheduledTime.format(
-						'MM/DD/YYYY h:mm A'
-					)}).`,
+					error: `The entry window for this Mega Millions draw has ended. You can participate in the upcoming draw once the next entry period opens${
+						minutesUntilNextEntry > 0
+							? ` in ${minutesUntilNextEntry} minutes`
+							: ''
+					}.`,
 				},
 			};
 		}
@@ -678,7 +687,7 @@ export const cashoutTicket = async ({ id }, user) => {
 		}
 
 		if (!['ADMIN', 'DEALER'].includes(user.role)) {
-			throw 'You are not authorized to cashout ticket.';
+			throw 'You are not authorized to claim this entry.';
 		}
 		const megamillionTicket =
 			await MegaMillionTicket.findById(id).populate('user');
@@ -686,7 +695,7 @@ export const cashoutTicket = async ({ id }, user) => {
 			throw 'This ticket does not exist.';
 		}
 		if (megamillionTicket.user.role !== 'AGENT') {
-			throw 'You are not authorized to cashout this ticket.';
+			throw 'You are not authorized to claim this entry.';
 		}
 		if (megamillionTicket.isAmountDisbursed) {
 			throw 'This ticket has already been claimed.';
