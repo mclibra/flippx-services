@@ -63,8 +63,10 @@ const getNextValidDrawTime = lotteryConfig => {
 	const oneHourFromNow = now.clone().add(1, 'hours');
 	const maxDaysToCheck = 7; // Check up to 7 days ahead
 
-	// Start checking from today
-	let checkDate = now.clone().startOf('day');
+	// Start checking from today in the lottery's timezone
+	// This ensures we check the correct day based on the lottery's local time
+	const nowInLotteryTz = moment.tz(lotteryConfig.drawTimezone);
+	let checkDate = nowInLotteryTz.clone().startOf('day');
 
 	for (let i = 0; i < maxDaysToCheck; i++) {
 		const dayName = checkDate.format('dddd');
