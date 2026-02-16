@@ -425,7 +425,7 @@ export class DominoGameEngine {
 			return { isBlocked: false };
 		}
 
-		const requiredAutoMoves = humanPlayersCount * 2;
+		const requiredAutoMoves = humanPlayersCount * 3;
 
 		// Get moves by human players only using the player field
 		const humanPlayerPositions = humanPlayers.map(
