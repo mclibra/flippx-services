@@ -413,40 +413,40 @@ export class DominoGameEngine {
 			};
 		}
 
-		// Check condition 2: All human players have auto-moved for last 2 rounds
-		// This means the last (humanPlayersCount * 2) moves by human players all have isAutoMove: true
-		const humanPlayers = gameState.players.filter(
-			player => player.playerType === 'HUMAN'
-		);
-		const humanPlayersCount = humanPlayers.length;
+		// // Check condition 2: All human players have auto-moved for last 2 rounds
+		// // This means the last (humanPlayersCount * 2) moves by human players all have isAutoMove: true
+		// const humanPlayers = gameState.players.filter(
+		// 	player => player.playerType === 'HUMAN'
+		// );
+		// const humanPlayersCount = humanPlayers.length;
 
-		// If there are no human players, skip this check
-		if (humanPlayersCount === 0) {
-			return { isBlocked: false };
-		}
+		// // If there are no human players, skip this check
+		// if (humanPlayersCount === 0) {
+		// 	return { isBlocked: false };
+		// }
 
-		const requiredAutoMoves = humanPlayersCount * 3;
+		// const requiredAutoMoves = humanPlayersCount * 3;
 
-		// Get moves by human players only using the player field
-		const humanPlayerPositions = humanPlayers.map(
-			player => player.position
-		);
-		const humanMoves = gameState.moves.filter(move =>
-			humanPlayerPositions.includes(move.player)
-		);
+		// // Get moves by human players only using the player field
+		// const humanPlayerPositions = humanPlayers.map(
+		// 	player => player.position
+		// );
+		// const humanMoves = gameState.moves.filter(move =>
+		// 	humanPlayerPositions.includes(move.player)
+		// );
 
-		const recentHumanMoves = humanMoves.slice(-requiredAutoMoves);
+		// const recentHumanMoves = humanMoves.slice(-requiredAutoMoves);
 
-		const allRecentHumanMovesAreAuto =
-			recentHumanMoves.length === requiredAutoMoves &&
-			recentHumanMoves.every(move => move.isAutoMove === true);
+		// const allRecentHumanMovesAreAuto =
+		// 	recentHumanMoves.length === requiredAutoMoves &&
+		// 	recentHumanMoves.every(move => move.isAutoMove === true);
 
-		if (allRecentHumanMovesAreAuto) {
-			return {
-				isBlocked: true,
-				reason: 'ALL_HUMAN_AUTO_MOVED_TWO_ROUNDS',
-			};
-		}
+		// if (allRecentHumanMovesAreAuto) {
+		// 	return {
+		// 		isBlocked: true,
+		// 		reason: 'ALL_HUMAN_AUTO_MOVED_TWO_ROUNDS',
+		// 	};
+		// }
 
 		return { isBlocked: false };
 	}
