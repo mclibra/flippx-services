@@ -7,7 +7,11 @@ import moment from 'moment';
 export const login = async user => {
 	try {
 		const refreshToken = generateToken(user._id.toString());
-		const accessToken = jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, });
+		const accessToken = jwtSign({
+			id: user._id.toString(),
+			userName: user.userName,
+			role: user.role,
+		});
 
 		// NEW: Update session tracking
 		const now = moment();
@@ -15,15 +19,24 @@ export const login = async user => {
 
 		// Check if this is a new daily login
 		let isNewDailyLogin = false;
-		if (!user.sessionTracking.lastDailyLoginDate ||
-			!moment(user.sessionTracking.lastDailyLoginDate).isSame(today, 'day')) {
+		if (
+			!user.sessionTracking.lastDailyLoginDate ||
+			!moment(user.sessionTracking.lastDailyLoginDate).isSame(
+				today,
+				'day'
+			)
+		) {
 			isNewDailyLogin = true;
 
 			// Update daily login streak
 			const lastLogin = user.sessionTracking.lastDailyLoginDate;
-			if (lastLogin && moment(lastLogin).add(1, 'day').isSame(today, 'day')) {
+			if (
+				lastLogin &&
+				moment(lastLogin).add(1, 'day').isSame(today, 'day')
+			) {
 				// Consecutive day login
-				user.sessionTracking.dailyLoginStreak = (user.sessionTracking.dailyLoginStreak || 0) + 1;
+				user.sessionTracking.dailyLoginStreak =
+					(user.sessionTracking.dailyLoginStreak || 0) + 1;
 			} else {
 				// Streak broken
 				user.sessionTracking.dailyLoginStreak = 1;
@@ -47,7 +60,10 @@ export const login = async user => {
 			try {
 				await LoyaltyService.recordDailyLogin(user._id.toString());
 			} catch (error) {
-				console.error('Error recording daily login for loyalty:', error);
+				console.error(
+					'Error recording daily login for loyalty:',
+					error
+				);
 			}
 		}
 
@@ -61,12 +77,31 @@ export const login = async user => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid login credentials. Please check your phone number and password.';
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						validationErrors ||
+						'Invalid login credentials. Please check your phone number and password.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to complete login. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -80,32 +115,57 @@ export const token = async query => {
 				status: 401,
 				entity: {
 					success: false,
-					error: 'Invalid token.',
+					error: 'Invalid or expired authentication token. Please login again.',
 				},
 			};
 		}
 
 		// Update last activity when refreshing token
 		const user = await User.findById(id);
-		if (user) {
-			user.sessionTracking.lastActivityDate = new Date();
-			await user.save();
+		if (!user) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User account not found. Please login again.',
+				},
+			};
 		}
+
+		user.sessionTracking.lastActivityDate = new Date();
+		await user.save();
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
 				refreshToken: generateToken(id),
-				accessToken: jwtSign({ id: user._id.toString(), userName: user.userName, role: user.role, }),
+				accessToken: jwtSign({
+					id: user._id.toString(),
+					userName: user.userName,
+					role: user.role,
+				}),
 			},
 		};
 	} catch (error) {
+		if (error.name === 'CastError') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid authentication token format. Please login again.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Invalid or expired authentication token. Please login again.';
 		return {
 			status: 401,
 			entity: {
 				success: false,
-				error: error.errors || 'Invalid token.',
+				error: errorMessage,
 			},
 		};
 	}

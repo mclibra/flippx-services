@@ -1,13 +1,13 @@
 import { Router } from 'express';
+import express from 'express';
 import { done } from '../../services/response/';
 import { xApi, token } from '../../services/passport';
 import {
 	getUserBalance,
 	getWalletSummary,
 	initiateVirtualCashPurchase,
-	handlePurchaseSuccess,
-	handlePurchaseCancel,
-	handlePayoneerWebhook,
+	getPaymentStatusBySessionId,
+	handleRapydWebhook,
 	createPayment,
 	createManualPayment,
 	confirmPayment,
@@ -35,16 +35,16 @@ router.post(
 	async (req, res) => done(res, await initiateVirtualCashPurchase(req, res))
 );
 
-router.get('/purchase/success', xApi(), async (req, res) =>
-	done(res, await handlePurchaseSuccess(req, res))
+router.get('/purchase/status', xApi(), async (req, res) =>
+	done(res, await getPaymentStatusBySessionId(req))
 );
 
-router.get('/purchase/cancel', xApi(), async (req, res) =>
-	done(res, await handlePurchaseCancel(req, res))
-);
-
-router.post('/webhook/payoneer', xApi(), async (req, res) =>
-	done(res, await handlePayoneerWebhook(req, res))
+// Webhook route needs raw body for signature verification
+// express.raw() middleware preserves raw body
+router.post(
+	'/webhook/rapyd',
+	express.raw({ type: 'application/json' }),
+	async (req, res) => done(res, await handleRapydWebhook(req, res))
 );
 
 // ===== MANUAL PAYMENT ROUTES (ADMIN) =====
@@ -82,11 +82,8 @@ router.get(
 );
 
 // Get user's own payments
-router.get(
-	'/payments',
-	xApi(),
-	token({ required: true }),
-	async (req, res) => done(res, await getUserPayments({ ...req.user, query: req.query }))
+router.get('/payments', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getUserPayments({ ...req.user, query: req.query }))
 );
 
 export default router;

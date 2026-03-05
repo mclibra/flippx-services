@@ -13,36 +13,36 @@ import {
 const router = new Router();
 
 router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await getSelfNotification(req.user, req.query)),
+	done(res, await getSelfNotification(req.user, req.query))
 );
 
 router.get(
 	'/list',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await list(req.query)),
+	async (req, res) => done(res, await list(req.query))
 );
 
 router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await show(req.params, req.user, req.query)),
+	done(res, await show(req.params, req.user, req.query))
 );
 
 router.put('/read', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await markNotificationRead(req.user)),
+	done(res, await markNotificationRead(req.user))
 );
 
 router.post(
 	'/',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await create(req.body, req.user)),
+	async (req, res) => done(res, await create(req.body, req.user))
 );
 
 router.delete(
 	'/:messageId',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await remove(req.params)),
+	async (req, res) => done(res, await remove(req.params))
 );
 
 export default router;

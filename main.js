@@ -3,11 +3,16 @@ import { env, mongo, port, ip, apiRoot } from './config';
 import mongoose from './src/services/mongoose';
 import express from './src/services/express';
 import { initializeSocket } from './src/services/socket';
-import { createAdmin, createSystemAccount, createDominoConfig } from './src/seedDb';
+import {
+	createAdmin,
+	createSystemAccount,
+	createDominoConfig,
+	initializeTierRequirements,
+} from './src/seedDb';
 import api from './src/api';
-import './src/services/cron/domino';
-import './src/services/cron/lottery';
-import './src/services/cron/loyaltyTasks';
+
+// Import CronScheduler for cron job processing
+import CronScheduler from './src/services/scheduler/cronScheduler';
 
 const app = express(apiRoot, api);
 
@@ -20,45 +25,137 @@ const server = http.createServer(app);
 
 initializeSocket(server);
 
+// Initialize Cron Scheduler for cron jobs
+const cronScheduler = new CronScheduler();
+
 // eslint-disable-next-line no-undef
 setImmediate(async () => {
 	try {
 		// Create admin user
-		const admin = await createAdmin();
-		if (admin) {
-			console.log('');
-			console.log('Admin user => ', admin.phone);
-			console.log('');
-		} else {
-			console.log('Unable to create admin ');
-		}
+		await createAdmin();
 
 		// Create system account
-		const systemAccount = await createSystemAccount();
-		if (systemAccount) {
-			console.log('System account initialized');
-		} else {
-			console.log('Unable to create system account');
-		}
+		await createSystemAccount();
 
 		// Create domino game config
-		const dominoGameConfig = await createDominoConfig();
-		if (dominoGameConfig) {
-			console.log('Domino game config initialized');
-		} else {
-			console.log('Unable to create domino game config');
-		}
+		await createDominoConfig();
+
+		// Initialize tier requirements
+		await initializeTierRequirements();
+
+		// Start the HTTP server
+		server.listen(port, ip, () => {
+			console.log(
+				'Express server listening on http://%s:%d, in %s mode',
+				ip,
+				port,
+				env
+			);
+		});
+
+		// Start cron scheduler for cron jobs AFTER server is running
+		// This prevents cron jobs from blocking the main server startup
+		await cronScheduler.initialize();
 	} catch (error) {
-		console.log(error);
+		console.error('❌ Application startup failed:', error);
+
+		// Continue with cron scheduler even if main startup fails
+		// This ensures cron jobs keep running even if HTTP server has issues
+		console.log('🔄 Starting cron scheduler despite startup error...');
+
+		try {
+			await cronScheduler.initialize();
+			console.log(
+				'✅ Cron scheduler started successfully despite main startup failure'
+			);
+		} catch (schedulerError) {
+			console.error(
+				'❌ Failed to start cron scheduler after main startup failure:',
+				schedulerError
+			);
+		}
+
+		// Do not exit - keep the process alive for cron jobs
+		console.log('⚠️  Main process continuing to keep cron scheduler alive');
 	}
-	server.listen(port, ip, () => {
-		console.log(
-			'Express server listening on http://%s:%d, in %s mode',
-			ip,
-			port,
-			env
-		);
-	});
 });
+
+// Graceful shutdown handler for the main process
+const gracefulShutdown = async signal => {
+	console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+
+	try {
+		// Close HTTP server
+		console.log('🔌 Closing HTTP server...');
+		server.close(() => {
+			console.log('✅ HTTP server closed');
+		});
+
+		// Shutdown cron scheduler
+		console.log('🛑 Shutting down cron scheduler...');
+		await cronScheduler.shutdown();
+
+		// Close database connection
+		console.log('🔌 Closing database connection...');
+		await mongoose.connection.close();
+		console.log('✅ Database connection closed');
+
+		console.log('✅ Graceful shutdown completed');
+		process.exit(0);
+	} catch (error) {
+		console.error('❌ Error during graceful shutdown:', error);
+		process.exit(1);
+	}
+};
+
+// Setup global error handlers to prevent process crashes
+process.on('uncaughtException', error => {
+	console.error('❌ Uncaught Exception - Process will continue:', error);
+	// Do not exit - keep cron jobs running
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+	console.error(
+		'❌ Unhandled Promise Rejection - Process will continue:',
+		reason
+	);
+	console.error('Promise:', promise);
+
+	// Check if this is a node-cron RangeError that breaks the scheduler
+	// This error occurs in node-cron's internal scheduler when calculating next execution time
+	const isNodeCronError =
+		reason instanceof Error &&
+		reason.name === 'RangeError' &&
+		reason.message === 'Invalid time value' &&
+		reason.stack &&
+		(reason.stack.includes('node-cron') ||
+			reason.stack.includes('localized-time.ts') ||
+			reason.stack.includes('time-matcher.ts') ||
+			reason.stack.includes('scheduler/runner.ts'));
+
+	if (isNodeCronError) {
+		console.error(
+			'⚠️  Detected node-cron internal error - triggering emergency restart...'
+		);
+		console.error('Error details:', {
+			name: reason.name,
+			message: reason.message,
+			stack: reason.stack?.substring(0, 500),
+		});
+		try {
+			await cronScheduler.restartAllJobs();
+			console.log('✅ Successfully restarted cron jobs after node-cron error');
+		} catch (restartError) {
+			console.error('❌ Failed to restart cron jobs:', restartError);
+		}
+	}
+
+	// Do not exit - keep cron jobs running
+});
+
+// Setup graceful shutdown handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGUSR2', gracefulShutdown);
 
 export default app;

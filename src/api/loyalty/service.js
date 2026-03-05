@@ -1,9 +1,9 @@
+import moment from 'moment';
 import {
 	initializeLoyalty,
 	awardXP,
 	recordPlayActivity,
 	recordDeposit,
-	checkIDVerification,
 	evaluateUserTier,
 	getUserLoyalty,
 	getUserXPHistory,
@@ -12,9 +12,6 @@ import {
 	recordWithdrawalUsage,
 	processReferralQualification,
 	manualTierUpgrade,
-	cleanupDepositData,
-	getWithdrawalTime,
-	// NEW functions
 	recordDailyLogin,
 	updateSessionTime,
 	recordWinActivity,
@@ -22,13 +19,15 @@ import {
 	processReferralCommission,
 	processNoWinCashback,
 } from './controller';
+import { LoyaltyProfile } from './model';
+import TierConfigService from '../../services/tier/tierConfigService';
 
 // Export all functions wrapped with consistent error handling
 export const LoyaltyService = {
 	// ===== User Loyalty Management =====
 
 	// Initialize loyalty for a user
-	initializeLoyaltyForUser: async (userId) => {
+	initializeLoyaltyForUser: async userId => {
 		try {
 			const loyalty = await initializeLoyalty(userId);
 			return { success: true, loyalty };
@@ -38,10 +37,241 @@ export const LoyaltyService = {
 		}
 	},
 
-	// Award XP to a user
-	awardUserXP: async (userId, amount, type, description, reference = null) => {
+	initializeTierRequirementsFromConstants: async adminUserId => {
 		try {
-			const loyalty = await awardXP(userId, amount, type, description, reference);
+			await TierConfigService.initializeDefaultTiers(adminUserId);
+			return {
+				success: true,
+				message: 'Tier requirements initialized from constants',
+			};
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get tier requirements from database
+	getTierRequirements: async () => {
+		try {
+			return await TierConfigService.getTierRequirements();
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get specific tier configuration
+	getTierConfig: async tierName => {
+		try {
+			const config = await TierConfigService.getTierConfig(tierName);
+			if (!config) {
+				return {
+					success: false,
+					error: 'Tier configuration not found',
+				};
+			}
+			return { success: true, config };
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Validate user tier requirements
+	validateTierRequirements: async (tierName, userId) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const validation = await TierConfigService.validateTierRequirements(
+				tierName,
+				loyalty.tierProgress
+			);
+
+			return { success: true, validation };
+		} catch (error) {
+			console.error('Error validating tier requirements:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Get tier benefits for a user
+	getUserTierBenefits: async userId => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const benefits = await TierConfigService.getTierBenefits(
+				loyalty.currentTier
+			);
+			if (!benefits) {
+				return { success: false, error: 'Tier benefits not found' };
+			}
+
+			return { success: true, benefits };
+		} catch (error) {
+			console.error('Error getting user tier benefits:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Clear tier configuration cache
+	clearTierConfigCache: () => {
+		TierConfigService.clearCache();
+		return { success: true, message: 'Tier configuration cache cleared' };
+	},
+
+	calculateReferralCommission: async (
+		referrerUserId,
+		gameType,
+		betAmount,
+		spinsOrPlays = 1
+	) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({
+				user: referrerUserId,
+			});
+			if (!loyalty) {
+				return {
+					success: false,
+					error: 'Referrer loyalty profile not found',
+				};
+			}
+
+			const tierConfig = await TierConfigService.getTierConfig(
+				loyalty.currentTier
+			);
+			if (!tierConfig || !tierConfig.referralCommissions) {
+				return {
+					success: true,
+					commission: 0,
+					message: 'No referral commissions for this tier',
+				};
+			}
+
+			const commissionConfig = tierConfig.referralCommissions[gameType];
+			if (!commissionConfig) {
+				return {
+					success: true,
+					commission: 0,
+					message: 'No commission configured for this game type',
+				};
+			}
+
+			let commission = 0;
+
+			switch (gameType) {
+				case 'borlette':
+					commission = commissionConfig.perPlay * spinsOrPlays;
+					break;
+				case 'roulette':
+					commission =
+						commissionConfig.per100Spins * (spinsOrPlays / 100);
+					break;
+				case 'dominoes':
+					commission =
+						commissionConfig.per100Wagered * (betAmount / 100);
+					break;
+				default:
+					return { success: false, error: 'Invalid game type' };
+			}
+
+			// Check monthly cap
+			const monthlyEarned =
+				loyalty.referralCommissions?.monthly?.[gameType]?.earned || 0;
+			const monthlyCap = commissionConfig.monthlyCap;
+
+			if (monthlyEarned + commission > monthlyCap) {
+				commission = Math.max(0, monthlyCap - monthlyEarned);
+			}
+
+			return {
+				success: true,
+				commission,
+				monthlyEarned,
+				monthlyCap,
+				tierConfig: {
+					tier: loyalty.currentTier,
+					gameType,
+					rate: commissionConfig,
+				},
+			};
+		} catch (error) {
+			console.error('Error calculating referral commission:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// NEW: Get tier upgrade requirements for a user
+	getTierUpgradeRequirements: async userId => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const currentTier = loyalty.currentTier;
+			const nextTier = TierConfigService.getNextTier(currentTier);
+
+			if (!nextTier) {
+				return {
+					success: true,
+					message: 'User is already at the highest tier',
+					currentTier,
+					nextTier: null,
+				};
+			}
+
+			const nextTierConfig =
+				await TierConfigService.getTierConfig(nextTier);
+			if (!nextTierConfig) {
+				return {
+					success: false,
+					error: 'Next tier configuration not found',
+				};
+			}
+
+			const progress = await TierConfigService.calculateTierProgress(
+				currentTier,
+				loyalty.tierProgress
+			);
+			const validation = await TierConfigService.validateTierRequirements(
+				nextTier,
+				loyalty.tierProgress
+			);
+
+			return {
+				success: true,
+				currentTier,
+				nextTier,
+				requirements: nextTierConfig.requirements,
+				progress,
+				validation,
+				tierProgress: loyalty.tierProgress,
+			};
+		} catch (error) {
+			console.error('Error getting tier upgrade requirements:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	// Award XP to a user
+	awardUserXP: async (
+		userId,
+		amount,
+		type,
+		description,
+		reference = null
+	) => {
+		try {
+			const loyalty = await awardXP(
+				userId,
+				amount,
+				type,
+				description,
+				reference
+			);
 			return { success: true, loyalty };
 		} catch (error) {
 			console.error('Error awarding XP:', error);
@@ -63,7 +293,7 @@ export const LoyaltyService = {
 	},
 
 	// NEW: Record daily login
-	recordDailyLogin: async (userId) => {
+	recordDailyLogin: async userId => {
 		try {
 			const loyalty = await recordDailyLogin(userId);
 			return { success: true, loyalty };
@@ -85,7 +315,7 @@ export const LoyaltyService = {
 	},
 
 	// NEW: Record win activity
-	recordUserWin: async (userId) => {
+	recordUserWin: async userId => {
 		try {
 			const loyalty = await recordWinActivity(userId);
 			return { success: true, loyalty };
@@ -109,7 +339,7 @@ export const LoyaltyService = {
 	// ===== Tier Management =====
 
 	// Evaluate user tier
-	evaluateUserTier: async (userId) => {
+	evaluateUserTier: async userId => {
 		try {
 			const loyalty = await evaluateUserTier(userId);
 			return { success: true, loyalty };
@@ -120,13 +350,17 @@ export const LoyaltyService = {
 	},
 
 	// Get user loyalty profile
-	getUserLoyaltyProfile: async (userId) => {
+	getUserLoyaltyProfile: async userId => {
 		try {
 			const result = await getUserLoyalty(userId);
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to get loyalty profile' };
+				return {
+					success: false,
+					error:
+						result.entity?.error || 'Failed to get loyalty profile',
+				};
 			}
 		} catch (error) {
 			console.error('Error getting loyalty profile:', error);
@@ -139,7 +373,10 @@ export const LoyaltyService = {
 		try {
 			const loyaltyResult = await getUserLoyalty(userId);
 			if (loyaltyResult.status !== 200) {
-				return { success: false, error: 'Failed to get loyalty profile' };
+				return {
+					success: false,
+					error: 'Failed to get loyalty profile',
+				};
 			}
 
 			const loyalty = loyaltyResult.entity.loyalty;
@@ -160,7 +397,7 @@ export const LoyaltyService = {
 	// ===== Referral System =====
 
 	// Process referral qualification
-	processReferralQualification: async (refereeId) => {
+	processReferralQualification: async refereeId => {
 		try {
 			const result = await processReferralQualification(refereeId);
 			return result;
@@ -171,9 +408,19 @@ export const LoyaltyService = {
 	},
 
 	// NEW: Process referral commission
-	processReferralCommission: async (refereeId, gameType, playAmount, playId) => {
+	processReferralCommission: async (
+		refereeId,
+		gameType,
+		playAmount,
+		playId
+	) => {
 		try {
-			const result = await processReferralCommission(refereeId, gameType, playAmount, playId);
+			const result = await processReferralCommission(
+				refereeId,
+				gameType,
+				playAmount,
+				playId
+			);
 			return result;
 		} catch (error) {
 			console.error('Error processing referral commission:', error);
@@ -182,11 +429,14 @@ export const LoyaltyService = {
 	},
 
 	// Get referral statistics for a user
-	getUserReferralStats: async (userId) => {
+	getUserReferralStats: async userId => {
 		try {
 			const loyaltyResult = await getUserLoyalty(userId);
 			if (loyaltyResult.status !== 200) {
-				return { success: false, error: 'Failed to get loyalty profile' };
+				return {
+					success: false,
+					error: 'Failed to get loyalty profile',
+				};
 			}
 
 			const loyalty = loyaltyResult.entity.loyalty;
@@ -194,8 +444,13 @@ export const LoyaltyService = {
 			return {
 				success: true,
 				totalReferrals: loyalty.referralBenefits.length,
-				qualifiedReferrals: loyalty.referralBenefits.filter(ref => ref.qualified).length,
-				totalXPEarned: loyalty.referralBenefits.reduce((sum, ref) => sum + ref.earnedXP, 0),
+				qualifiedReferrals: loyalty.referralBenefits.filter(
+					ref => ref.qualified
+				).length,
+				totalXPEarned: loyalty.referralBenefits.reduce(
+					(sum, ref) => sum + ref.earnedXP,
+					0
+				),
 				currentTier: loyalty.currentTier,
 				referralCommissions: loyalty.referralCommissions,
 			};
@@ -208,7 +463,7 @@ export const LoyaltyService = {
 	// ===== Cashback Methods =====
 
 	// NEW: Check no-win cashback eligibility
-	checkNoWinCashback: async (userId) => {
+	checkNoWinCashback: async userId => {
 		try {
 			const result = await checkNoWinCashbackEligibility(userId);
 			return { success: true, ...result };
@@ -225,7 +480,12 @@ export const LoyaltyService = {
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to process no-win cashback' };
+				return {
+					success: false,
+					error:
+						result.entity?.error ||
+						'Failed to process no-win cashback',
+				};
 			}
 		} catch (error) {
 			console.error('Error processing no-win cashback:', error);
@@ -234,11 +494,14 @@ export const LoyaltyService = {
 	},
 
 	// Get user's cashback history
-	getUserCashbackHistory: async (userId) => {
+	getUserCashbackHistory: async userId => {
 		try {
 			const loyaltyResult = await getUserLoyalty(userId);
 			if (loyaltyResult.status !== 200) {
-				return { success: false, error: 'Failed to get loyalty profile' };
+				return {
+					success: false,
+					error: 'Failed to get loyalty profile',
+				};
 			}
 
 			const loyalty = loyaltyResult.entity.loyalty;
@@ -263,7 +526,10 @@ export const LoyaltyService = {
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to get XP history' };
+				return {
+					success: false,
+					error: result.entity?.error || 'Failed to get XP history',
+				};
 			}
 		} catch (error) {
 			console.error('Error getting XP history:', error);
@@ -274,13 +540,18 @@ export const LoyaltyService = {
 	// ===== Withdrawal Management =====
 
 	// Check weekly withdrawal limit
-	checkUserWithdrawalLimit: async (userId) => {
+	checkUserWithdrawalLimit: async userId => {
 		try {
 			const result = await checkWeeklyWithdrawalLimit(userId);
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to check withdrawal limit' };
+				return {
+					success: false,
+					error:
+						result.entity?.error ||
+						'Failed to check withdrawal limit',
+				};
 			}
 		} catch (error) {
 			console.error('Error checking withdrawal limit:', error);
@@ -295,7 +566,11 @@ export const LoyaltyService = {
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to record withdrawal' };
+				return {
+					success: false,
+					error:
+						result.entity?.error || 'Failed to record withdrawal',
+				};
 			}
 		} catch (error) {
 			console.error('Error recording withdrawal:', error);
@@ -304,16 +579,67 @@ export const LoyaltyService = {
 	},
 
 	// Get withdrawal processing time
-	getUserWithdrawalTime: async (userId) => {
+	getWithdrawalTime: async userId => {
 		try {
-			const result = await getWithdrawalTime(userId);
-			if (result.status === 200) {
-				return result.entity;
-			} else {
-				return { success: false, error: result.entity?.error || 'Failed to get withdrawal time' };
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
 			}
+
+			const tierConfig = await TierConfigService.getTierConfig(
+				loyalty.currentTier
+			);
+			if (!tierConfig) {
+				return {
+					success: false,
+					error: 'Tier configuration not found',
+				};
+			}
+
+			return {
+				success: true,
+				withdrawalTime: tierConfig.withdrawalTime,
+				tier: loyalty.currentTier,
+			};
 		} catch (error) {
 			console.error('Error getting withdrawal time:', error);
+			return { success: false, error: error.message };
+		}
+	},
+
+	checkWithdrawalLimit: async (userId, amount) => {
+		try {
+			const loyalty = await LoyaltyProfile.findOne({ user: userId });
+			if (!loyalty) {
+				return { success: false, error: 'Loyalty profile not found' };
+			}
+
+			const tierConfig = await TierConfigService.getTierConfig(
+				loyalty.currentTier
+			);
+			if (!tierConfig) {
+				return {
+					success: false,
+					error: 'Tier configuration not found',
+				};
+			}
+
+			const weeklyLimit = tierConfig.weeklyWithdrawalLimit;
+			const weeklyUsed = loyalty.weeklyWithdrawalUsed || 0;
+			const availableLimit = weeklyLimit - weeklyUsed;
+
+			const canWithdraw = amount <= availableLimit;
+
+			return {
+				success: true,
+				canWithdraw,
+				weeklyLimit,
+				weeklyUsed,
+				availableLimit,
+				requestedAmount: amount,
+			};
+		} catch (error) {
+			console.error('Error checking withdrawal limit:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -327,25 +653,13 @@ export const LoyaltyService = {
 			if (result.status === 200) {
 				return result.entity;
 			} else {
-				return { success: false, error: result.entity?.error || 'Failed to upgrade tier' };
+				return {
+					success: false,
+					error: result.entity?.error || 'Failed to upgrade tier',
+				};
 			}
 		} catch (error) {
 			console.error('Error upgrading tier:', error);
-			return { success: false, error: error.message };
-		}
-	},
-
-	// Cleanup deposit data
-	cleanupDepositData: async () => {
-		try {
-			const result = await cleanupDepositData();
-			if (result.status === 200) {
-				return result.entity;
-			} else {
-				return { success: false, error: result.entity?.error || 'Failed to cleanup deposit data' };
-			}
-		} catch (error) {
-			console.error('Error cleaning up deposit data:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -355,7 +669,9 @@ export const LoyaltyService = {
 	// Get loyalty system statistics
 	getLoyaltyStatistics: async () => {
 		try {
-			const { LoyaltyProfile, LoyaltyTransaction } = await import('./model');
+			const { LoyaltyProfile, LoyaltyTransaction } = await import(
+				'./model'
+			);
 
 			const tierDistribution = await LoyaltyProfile.aggregate([
 				{

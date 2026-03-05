@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 import path from 'path';
 import merge from 'lodash/merge';
 import dotenv from 'dotenv-safe';
@@ -62,14 +61,19 @@ const environments = {
 			isActive: true,
 		},
 		dominoConfigData: {
-			turnTimeLimit: 30,
+			turnTimeLimit: 15,
 			houseEdge: 10,
 			entryFees: [5, 10, 20, 30, 50, 100],
 			maxPlayersPerRoom: 4,
 			isActive: true,
-			computerPlayerNames: ['Bot_Alpha', 'Bot_Beta', 'Bot_Gamma', 'Bot_Delta'],
+			computerPlayerNames: [
+				'Bot_Alpha',
+				'Bot_Beta',
+				'Bot_Gamma',
+				'Bot_Delta',
+			],
 			newGameDelay: 30,
-		}
+		},
 	},
 
 	production: {
@@ -137,16 +141,24 @@ const baseConfig = {
 		apiKey: getEnv('RAPID_API_KEY'),
 	},
 
-	payoneerConfig: {
-		apiBaseUrl: getEnv('PAYONEER_API_URL'),
-		apiKey: getEnv('PAYONEER_API_KEY'),
-		programId: getEnv('PAYONEER_PROGRAM_ID'),
-		webhookSecret: getEnv('PAYONEER_WEBHOOK_SECRET'),
+	rapydConfig: {
+		apiBaseUrl: getEnv('RAPYD_API_URL', 'https://sandboxapi.rapyd.net'),
+		accessKey: getEnv('RAPYD_ACCESS_KEY'),
+		secretKey: getEnv('RAPYD_SECRET_KEY'),
+		defaultCountry: getEnv('RAPYD_DEFAULT_COUNTRY', 'US'),
+		defaultCurrency: getEnv('RAPYD_DEFAULT_CURRENCY', 'USD'),
 		conversionRate: 0.2, // 20% of virtual cash becomes real cash
 		minPurchaseAmount: 20,
 		maxPurchaseAmount: 1000,
 		minWithdrawalAmount: 50,
 		initialPromoAmount: 100,
+	},
+
+	inviteConfig: {
+		defaultMessage: getEnv(
+			'INVITE_DEFAULT_MESSAGE',
+			'Join me on FlippX! Download the app and play with me today.'
+		),
 	},
 
 	transactionText: {
@@ -185,6 +197,7 @@ export const joiningBonus = config.joiningBonus;
 export const plivoConfig = config.plivoConfig;
 export const aws = config.aws;
 export const rapidAPI = config.rapidAPI;
-export const payoneerConfig = config.payoneerConfig;
+export const rapydConfig = config.rapydConfig;
 export const transactionText = config.transactionText;
 export const adminData = config.adminData;
+export const inviteConfig = config.inviteConfig;

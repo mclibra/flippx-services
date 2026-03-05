@@ -50,7 +50,7 @@ const LoyaltyProfileSchema = new Schema(
 				type: {
 					type: String,
 					enum: ['WEEKLY', 'MONTHLY', 'NO_WIN'], // Added NO_WIN type
-					default: 'WEEKLY'
+					default: 'WEEKLY',
 				},
 				reference: {
 					monthKey: { type: String },
@@ -151,7 +151,11 @@ const ReferralCommissionSchema = new Schema(
 	{
 		referrer: { type: String, ref: 'User', required: true },
 		referee: { type: String, ref: 'User', required: true },
-		gameType: { type: String, enum: ['BORLETTE', 'ROULETTE', 'DOMINOES'], required: true },
+		gameType: {
+			type: String,
+			enum: ['BORLETTE', 'ROULETTE', 'DOMINOES'],
+			required: true,
+		},
 		playId: { type: String, required: true }, // Ticket/game ID
 		playAmount: { type: Number, required: true },
 		commissionAmount: { type: Number, required: true },
@@ -172,6 +176,15 @@ LoyaltyTransactionSchema.index({ transactionType: 1, createdAt: -1 });
 ReferralCommissionSchema.index({ referrer: 1, createdAt: -1 });
 ReferralCommissionSchema.index({ referee: 1, gameType: 1 });
 
-export const LoyaltyProfile = mongoose.model('LoyaltyProfile', LoyaltyProfileSchema);
-export const LoyaltyTransaction = mongoose.model('LoyaltyTransaction', LoyaltyTransactionSchema);
-export const ReferralCommission = mongoose.model('ReferralCommission', ReferralCommissionSchema);
+export const LoyaltyProfile = mongoose.model(
+	'LoyaltyProfile',
+	LoyaltyProfileSchema
+);
+export const LoyaltyTransaction = mongoose.model(
+	'LoyaltyTransaction',
+	LoyaltyTransactionSchema
+);
+export const ReferralCommission = mongoose.model(
+	'ReferralCommission',
+	ReferralCommissionSchema
+);

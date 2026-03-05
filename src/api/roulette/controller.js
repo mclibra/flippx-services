@@ -1,10 +1,8 @@
 import moment from 'moment';
 import { Roulette } from './model';
 import { RouletteTicket } from '../roulette_ticket/model';
-import {
-	updatePlacedBet,
-	getTotalWinningAmount,
-} from '../roulette_ticket/controller';
+import { updatePlacedBet } from '../roulette_ticket/controller';
+import { RouletteConfig } from './config.model';
 
 export const list = async ({
 	offset,
@@ -76,15 +74,16 @@ export const list = async ({
 			]);
 			roulettePromise = rouletteTickets.map(
 				ticket =>
-					new Promise(async (resolve, reject) => {
+					// eslint-disable-next-line no-async-promise-executor
+					new Promise(async resolve => {
 						let roulette = await Roulette.findById(
-							ticket._id,
+							ticket._id
 						).exec();
 						resolve({
 							...roulette._doc,
 							amount: [ticket],
 						});
-					}),
+					})
 			);
 		} else {
 			const rouletteList = await Roulette.find(params)
@@ -96,7 +95,8 @@ export const list = async ({
 				.exec();
 			roulettePromise = rouletteList.map(
 				roulette =>
-					new Promise(async (resolve, reject) => {
+					// eslint-disable-next-line no-async-promise-executor
+					new Promise(async resolve => {
 						let amount = await RouletteTicket.aggregate([
 							{
 								$match: {
@@ -119,7 +119,7 @@ export const list = async ({
 							...roulette._doc,
 							amount,
 						});
-					}),
+					})
 			);
 		}
 		const roulette = await Promise.all(roulettePromise);
@@ -146,7 +146,7 @@ export const list = async ({
 
 export const show = async (
 	{ id },
-	{ offset, limit, sortBy = 'createdAt', sortOrder = 'desc' },
+	{ offset, limit, sortBy = 'createdAt', sortOrder = 'desc' }
 ) => {
 	try {
 		const roulette = await Roulette.findById(id).exec();
@@ -190,7 +190,7 @@ export const show = async (
 				amount: amount.map(item => ({
 					...item,
 					totalAmountPlayed: parseFloat(
-						item.totalAmountPlayed,
+						item.totalAmountPlayed
 					).toFixed(2),
 					totalAmountWon: parseFloat(item.totalAmountWon).toFixed(2),
 				})),
@@ -228,7 +228,7 @@ export const nextSpin = async () => {
 			});
 		}
 		const countdown = parseInt(
-			(nextRoulette.spinSchedlue - currentTime) / 1000,
+			(nextRoulette.spinSchedlue - currentTime) / 1000
 		);
 		return {
 			status: 200,
@@ -250,7 +250,7 @@ export const nextSpin = async () => {
 	}
 };
 
-export const winningNumber = async ({ id }, { userId }) => {
+export const winningNumber = async ({ id }) => {
 	try {
 		let currentTime = moment.now();
 		let nextRoulette = await Roulette.findById(id);
@@ -290,7 +290,36 @@ export const winningNumber = async ({ id }, { userId }) => {
 
 const generateRouletteResult = async roulette => {
 	roulette.status = 'COMPLETED';
-	roulette.winningNumber = Math.floor(Math.random() * 37);
+
+	const now = new Date();
+	let overrideNumber = null;
+
+	try {
+		const config = await RouletteConfig.getGlobalConfig();
+		const hasTemporaryWinningNumber =
+			typeof config.temporaryWinningNumber === 'number' &&
+			!Number.isNaN(config.temporaryWinningNumber);
+		const isExpired =
+			config.temporaryWinningNumberExpiresAt &&
+			config.temporaryWinningNumberExpiresAt < now;
+
+		if (isExpired) {
+			config.temporaryWinningNumber = null;
+			config.temporaryWinningNumberExpiresAt = null;
+			config.temporaryWinningNumberSetBy = null;
+			config.temporaryWinningNumberSetAt = null;
+			await config.save();
+		} else if (hasTemporaryWinningNumber) {
+			overrideNumber = config.temporaryWinningNumber;
+		}
+	} catch (error) {
+		console.error('Failed to load roulette global config:', error);
+	}
+
+	roulette.winningNumber =
+		overrideNumber !== null && overrideNumber !== undefined
+			? overrideNumber
+			: Math.floor(Math.random() * 37);
 	// let winningNumber1 = Math.floor(Math.random() * 37),
 	// 	winningNumber2 = Math.floor(Math.random() * 37);
 	// if (winningNumber2 === winningNumber1) {

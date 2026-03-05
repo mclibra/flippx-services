@@ -1,13 +1,14 @@
 import { Withdrawal } from './model';
 import { Wallet } from '../wallet/model';
 import { BankAccount } from '../bank_account/model';
-import { Transaction } from '../transaction/model';
+import { Card } from '../card/model';
 import { LoyaltyService } from '../loyalty/service';
 import { makeTransaction } from '../transaction/controller';
+import { Transaction } from '../transaction/model';
 
 export const initiateWithdrawal = async req => {
 	try {
-		const { amount, bankAccountId } = req.body;
+		const { amount, bankAccountId, cardId } = req.body;
 		const user = req.user;
 
 		// Validate input
@@ -21,49 +22,125 @@ export const initiateWithdrawal = async req => {
 			};
 		}
 
-		if (!bankAccountId) {
+		// Either bankAccountId or cardId must be provided
+		if (!bankAccountId && !cardId) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Bank account is required',
+					error: 'Either bank account or card is required',
+				},
+			};
+		}
+
+		// Cannot provide both bankAccountId and cardId
+		if (bankAccountId && cardId) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Cannot provide both bank account and card. Please provide either bankAccountId or cardId.',
+				},
+			};
+		}
+
+		// Check if user has at least one card or bank account
+		const [userCards, userBankAccounts] = await Promise.all([
+			Card.countDocuments({ user: user._id }),
+			BankAccount.countDocuments({ user: user._id }),
+		]);
+
+		if (userCards === 0 && userBankAccounts === 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'At least one card or bank account is required to initiate a withdrawal. Please add a card or bank account first.',
+				},
+			};
+		}
+
+		// Check if user has address updated
+		const hasAddress =
+			user.address &&
+			user.address.address1 &&
+			user.address.city &&
+			user.address.state &&
+			user.address.country &&
+			user.address.pincode;
+
+		if (!hasAddress) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Address must be updated before initiating a withdrawal. Please update your address first.',
 				},
 			};
 		}
 
 		// **NEW: Check loyalty-based withdrawal limits**
 		try {
-			const withdrawalLimitResult = await LoyaltyService.checkWithdrawalLimit(user._id);
+			console.log(
+				'[initiateWithdrawal] Checking withdrawal limit for user:',
+				user._id
+			);
+			const withdrawalLimitResult =
+				await LoyaltyService.checkUserWithdrawalLimit(user._id);
+			console.log(
+				'[initiateWithdrawal] Withdrawal limit result:',
+				JSON.stringify(withdrawalLimitResult, null, 2)
+			);
+
 			if (!withdrawalLimitResult.success) {
+				console.error(
+					'[initiateWithdrawal] Withdrawal limit check failed:',
+					withdrawalLimitResult.error
+				);
 				return {
 					status: 500,
 					entity: {
 						success: false,
-						error: 'Failed to validate withdrawal limits. Please try again.',
+						error:
+							withdrawalLimitResult.error ||
+							'Failed to validate withdrawal limits. Please try again.',
 					},
 				};
 			}
 
-			if (amount > withdrawalLimitResult.availableAmount) {
+			// Map the returned properties to expected format
+			const availableAmount = withdrawalLimitResult.remaining || 0;
+			const usedAmount = withdrawalLimitResult.used || 0;
+
+			if (amount > availableAmount) {
 				return {
 					status: 400,
 					entity: {
 						success: false,
-						error: `Withdrawal amount exceeds your weekly limit. Available: $${withdrawalLimitResult.availableAmount}, Requested: $${amount}`,
-						availableAmount: withdrawalLimitResult.availableAmount,
+						error: `Withdrawal amount exceeds your weekly limit. Available: $${availableAmount}, Requested: $${amount}`,
+						availableAmount,
 						weeklyLimit: withdrawalLimitResult.weeklyLimit,
-						usedAmount: withdrawalLimitResult.usedAmount,
+						usedAmount,
 						resetDate: withdrawalLimitResult.resetDate,
 					},
 				};
 			}
 		} catch (loyaltyError) {
-			console.error('Error checking withdrawal limits:', loyaltyError);
+			console.error(
+				'[initiateWithdrawal] Error checking withdrawal limits:',
+				loyaltyError
+			);
+			console.error(
+				'[initiateWithdrawal] Error stack:',
+				loyaltyError.stack
+			);
 			return {
 				status: 500,
 				entity: {
 					success: false,
-					error: 'Failed to validate withdrawal limits. Please try again.',
+					error:
+						loyaltyError.message ||
+						'Failed to validate withdrawal limits. Please try again.',
 				},
 			};
 		}
@@ -76,25 +153,69 @@ export const initiateWithdrawal = async req => {
 				entity: {
 					success: false,
 					error: 'Insufficient withdrawable real cash balance',
-					availableWithdrawable: wallet ? wallet.realBalanceWithdrawable : 0,
-					totalReal: wallet ? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable : 0,
+					availableWithdrawable: wallet
+						? wallet.realBalanceWithdrawable
+						: 0,
+					totalReal: wallet
+						? wallet.realBalanceWithdrawable +
+							wallet.realBalanceNonWithdrawable
+						: 0,
 				},
 			};
 		}
 
-		// Validate bank account
-		const bankAccount = await BankAccount.findById(bankAccountId);
-		if (
-			!bankAccount ||
-			bankAccount.user.toString() !== user._id.toString()
-		) {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Invalid bank account',
-				},
-			};
+		// Validate bank account or card
+		let bankAccount = null;
+		let card = null;
+
+		if (bankAccountId) {
+			bankAccount = await BankAccount.findById(bankAccountId);
+			if (
+				!bankAccount ||
+				bankAccount.user.toString() !== user._id.toString()
+			) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Invalid bank account',
+					},
+				};
+			}
+		}
+
+		if (cardId) {
+			card = await Card.findById(cardId);
+			if (!card || card.user.toString() !== user._id.toString()) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Invalid card',
+					},
+				};
+			}
+
+			// Verify card has a valid beneficiary
+			if (!card.rapydBeneficiaryId) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Card does not have a valid beneficiary. Please ensure the card was created successfully.',
+					},
+				};
+			}
+
+			if (card.rapydBeneficiaryError) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Card has a beneficiary creation error: ${card.rapydBeneficiaryError}. Please contact support.`,
+					},
+				};
+			}
 		}
 
 		// Calculate withdrawal fee (if any)
@@ -102,15 +223,24 @@ export const initiateWithdrawal = async req => {
 		const netAmount = amount - fee;
 
 		// Create withdrawal record
-		const withdrawal = await Withdrawal.create({
+		const withdrawalData = {
 			user: user._id,
-			bankAccount: bankAccountId,
 			amount,
 			fee,
 			netAmount,
 			status: 'PENDING',
 			requestDate: new Date(),
-		});
+		};
+
+		if (bankAccountId) {
+			withdrawalData.bankAccount = bankAccountId;
+		}
+
+		if (cardId) {
+			withdrawalData.card = cardId;
+		}
+
+		const withdrawal = await Withdrawal.create(withdrawalData);
 
 		await makeTransaction(
 			user._id.toString(),
@@ -141,68 +271,36 @@ export const initiateWithdrawal = async req => {
 	}
 };
 
-export const approveWithdrawal = async req => {
+export const getUserWithdrawals = async req => {
 	try {
-		const { id } = req.params;
-		const admin = req.user;
+		const user = req.user;
+		const { limit = 10, offset = 0, status } = req.query;
 
-		// Verify admin permissions
-		if (admin.role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized',
-				},
-			};
+		let query = { user: user._id };
+		if (status) {
+			query.status = status.toUpperCase();
 		}
 
-		// Find the withdrawal
-		const withdrawal = await Withdrawal.findById(id).populate('user');
-		if (!withdrawal) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'Withdrawal not found',
-				},
-			};
-		}
+		const withdrawals = await Withdrawal.find(query)
+			.populate('bankAccount')
+			.populate('card')
+			.sort({ createdAt: -1 })
+			.limit(parseInt(limit))
+			.skip(parseInt(offset));
 
-		if (withdrawal.status !== 'PENDING') {
-			return {
-				status: 400,
-				entity: {
-					success: false,
-					error: 'Withdrawal is not in pending status',
-				},
-			};
-		}
-
-		// Update withdrawal status
-		withdrawal.status = 'APPROVED';
-		withdrawal.approvedBy = admin._id;
-		withdrawal.processedDate = new Date();
-		await withdrawal.save();
-
-		// Update transaction status
-		await Transaction.updateOne(
-			{
-				transactionIdentifier: 'WITHDRAWAL_PENDING',
-				'transactionData.withdrawalId': withdrawal._id,
-			},
-			{
-				status: 'COMPLETED',
-				transactionIdentifier: 'WITHDRAWAL_APPROVED',
-			}
-		);
+		const total = await Withdrawal.countDocuments(query);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				withdrawal,
-				message: 'Withdrawal approved successfully',
+				withdrawals,
+				total,
+				pagination: {
+					limit: parseInt(limit),
+					offset: parseInt(offset),
+					hasMore: parseInt(offset) + parseInt(limit) < total,
+				},
 			},
 		};
 	} catch (error) {
@@ -211,31 +309,23 @@ export const approveWithdrawal = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to approve withdrawal',
+				error: error.message || 'Failed to get user withdrawals',
 			},
 		};
 	}
 };
 
-export const rejectWithdrawal = async req => {
+export const getWithdrawals = async req => {
+	return await getUserWithdrawals(req);
+};
+
+export const cancelWithdrawal = async req => {
 	try {
 		const { id } = req.params;
-		const { reason } = req.body;
-		const admin = req.user;
+		const user = req.user;
 
-		// Verify admin permissions
-		if (admin.role !== 'ADMIN') {
-			return {
-				status: 403,
-				entity: {
-					success: false,
-					error: 'Unauthorized',
-				},
-			};
-		}
-
-		// Find the withdrawal
-		const withdrawal = await Withdrawal.findById(id).populate('user');
+		// Find the withdrawal and verify it belongs to the user
+		const withdrawal = await Withdrawal.findById(id);
 		if (!withdrawal) {
 			return {
 				status: 404,
@@ -246,26 +336,38 @@ export const rejectWithdrawal = async req => {
 			};
 		}
 
+		// Verify the withdrawal belongs to the authenticated user
+		if (withdrawal.user.toString() !== user._id.toString()) {
+			return {
+				status: 403,
+				entity: {
+					success: false,
+					error: 'Unauthorized - This withdrawal does not belong to you',
+				},
+			};
+		}
+
+		// Only allow cancellation of PENDING withdrawals
 		if (withdrawal.status !== 'PENDING') {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Withdrawal is not in pending status',
+					error: `Cannot cancel withdrawal with status: ${withdrawal.status}. Only PENDING withdrawals can be cancelled.`,
 				},
 			};
 		}
 
 		// Update withdrawal status
 		withdrawal.status = 'REJECTED';
-		withdrawal.rejectionReason = reason || 'Rejected by admin';
-		withdrawal.approvedBy = admin._id;
+		withdrawal.rejectionReason = 'Cancelled by user';
 		withdrawal.processedDate = new Date();
 		await withdrawal.save();
 
+		// Create WITHDRAWAL_REJECTED transaction to refund the amount
 		await makeTransaction(
-			withdrawal.user._id.toString(),
-			withdrawal.user.role,
+			user._id.toString(),
+			user.role,
 			'WITHDRAWAL_REJECTED',
 			withdrawal.amount,
 			withdrawal._id.toString(),
@@ -289,7 +391,7 @@ export const rejectWithdrawal = async req => {
 			entity: {
 				success: true,
 				withdrawal,
-				message: 'Withdrawal rejected and amount refunded',
+				message: 'Withdrawal cancelled and amount refunded',
 			},
 		};
 	} catch (error) {
@@ -298,101 +400,7 @@ export const rejectWithdrawal = async req => {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to reject withdrawal',
-			},
-		};
-	}
-};
-
-export const getUserWithdrawals = async req => {
-	try {
-		const user = req.user;
-		const { limit = 10, offset = 0, status } = req.query;
-
-		let query = { user: user._id };
-		if (status) {
-			query.status = status.toUpperCase();
-		}
-
-		const withdrawals = await Withdrawal.find(query)
-			.populate('bankAccount')
-			.sort({ createdAt: -1 })
-			.limit(parseInt(limit))
-			.skip(parseInt(offset));
-
-		const total = await Withdrawal.countDocuments(query);
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				withdrawals,
-				total,
-				pagination: {
-					limit: parseInt(limit),
-					offset: parseInt(offset),
-					hasMore: (parseInt(offset) + parseInt(limit)) < total,
-				},
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to get user withdrawals',
-			},
-		};
-	}
-};
-
-export const getWithdrawals = async (req, res) => {
-	return await getUserWithdrawals(req);
-};
-
-export const getAdminWithdrawals = async req => {
-	try {
-		const { limit = 20, offset = 0, status, userId } = req.query;
-
-		let query = {};
-		if (status) {
-			query.status = status.toUpperCase();
-		}
-		if (userId) {
-			query.user = userId;
-		}
-
-		const withdrawals = await Withdrawal.find(query)
-			.populate('user', 'name phone email')
-			.populate('bankAccount')
-			.populate('approvedBy', 'name')
-			.sort({ createdAt: -1 })
-			.limit(parseInt(limit))
-			.skip(parseInt(offset));
-
-		const total = await Withdrawal.countDocuments(query);
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				withdrawals,
-				total,
-				pagination: {
-					limit: parseInt(limit),
-					offset: parseInt(offset),
-					hasMore: (parseInt(offset) + parseInt(limit)) < total,
-				},
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to get admin withdrawals',
+				error: error.message || 'Failed to cancel withdrawal',
 			},
 		};
 	}

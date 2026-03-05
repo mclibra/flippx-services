@@ -1,4 +1,4 @@
-import moment from 'moment';
+import crypto from 'crypto';
 import AWS from 'aws-sdk';
 import { jwtSign, jwtVerify } from '../../services/jwt/';
 import { generateToken } from '../../services/crypto';
@@ -7,7 +7,6 @@ import {
 	sendVerificationCode,
 	verifyVerificationCode,
 } from '../text/controller';
-import { makeTransaction } from '../transaction/controller';
 import { User } from './model';
 import { Wallet } from '../wallet/model';
 import { getUserBalance } from '../wallet/controller';
@@ -23,98 +22,18 @@ export const getAdminUserId = async () => {
 	return admin.id;
 };
 
-export const list = async ({
-	offset,
-	key,
-	limit,
-	role,
-	startDate,
-	status,
-	endDate,
-	sortBy = 'createdAt',
-}) => {
-	try {
-		let params = {};
-		if (role) {
-			params.role = role.toUpperCase();
-		}
-		if (startDate || endDate) {
-			params['$and'] = [];
-			if (startDate) {
-				params['$and'].push({
-					createdAt: {
-						$gte: moment(parseInt(startDate)).toISOString(),
-					},
-				});
-			}
-			if (endDate) {
-				params['$and'].push({
-					createdAt: {
-						$lte: moment(parseInt(endDate)).toISOString(),
-					},
-				});
-			}
-		}
-		if (status) {
-			params.isActive = status === 'ACTIVE' ? true : false;
-		}
-		if (key) {
-			params['$or'] = [
-				{
-					'name.firstName': new RegExp(key, 'i'),
-				},
-				{
-					'name.lastName': new RegExp(key, 'i'),
-				},
-				{
-					phone: new RegExp(key, 'i'),
-				},
-				{
-					userName: new RegExp(key, 'i'),
-				},
-			];
-		}
-		const users = await User.find(params)
-			.limit(limit ? parseInt(limit) : 10)
-			.skip(offset ? parseInt(offset) : 0)
-			.sort({
-				[sortBy]: 'desc',
-			})
-			.exec();
-		const total = await User.count(params).exec();
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				users,
-				total,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
 export const sendOtp = async body => {
 	try {
 		const { countryCode, phone } = body;
 		const pattern = /^([0-9]){7,10}$/;
 		if (!pattern.test(phone)) {
-			throw 'Invalid phone number.';
+			throw 'Invalid phone number format. Please enter a valid phone number.';
 		}
 		const verificationCode = config.enableText
 			? generateRandomDigits(4)
 			: 1234;
 		const message = `${verificationCode} is your OTP to register on Megacash. The OTP is valid for 5 minutes. Please contact MegaPay support.`;
 
-		console.log('verificationCode => ', verificationCode);
 		const response = await sendVerificationCode({
 			phone: `${countryCode}${phone}`,
 			verificationCode,
@@ -130,10 +49,16 @@ export const sendOtp = async body => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Unable to send verification code. Please check your phone number and try again.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -143,13 +68,6 @@ export const verifyOtp = async body => {
 	try {
 		const { countryCode, phone, verificationCode, verificationToken } =
 			body;
-		console.log(
-			'countryCode, phone, verificationCode, verificationToken => ',
-			countryCode,
-			phone,
-			verificationCode,
-			verificationToken
-		);
 		const response = await verifyVerificationCode({
 			phone: `${countryCode}${phone}`,
 			verificationCode,
@@ -165,10 +83,16 @@ export const verifyOtp = async body => {
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Invalid or expired verification code. Please request a new code.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -176,7 +100,16 @@ export const verifyOtp = async body => {
 
 export const create = async body => {
 	try {
-		const { countryCode, phone, name, password, dob, refferalCode } = body;
+		const {
+			countryCode,
+			phone,
+			name,
+			password,
+			dob,
+			refferalCode,
+			countryName,
+			countryISO,
+		} = body;
 		const slugName = `${name.firstName}${name.lastName}`;
 
 		// Check if user already exists
@@ -190,9 +123,24 @@ export const create = async body => {
 				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number or login.',
 				},
 			};
+		}
+
+		// Validate state code if address is provided
+		if (body.address?.state) {
+			const stateCode = String(body.address.state).trim().toUpperCase();
+			if (!/^[A-Z]{2}$/.test(stateCode)) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+					},
+				};
+			}
+			body.address.state = stateCode;
 		}
 
 		// Create the user
@@ -200,10 +148,13 @@ export const create = async body => {
 			name,
 			slugName,
 			countryCode,
+			countryName,
+			countryISO,
 			dob,
 			password,
 			phone,
 			refferalCode: refferalCode ? refferalCode : null,
+			address: body.address,
 		});
 
 		if (user._id) {
@@ -216,29 +167,41 @@ export const create = async body => {
 
 			// **NEW: Initialize loyalty profile for the user**
 			try {
-				const loyaltyResult = await LoyaltyService.initializeLoyaltyForUser(user._id);
+				const loyaltyResult =
+					await LoyaltyService.initializeLoyaltyForUser(user._id);
 				if (!loyaltyResult.success) {
-					console.warn(`Failed to initialize loyalty for user ${user._id}:`, loyaltyResult.error);
+					console.warn(
+						`Failed to initialize loyalty for user ${user._id}:`,
+						loyaltyResult.error
+					);
 					// Don't fail user creation if loyalty initialization fails
-				} else {
-					console.log(`Loyalty profile initialized for user ${user._id}`);
 				}
 			} catch (loyaltyError) {
-				console.error(`Error initializing loyalty for user ${user._id}:`, loyaltyError);
+				console.error(
+					`Error initializing loyalty for user ${user._id}:`,
+					loyaltyError
+				);
 				// Don't fail user creation if loyalty initialization fails
 			}
 
 			// **NEW: Process referral qualification if referral code exists**
 			if (refferalCode) {
 				try {
-					const referralResult = await LoyaltyService.processReferralQualification(user._id);
+					const referralResult =
+						await LoyaltyService.processReferralQualification(
+							user._id
+						);
 					if (!referralResult.success) {
-						console.warn(`Failed to process referral qualification for user ${user._id}:`, referralResult.error);
-					} else {
-						console.log(`Referral qualification processed for user ${user._id}`, referralResult);
+						console.warn(
+							`Failed to process referral qualification for user ${user._id}:`,
+							referralResult.error
+						);
 					}
 				} catch (referralError) {
-					console.error(`Error processing referral qualification for user ${user._id}:`, referralError);
+					console.error(
+						`Error processing referral qualification for user ${user._id}:`,
+						referralError
+					);
 				}
 			}
 
@@ -260,76 +223,59 @@ export const create = async body => {
 			status: 500,
 			entity: {
 				success: false,
-				error: 'Invalid parameters.',
+				error: 'Unable to create account. Please check your registration details and try again.',
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
-				status: 500,
+				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number or login.',
 				},
 			};
 		} else if (error.name === 'TokenExpiredError') {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Signup token has expired.',
+					error: 'Registration token has expired. Please complete the registration process again.',
 				},
 			};
 		} else if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid registration details provided. Please check all fields and try again.';
 			return {
-				status: 500,
+				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid parameters passed.',
+					error:
+						validationErrors ||
+						'Invalid registration details provided. Please check all fields and try again.',
 				},
 			};
-		}
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const userData = async params => {
-	try {
-		const user = await User.findById(params.id);
-		if (user._id) {
-			const walletDataResponse = await getUserBalance({ _id: params.id });
+		} else if (error.name === 'CastError') {
 			return {
-				status: 200,
+				status: 400,
 				entity: {
-					success: true,
-					user,
-					walletData: walletDataResponse.entity.success
-						? walletDataResponse.entity.walletData
-						: {},
+					success: false,
+					error: 'Invalid data format. Please check your registration details and try again.',
 				},
 			};
 		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to create account. Please verify your information and try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: 'Invalid user ID.',
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -342,7 +288,7 @@ export const verifySecurePin = async (user, { securePin }) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: `Your account has been blocked due to 3 failed attempts. Please contact MegaPay support.`,
+					error: 'Account temporarily locked due to multiple failed attempts. Please contact support for assistance.',
 				},
 			};
 		}
@@ -366,28 +312,30 @@ export const verifySecurePin = async (user, { securePin }) => {
 				status: 403,
 				entity: {
 					success: false,
-					error: `Invalid secure pin. Your account has been blocked due to 3 failed attempts. Please contact MegaPay support.`,
+					error: 'Invalid secure PIN. Account temporarily locked due to multiple failed attempts. Please contact support for assistance.',
 				},
 			};
 		}
+		const remainingAttempts = 3 - failedAttempts[user._id.toString()];
 		return {
 			status: 403,
 			entity: {
 				success: false,
-				error:
-					failedAttempts[user._id.toString()] > 2
-						? `Invalid secure pin. Your account has been blocked. Please contact MegaPay support.`
-						: `Invalid secure pin. You have ${3 - failedAttempts[user._id.toString()]
-						} attempt left.`,
+				error: `Invalid secure PIN. ${remainingAttempts} ${
+					remainingAttempts === 1 ? 'attempt' : 'attempts'
+				} remaining before account lock.`,
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to verify secure PIN. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -401,13 +349,12 @@ export const resetPassword = async ({
 }) => {
 	try {
 		const decodedToken = jwtVerify(verificationToken);
-		console.log(decodedToken);
 		if (decodedToken.phone !== `${countryCode}${phone}`) {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Invalid token passed.',
+					error: 'Invalid or mismatched reset token. Please request a new password reset.',
 				},
 			};
 		}
@@ -431,113 +378,62 @@ export const resetPassword = async ({
 			};
 		}
 		return {
-			status: 500,
+			status: 404,
 			entity: {
 				success: false,
-				error: 'Invalid token passed.',
+				error: 'User account not found. Please verify your phone number and try again.',
 			},
 		};
 	} catch (error) {
-		console.log(error);
 		if (error.name === 'MongoError' && error.code === 11000) {
 			return {
-				status: 500,
+				status: 409,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
+					error: 'Phone number is already registered. Please use a different phone number.',
 				},
 			};
 		} else if (error.name === 'TokenExpiredError') {
 			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Signup token has expired.',
+					error: 'Password reset token has expired. Please request a new password reset.',
 				},
 			};
-		}
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const addUser = async body => {
-	try {
-		body.slugName = `${body.name.firstName}${body.name.lastName}`;
-		const user = await User.create(body);
-		if (user._id) {
-			let walletData = {
-				user: user._id,
-			};
-			if (body.initialAmount) {
-				walletData.totalBalance = parseFloat(body.initialAmount);
-			}
-			await Wallet.create(walletData);
-
-			// **NEW: Initialize loyalty profile for admin-created users**
-			try {
-				const loyaltyResult = await LoyaltyService.initializeLoyaltyForUser(user._id);
-				if (!loyaltyResult.success) {
-					console.warn(`Failed to initialize loyalty for admin-created user ${user._id}:`, loyaltyResult.error);
-				} else {
-					console.log(`Loyalty profile initialized for admin-created user ${user._id}`);
-				}
-			} catch (loyaltyError) {
-				console.error(`Error initializing loyalty for admin-created user ${user._id}:`, loyaltyError);
-			}
-
+		} else if (error.name === 'JsonWebTokenError') {
 			return {
-				status: 200,
-				entity: {
-					success: true,
-					user: user.view(true),
-				},
-			};
-		}
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: 'Invalid parameters.',
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		if (error.name === 'MongoError' && error.code === 11000) {
-			return {
-				status: 500,
+				status: 401,
 				entity: {
 					success: false,
-					error: 'Phone number already registered.',
-				},
-			};
-		} else if (error.name === 'TokenExpiredError') {
-			return {
-				status: 500,
-				entity: {
-					success: false,
-					error: 'Signup token has expired.',
+					error: 'Invalid password reset token. Please request a new password reset.',
 				},
 			};
 		} else if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Password does not meet requirements. Please ensure your password meets all criteria.';
 			return {
-				status: 500,
+				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid parameters passed.',
+					error:
+						validationErrors ||
+						'Password does not meet requirements. Please ensure your password meets all criteria.',
 				},
 			};
 		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to reset password. Please verify your information and try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -545,7 +441,66 @@ export const addUser = async body => {
 
 export const update = async (user, body) => {
 	try {
-		const updateResponse = await Object.assign(user, body).save();
+		// Handle address updates - merge with existing address if partial update
+		if (body.address) {
+			// Validate state code if provided
+			if (body.address.state) {
+				const stateCode = String(body.address.state)
+					.trim()
+					.toUpperCase();
+				if (!/^[A-Z]{2}$/.test(stateCode)) {
+					return {
+						status: 400,
+						entity: {
+							success: false,
+							error: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+						},
+					};
+				}
+				body.address.state = stateCode;
+			}
+			// If address is provided as an object, merge with existing address
+			user.address = {
+				...(user.address || {}),
+				...(body.address || {}),
+			};
+			delete body.address; // Remove from body to avoid double assignment
+		}
+
+		// Handle bank account updates
+		if (body.bankAccount !== undefined) {
+			// Replace entire bank account array
+			user.bankAccount = body.bankAccount;
+			delete body.bankAccount; // Remove from body to avoid double assignment
+		}
+
+		// Handle name updates - merge with existing name if partial update
+		if (body.name) {
+			user.name = {
+				...(user.name || {}),
+				...(body.name || {}),
+			};
+			delete body.name; // Remove from body to avoid double assignment
+		}
+
+		// Handle country name and ISO code updates
+		if (body.countryName !== undefined) {
+			user.countryName = body.countryName;
+			delete body.countryName;
+		}
+		if (body.countryISO !== undefined) {
+			user.countryISO = body.countryISO
+				? String(body.countryISO).trim().toUpperCase()
+				: null;
+			delete body.countryISO;
+		}
+
+		// Apply all other updates
+		Object.assign(user, body);
+
+		// Save the updated user
+		const updateResponse = await user.save();
+
 		if (updateResponse._id) {
 			return {
 				status: 200,
@@ -559,16 +514,43 @@ export const update = async (user, body) => {
 			status: 400,
 			entity: {
 				success: false,
-				error: 'Invalid parameters.',
+				error: 'Unable to update profile. Please check your information and try again.',
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		if (error.name === 'ValidationError') {
+			const validationErrors = error.errors
+				? Object.values(error.errors)
+						.map(err => err.message)
+						.join(', ')
+				: 'Invalid profile information provided. Please check all fields and try again.';
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error:
+						validationErrors ||
+						'Invalid profile information provided. Please check all fields and try again.',
+				},
+			};
+		} else if (error.name === 'MongoError' && error.code === 11000) {
+			return {
+				status: 409,
+				entity: {
+					success: false,
+					error: 'Profile information conflicts with an existing account. Please use different information.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to update profile. Please verify your information and try again.';
 		return {
-			status: 409,
+			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -581,6 +563,15 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 				phone: userPhone,
 				countryCode: countryCode,
 			});
+			if (!searchedUser) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'User account not found. Please verify the phone number and country code.',
+					},
+				};
+			}
 			if (searchedUser._id) {
 				const walletDataResponse = await getUserBalance({
 					_id: searchedUser._id,
@@ -597,28 +588,74 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 				};
 			}
 			return {
-				status: 500,
+				status: 404,
 				entity: {
 					success: false,
-					error: 'Invalid user.',
+					error: 'User account not found. Please verify the phone number and country code.',
 				},
 			};
 		} else {
 			return {
-				status: 500,
+				status: 403,
 				entity: {
 					success: false,
-					error: 'You are not authorized to perform this action.',
+					error: 'You do not have permission to access this information.',
 				},
 			};
 		}
 	} catch (error) {
-		console.log(error);
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Failed to retrieve user information. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
+			},
+		};
+	}
+};
+
+export const getMe = async userId => {
+	try {
+		const user = await User.findById(userId);
+		if (!user) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User account not found.',
+				},
+			};
+		}
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				user: user.view(true),
+			},
+		};
+	} catch (error) {
+		if (error.name === 'CastError') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Invalid user ID format. Please verify your account information.',
+				},
+			};
+		}
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to retrieve user information. Please try again.';
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error: errorMessage,
 			},
 		};
 	}
@@ -626,8 +663,8 @@ export const getUserInfo = async (user, { userPhone, countryCode }) => {
 
 export const getSelfImage = async user => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
 		const fileName = `${user._id}_profile_pic.jpg`;
 		const s3Params = {
@@ -644,12 +681,15 @@ export const getSelfImage = async user => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate profile image URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
@@ -660,7 +700,7 @@ export const verifyReset = async body => {
 		const { countryCode, phone } = body;
 		const pattern = /^([0-9]){7,10}$/;
 		if (!pattern.test(phone)) {
-			throw 'Invalid phone number.';
+			throw 'Invalid phone number format. Please enter a valid phone number.';
 		}
 		const user = await User.findOne({
 			countryCode: countryCode,
@@ -672,7 +712,6 @@ export const verifyReset = async body => {
 				: 1234;
 			const message = `${verificationCode} is your OTP to reset password on Megacash. The OTP is valid for 5 minutes. Please contact MegaPay support.`;
 
-			console.log('verificationCode => ', verificationCode);
 			const response = await sendVerificationCode({
 				phone: `${countryCode}${phone}`,
 				verificationCode,
@@ -689,17 +728,23 @@ export const verifyReset = async body => {
 			};
 		}
 		return {
-			status: 500,
+			status: 404,
 			entity: {
 				success: false,
-				error: 'Invalid phone number.',
+				error: 'Phone number not found. Please verify your phone number and country code.',
 			},
 		};
 	} catch (error) {
+		const errorMessage =
+			typeof error === 'string'
+				? error
+				: error?.message ||
+					error?.error ||
+					'Unable to send password reset code. Please verify your phone number and try again.';
 		return {
 			status: 500,
 			entity: {
-				error: typeof error === 'string' ? error : 'An error occurred',
+				error: errorMessage,
 			},
 		};
 	}
@@ -707,15 +752,44 @@ export const verifyReset = async body => {
 
 export const getSignedUrl = async (user, { fileType }) => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
-		const fileName = `${user._id}_profile_pic.${fileType}`;
+		const normalizedFileType = (fileType || '').toLowerCase();
+		const mimeTypeMap = {
+			jpg: 'image/jpeg',
+			jpeg: 'image/jpeg',
+			png: 'image/png',
+			gif: 'image/gif',
+			webp: 'image/webp',
+			bmp: 'image/bmp',
+			svg: 'image/svg+xml',
+			heic: 'image/heic',
+			heif: 'image/heif',
+			mp4: 'video/mp4',
+			mov: 'video/quicktime',
+			avi: 'video/x-msvideo',
+			flv: 'video/x-flv',
+			mkv: 'video/x-matroska',
+			webm: 'video/webm',
+		};
+		const contentType = mimeTypeMap[normalizedFileType];
+		if (!contentType) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: `Unsupported file format. Please upload an image (JPG, PNG, GIF, WebP, BMP, SVG, HEIC, HEIF) or video (MP4, MOV, AVI, FLV, MKV, WebM) file.`,
+				},
+			};
+		}
+		const randomKey = crypto.randomBytes(16).toString('hex');
+		const fileName = `${user._id}_${randomKey}.${normalizedFileType}`;
 		const s3Params = {
 			Bucket: S3_BUCKET,
 			Key: fileName,
 			Expires: 60,
-			ContentType: `image/${fileType}`,
+			ContentType: contentType,
 			ACL: 'public-read',
 		};
 		const signedUrl = s3.getSignedUrl('putObject', s3Params);
@@ -728,21 +802,27 @@ export const getSignedUrl = async (user, { fileType }) => {
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate file upload URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.errors || error,
+				error: errorMessage,
 			},
 		};
 	}
 };
 
-export const getSignedUrlForDocument = async (user, { fileType, documentType }) => {
+export const getSignedUrlForDocument = async (
+	user,
+	{ fileType, documentType }
+) => {
 	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
+		const S3_BUCKET = config.aws.s3BucketName;
+		AWS.config.update(config.aws.config);
 		const s3 = new AWS.S3();
 		const fileName = `${user._id}_${documentType}.${fileType}`;
 		const s3Params = {
@@ -762,135 +842,24 @@ export const getSignedUrlForDocument = async (user, { fileType, documentType }) 
 			},
 		};
 	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const getSignedUrlForAdminView = async (admin, { userId, documentType }) => {
-	try {
-		const S3_BUCKET = config.s3Bucket;
-		AWS.config.region = config.s3Region;
-		const s3 = new AWS.S3();
-		const fileName = `${userId}_${documentType}.jpg`;
-		const s3Params = {
-			Bucket: S3_BUCKET,
-			Key: fileName,
-			Expires: 60,
-		};
-		const signedUrl = s3.getSignedUrl('getObject', s3Params);
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				signedUrl,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const updateUser = async ({ id }, body) => {
-	try {
-		const user = await User.findById(id);
-		if (user._id) {
-			const updateResponse = await Object.assign(user, body).save();
-			if (updateResponse._id) {
-				return {
-					status: 200,
-					entity: {
-						success: true,
-						user: updateResponse.view(true),
-					},
-				};
-			}
-		}
-		return {
-			status: 400,
-			entity: {
-				success: false,
-				error: 'Invalid parameters.',
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 409,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-export const verifyDocument = async (admin, { userId, documentType, verificationStatus, rejectionReason }) => {
-	try {
-		const user = await User.findById(userId);
-		if (!user) {
-			return {
-				status: 404,
-				entity: {
-					success: false,
-					error: 'User not found',
-				},
-			};
-		}
-
-		const updateData = {
-			verificationStatus,
-			verifiedAt: new Date(),
-			verifiedBy: admin._id,
-		};
-
-		if (verificationStatus === 'REJECTED' && rejectionReason) {
-			updateData.rejectionReason = rejectionReason;
-		}
-
-		if (documentType === 'idProof') {
-			user.idProof = { ...user.idProof, ...updateData };
-		} else if (documentType === 'addressProof') {
-			user.addressProof = { ...user.addressProof, ...updateData };
-		} else {
+		if (!fileType || !documentType) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'Invalid document type',
+					error: 'File type and document type are required. Please provide both parameters.',
 				},
 			};
 		}
-
-		await user.save();
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				user: user.view(true),
-			},
-		};
-	} catch (error) {
-		console.log(error);
+		const errorMessage =
+			error?.message ||
+			error?.error ||
+			'Unable to generate document upload URL. Please try again.';
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to verify document',
+				error: errorMessage,
 			},
 		};
 	}

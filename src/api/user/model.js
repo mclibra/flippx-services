@@ -19,6 +19,15 @@ const userSchema = new Schema(
 			required: true,
 			trim: true,
 		},
+		countryName: {
+			type: String,
+			trim: true,
+		},
+		countryISO: {
+			type: String,
+			trim: true,
+			uppercase: true,
+		},
 		phone: {
 			type: String,
 			required: true,
@@ -69,7 +78,18 @@ const userSchema = new Schema(
 			address1: { type: String, default: null },
 			address2: { type: String, default: null },
 			city: { type: String, default: null },
-			state: { type: String, default: null },
+			state: {
+				type: String,
+				default: null,
+				uppercase: true,
+				validate: {
+					validator: function (v) {
+						if (!v) return true; // Allow null/empty
+						return /^[A-Z]{2}$/.test(v);
+					},
+					message: 'State must be a 2-digit uppercase code (e.g., "NY", "CA")',
+				},
+			},
 			country: { type: String, default: null },
 			pincode: { type: String, default: null },
 		},
@@ -99,7 +119,7 @@ const userSchema = new Schema(
 		influencerContractId: {
 			type: Schema.Types.ObjectId,
 			ref: 'Influencer',
-			default: null
+			default: null,
 		},
 		// New fields for document verification
 		idProof: {
@@ -175,7 +195,7 @@ userSchema.pre('save', function (next) {
 userSchema.methods = {
 	view(full) {
 		let view = {};
-		let fields = ['id', 'name', 'picture'];
+		let fields = ['_id', 'name', 'picture'];
 
 		if (full) {
 			fields = [
@@ -188,9 +208,15 @@ userSchema.methods = {
 				'phone',
 				'email',
 				'createdAt',
+				'updatedAt',
+				'address',
+				'sim_nif',
+				'bankAccount',
 				'idProof',
 				'addressProof',
-				'sessionTracking', // Include session tracking in full view
+				'isActive',
+				'isInfluencer',
+				'sessionTracking',
 			];
 		}
 

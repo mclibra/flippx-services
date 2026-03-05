@@ -12,7 +12,13 @@ import { env } from '../../../config';
 export default (apiRoot, routes) => {
 	const app = express();
 
-	app.use(bodyParser.json({ limit: '10mb', extended: true }));
+	// Exclude webhook route from JSON parser to preserve raw body for signature verification
+	app.use((req, res, next) => {
+		if (req.path.includes('/wallet/webhook/rapyd')) {
+			return next();
+		}
+		return bodyParser.json({ limit: '10mb', extended: true })(req, res, next);
+	});
 	app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 	if (env === 'production') {
 		app.set('forceSSLOptions', {
@@ -32,7 +38,13 @@ export default (apiRoot, routes) => {
 	app.set('view engine', 'html');
 
 	app.use(bodyParser.urlencoded({ extended: false }));
-	app.use(bodyParser.json());
+	// Exclude webhook route from JSON parser to preserve raw body for signature verification
+	app.use((req, res, next) => {
+		if (req.path.includes('/wallet/webhook/rapyd')) {
+			return next();
+		}
+		return bodyParser.json()(req, res, next);
+	});
 	app.use(apiRoot, routes);
 	app.use(queryErrorHandler());
 	app.use(bodyErrorHandler());

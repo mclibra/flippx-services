@@ -2,6 +2,8 @@ import config from '../config';
 import { User } from './api/user/model';
 import { Wallet } from './api/wallet/model';
 import { DominoGameConfig } from './api/domino/model';
+import { TierRequirements } from './api/admin/tier-management/model';
+import TierConfigService from './services/tier/tierConfigService';
 
 export const createAdmin = async () => {
 	const adminData = config.adminData;
@@ -27,7 +29,7 @@ export const createDominoConfig = async () => {
 	const configData = config.dominoConfigData;
 	try {
 		let dominoConfigData = await DominoGameConfig.findOne({
-			isActive: true
+			isActive: true,
 		}).exec();
 		if (!dominoConfigData) {
 			dominoConfigData = await DominoGameConfig.create(configData);
@@ -77,6 +79,90 @@ export const createSystemAccount = async () => {
 	} catch (error) {
 		console.error('Failed to create system account:', error);
 		return null;
+	}
+};
+
+// NEW: Initialize tier requirements in database
+export const initializeTierRequirements = async () => {
+	try {
+		// Check if tier requirements already exist
+		const existingCount = await TierRequirements.countDocuments();
+
+		if (existingCount === 0) {
+			console.log('Initializing tier requirements...');
+
+			// Get admin user for audit trail
+			const adminUser = await User.findOne({ role: 'ADMIN' });
+			if (!adminUser) {
+				console.warn(
+					'No admin user found for tier requirements initialization'
+				);
+				return null;
+			}
+
+			// Initialize using the TierConfigService
+			await TierConfigService.initializeDefaultTiers(adminUser._id);
+
+			console.log('Tier requirements initialized successfully');
+			return true;
+		} else {
+			console.log(
+				`Tier requirements already exist (${existingCount} records)`
+			);
+			return true;
+		}
+	} catch (error) {
+		console.error('Failed to initialize tier requirements:', error);
+		return null;
+	}
+};
+
+// NEW: Comprehensive database seeding function
+export const seedDatabase = async () => {
+	console.log('🌱 Starting database seeding...');
+
+	try {
+		// 1. Create admin user
+		console.log('👤 Creating admin user...');
+		const admin = await createAdmin();
+		if (!admin) {
+			console.error('❌ Failed to create admin user');
+			return false;
+		}
+		console.log('✅ Admin user ready');
+
+		// 2. Create system account
+		console.log('🤖 Creating system account...');
+		const systemAccount = await createSystemAccount();
+		if (!systemAccount) {
+			console.error('❌ Failed to create system account');
+			return false;
+		}
+		console.log('✅ System account ready');
+
+		// 3. Create domino config
+		console.log('🎲 Creating domino configuration...');
+		const dominoConfig = await createDominoConfig();
+		if (!dominoConfig) {
+			console.error('❌ Failed to create domino configuration');
+			return false;
+		}
+		console.log('✅ Domino configuration ready');
+
+		// 4. Initialize tier requirements
+		console.log('🏆 Initializing tier requirements...');
+		const tierRequirements = await initializeTierRequirements();
+		if (!tierRequirements) {
+			console.error('❌ Failed to initialize tier requirements');
+			return false;
+		}
+		console.log('✅ Tier requirements ready');
+
+		console.log('🎉 Database seeding completed successfully!');
+		return true;
+	} catch (error) {
+		console.error('❌ Database seeding failed:', error);
+		return false;
 	}
 };
 

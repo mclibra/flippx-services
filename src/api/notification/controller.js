@@ -123,7 +123,7 @@ export const getSelfNotification = async (
 		status,
 		endDate,
 		sortBy = 'createdAt',
-	},
+	}
 ) => {
 	try {
 		let params = {
@@ -187,7 +187,7 @@ export const getSelfNotification = async (
 								messageTitle: notifcation.messageTitle,
 								read: notifcation.read,
 								messageId: notifcation.messageId,
-							},
+							}
 				),
 				total,
 			},
@@ -302,7 +302,7 @@ export const create = async (body, { _id }) => {
 export const show = async (
 	{ id },
 	{ _id, role },
-	{ offset, limit, receiverId, sortBy = 'createdAt', sortOrder = 'desc' },
+	{ offset, limit, receiverId, sortBy = 'createdAt', sortOrder = 'desc' }
 ) => {
 	try {
 		// let params = {

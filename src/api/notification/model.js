@@ -20,7 +20,7 @@ const NotifcationSchema = new Schema(
 				delete ret._id;
 			},
 		},
-	},
+	}
 );
 
 export const Notifcation = mongoose.model('Notifcation', NotifcationSchema);

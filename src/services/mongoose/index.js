@@ -14,7 +14,7 @@ mongoose.Types.ObjectId.prototype.view = function () {
 /* istanbul ignore next */
 mongoose.connection.on('error', err => {
 	console.error('MongoDB connection error: ' + err);
-	// eslint-disable-next-line no-undef
+
 	process.exit(-1);
 });
 

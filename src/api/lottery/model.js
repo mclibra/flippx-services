@@ -1,6 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 
-const status = ['SCHEDULED', 'WAITING', 'COMPLETED', 'CANCELLED'];
+const status = ['SCHEDULED', 'WAITING', 'COMPLETED', 'CANCELLED', 'ERROR'];
 
 const LotterySchema = new Schema(
 	{
@@ -8,6 +8,7 @@ const LotterySchema = new Schema(
 		type: { type: String, required: true, trim: true },
 		scheduledTime: { type: Number, required: true },
 		drawTime: { type: Number, default: null },
+		drawNumber: { type: Number, default: null }, // Store the unique draw number from external lottery API
 		jackpotAmount: { type: Number, default: 0 },
 		metadata: { type: String, default: null }, // Store lottery session name (e.g., "morning", "afternoon", "evening")
 		results: { type: Object, default: null },
@@ -19,7 +20,7 @@ const LotterySchema = new Schema(
 			megaMillions: { type: Number, default: null },
 		},
 		additionalData: {
-			hasMarriageNumbers: { type: Boolean, default: true }
+			hasMarriageNumbers: { type: Boolean, default: true },
 		},
 		status: {
 			type: String,
@@ -64,8 +65,66 @@ const LotteryRestrictionSchema = new Schema(
 	}
 );
 
+LotterySchema.index(
+	{ state: 1, 'externalGameIds.pick3': 1, scheduledTime: 1 },
+	{
+		unique: true,
+		sparse: true,
+		name: 'unique_state_pick3_time',
+	}
+);
+
+LotterySchema.index(
+	{ state: 1, 'externalGameIds.pick4': 1, scheduledTime: 1 },
+	{
+		unique: true,
+		sparse: true,
+		name: 'unique_state_pick4_time',
+	}
+);
+
+const PopularNumbersSchema = new Schema(
+	{
+		state: {
+			type: String,
+			ref: 'State',
+			default: null,
+			// null means global popular numbers
+		},
+		numbers: [
+			{
+				type: String,
+				required: true,
+				validate: {
+					validator: function (v) {
+						// Validate that number is 2 or 3 digits
+						return /^\d{2,3}$/.test(v);
+					},
+					message: 'Each number must be 2 or 3 digits',
+				},
+			},
+		],
+		updatedBy: { type: String, ref: 'User', default: null },
+	},
+	{
+		timestamps: true,
+		toJSON: {
+			virtuals: true,
+			transform: (obj, ret) => {
+				delete ret._id;
+			},
+		},
+	}
+);
+
+PopularNumbersSchema.index({ state: 1 }, { unique: true, sparse: true });
+
 export const Lottery = mongoose.model('Lottery', LotterySchema);
 export const LotteryRestriction = mongoose.model(
 	'LotteryRestriction',
 	LotteryRestrictionSchema
+);
+export const PopularNumbers = mongoose.model(
+	'PopularNumbers',
+	PopularNumbersSchema
 );

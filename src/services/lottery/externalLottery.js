@@ -7,6 +7,7 @@ const api = axios.create({
 		'X-RapidAPI-Host': rapidAPI.apiHost,
 		'X-RapidAPI-Key': rapidAPI.apiKey,
 	},
+	timeout: 30000, // 30 second timeout to prevent hanging
 });
 
 export const fetchGameListByState = async stateCode => {
@@ -22,15 +23,35 @@ export const fetchGameListByState = async stateCode => {
 	}
 };
 
-export const fetchGameResult = async gameId => {
+export const fetchPastDrawDates = async gameId => {
 	try {
-		console.log(`Fetching game result for lottery with external ID: ${gameId}`);
+		console.log(
+			`Fetching past draw dates for lottery with external ID: ${gameId}`
+		);
 		const response = await api.get(
-			`/lottery-results/game-result?gameID=${gameId}`
+			`/lottery-results/past-draws-dates?gameID=${gameId}`
 		);
 		return response.data;
 	} catch (error) {
-		console.error(`Error fetching game result for ID ${gameId}:`, error);
+		console.error(`Error fetching past draw dates for ID ${gameId}:`);
+		throw new Error(`Failed to fetch past draw dates: ${error.message}`);
+	}
+};
+
+export const fetchGameResult = async (gameId, drawID = null) => {
+	try {
+		const url = drawID
+			? `/lottery-results/game-result?gameID=${gameId}&drawID=${drawID}`
+			: `/lottery-results/game-result?gameID=${gameId}`;
+		console.log(
+			`Fetching game result for lottery with external ID: ${gameId}${
+				drawID ? ` and drawID: ${drawID}` : ''
+			}`
+		);
+		const response = await api.get(url);
+		return response.data;
+	} catch (error) {
+		console.error(`Error fetching game result for ID ${gameId}:`);
 		throw new Error(`Failed to fetch game result: ${error.message}`);
 	}
 };

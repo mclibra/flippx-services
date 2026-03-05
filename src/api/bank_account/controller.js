@@ -1,5 +1,10 @@
 import { BankAccount } from './model';
 import { Withdrawal } from '../withdrawal/model';
+import {
+	createBankAccountBeneficiary,
+	deleteBeneficiary,
+} from '../../services/rapyd';
+import { User } from '../user/model';
 
 export const addBankAccount = async req => {
 	try {
@@ -8,26 +13,63 @@ export const addBankAccount = async req => {
 			accountNumber,
 			accountHolderName,
 			routingNumber,
+			bicSwift,
 			accountType,
 		} = req.body;
 
 		const user = req.user;
 
 		// Validate required fields
-		if (
-			!bankName ||
-			!accountNumber ||
-			!accountHolderName ||
-			!routingNumber ||
-			!accountType
-		) {
+		if (!bankName || !accountNumber || !accountHolderName || !accountType) {
 			return {
 				status: 400,
 				entity: {
 					success: false,
-					error: 'All bank account fields are required',
+					error: 'Bank name, account number, account holder name, and account type are required',
 				},
 			};
+		}
+
+		// Get user details to determine country
+		const userDetails = await User.findById(user._id);
+		if (!userDetails) {
+			return {
+				status: 404,
+				entity: {
+					success: false,
+					error: 'User not found',
+				},
+			};
+		}
+
+		// Use user's country ISO code (2-digit ISO 3166-1 ALPHA-2)
+		const isoCountryCode = userDetails.countryISO || 'US';
+
+		// BIC/SWIFT is required for ALL bank accounts (US and non-US)
+		if (!bicSwift) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'BIC/SWIFT code is required for all bank accounts',
+				},
+			};
+		}
+
+		// Validate country-specific requirements
+		const isUSAccount = isoCountryCode?.toUpperCase() === 'US';
+
+		if (isUSAccount) {
+			// US accounts also require routing number
+			if (!routingNumber) {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: 'Routing number is required for US bank accounts',
+					},
+				};
+			}
 		}
 
 		// Check if this is the first account (to set as default)
@@ -42,10 +84,85 @@ export const addBankAccount = async req => {
 			bankName,
 			accountNumber,
 			accountHolderName,
-			routingNumber,
+			routingNumber: routingNumber || null,
+			bicSwift: bicSwift || null,
 			accountType,
 			isDefault,
 		});
+
+		// Create beneficiary in Rapyd immediately
+		try {
+			// Extract name parts
+			const firstName =
+				userDetails.name?.firstName ||
+				userDetails.name?.first ||
+				'User';
+			const lastName =
+				userDetails.name?.lastName || userDetails.name?.last || 'Name';
+
+			// Create beneficiary in Rapyd
+			// BIC/SWIFT is required for all accounts (US and non-US)
+			const beneficiary = await createBankAccountBeneficiary({
+				firstName,
+				lastName,
+				email: userDetails.email || null,
+				phoneNumber: userDetails.phone || null,
+				country: isoCountryCode,
+				currency: 'USD',
+				bankAccountDetails: {
+					bankName,
+					accountNumber,
+					accountHolderName,
+					routingNumber: isUSAccount ? routingNumber : null,
+					bicSwift: bicSwift, // Required for all accounts
+					accountType,
+				},
+				entityType: 'individual',
+				address: userDetails.address?.address1 || null,
+				city: userDetails.address?.city || null,
+				state: userDetails.address?.state || null,
+				postcode: userDetails.address?.pincode || null,
+				identificationType: 'identification_id',
+				identificationValue: userDetails.sim_nif || 'NOT_PROVIDED',
+				merchantReferenceId: bankAccount._id.toString(),
+			});
+
+			// Update bank account with beneficiary ID
+			bankAccount.rapydBeneficiaryId = beneficiary.id;
+			bankAccount.rapydBeneficiaryError = null;
+			await bankAccount.save();
+
+			console.log(
+				`Successfully created Rapyd beneficiary ${beneficiary.id} for bank account ${bankAccount._id}`
+			);
+		} catch (beneficiaryError) {
+			// Log the error but don't fail the bank account creation
+			console.error(
+				`Failed to create Rapyd beneficiary for bank account ${bankAccount._id}:`,
+				beneficiaryError
+			);
+
+			// Store the error in the bank account
+			bankAccount.rapydBeneficiaryError =
+				beneficiaryError.response?.data?.status?.message ||
+				beneficiaryError.message ||
+				'Failed to create beneficiary';
+			await bankAccount.save();
+
+			// Return success but with a warning
+			return {
+				status: 200,
+				entity: {
+					success: true,
+					bankAccount,
+					warning:
+						'Bank account created but beneficiary creation failed. Please contact support.',
+					beneficiaryError:
+						beneficiaryError.response?.data?.status?.message ||
+						beneficiaryError.message,
+				},
+			};
+		}
 
 		return {
 			status: 200,
@@ -188,6 +305,23 @@ export const removeBankAccount = async req => {
 			if (anotherAccount) {
 				anotherAccount.isDefault = true;
 				await anotherAccount.save();
+			}
+		}
+
+		// Delete the Rapyd beneficiary if it exists
+		if (bankAccount.rapydBeneficiaryId) {
+			try {
+				await deleteBeneficiary(bankAccount.rapydBeneficiaryId);
+				console.log(
+					`Successfully deleted Rapyd beneficiary ${bankAccount.rapydBeneficiaryId} for bank account ${bankAccount._id}`
+				);
+			} catch (beneficiaryError) {
+				// Log the error but don't fail the bank account deletion
+				// The beneficiary might have already been deleted or might not exist
+				console.error(
+					`Failed to delete Rapyd beneficiary ${bankAccount.rapydBeneficiaryId} for bank account ${bankAccount._id}:`,
+					beneficiaryError.message
+				);
 			}
 		}
 

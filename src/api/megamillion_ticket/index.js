@@ -6,49 +6,53 @@ import {
 	show,
 	ticketByLottery,
 	listAllByLottery,
-	create,
+	placeBet,
 	cancelTicket,
 	cashoutTicket,
 	commissionSummary,
+	getJackpotAmount,
 } from './controller';
 
 const router = new Router();
 
 router.get('/', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await list(req.params, req.user)),
+	done(res, await list(req.query, req.user))
 );
 
 router.put(
 	'/cashout/:id',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await cashoutTicket(req.params, req.user)),
+	async (req, res) => done(res, await cashoutTicket(req.params, req.user))
 );
 
 router.get(
 	'/commission/summary/:id',
 	xApi(),
 	token({ required: true }),
-	async (req, res) =>
-		done(res, await commissionSummary(req.params, req.user)),
+	async (req, res) => done(res, await commissionSummary(req.params, req.user))
+);
+
+router.get('/jackpot', xApi(), token({ required: true }), async (req, res) =>
+	done(res, await getJackpotAmount())
 );
 
 router.get(
 	'/lottery/:id',
 	xApi(),
 	token({ required: true }),
-	async (req, res) => done(res, await ticketByLottery(req.params, req.query)),
+	async (req, res) => done(res, await ticketByLottery(req.params, req.user))
 );
 
 router.get(
 	'/lottery/:id/list',
 	xApi(),
 	token({ required: true, roles: ['ADMIN'] }),
-	async (req, res) => done(res, await listAllByLottery(req.params, req.user)),
+	async (req, res) => done(res, await listAllByLottery(req.params, req.query))
 );
 
 router.get('/:id', xApi(), token({ required: true }), async (req, res) =>
-	done(res, await show(req.params, req.user)),
+	done(res, await show(req.params, req.user))
 );
 
 router.post(
@@ -56,7 +60,8 @@ router.post(
 	xApi(),
 	// token({ required: true, roles: ['USER'] }),
 	token({ required: true }),
-	async (req, res) => done(res, await create(req.params, req.body, req.user)),
+	async (req, res) =>
+		done(res, await placeBet(req.params, req.body, req.user))
 );
 
 router.delete(
@@ -64,6 +69,6 @@ router.delete(
 	xApi(),
 	// token({ required: true, roles: ['USER'] }),
 	token({ required: true }),
-	async (req, res) => done(res, await cancelTicket(req.params, req.user)),
+	async (req, res) => done(res, await cancelTicket(req.params, req.user))
 );
 export default router;

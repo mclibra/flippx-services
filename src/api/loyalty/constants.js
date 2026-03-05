@@ -85,7 +85,7 @@ export const LOYALTY_TIERS = {
 		referralCommissions: {
 			borlette: { perPlay: 0.04, monthlyCap: 10000 },
 			roulette: { per100Spins: 0.15, monthlyCap: 8000 },
-			dominoes: { per100Wagered: 0.10, monthlyCap: 8000 },
+			dominoes: { per100Wagered: 0.1, monthlyCap: 8000 },
 		},
 	},
 };
@@ -117,7 +117,7 @@ export const SESSION_REQUIREMENTS = {
 export const INFLUENCER_COMMISSIONS = {
 	borlette: { perPlay: 0.25, monthlyCap: 15000 },
 	roulette: { per100Spins: 0.35, monthlyCap: 15000 },
-	dominoes: { per100Wagered: 0.30, monthlyCap: 15000 },
+	dominoes: { per100Wagered: 0.3, monthlyCap: 15000 },
 };
 
 // NEW: Default FlippX collection percentages

@@ -11,7 +11,7 @@ const paymentMethods = [
 	'CREDIT_CARD',
 	'DEBIT_CARD',
 	'BANK_TRANSFER',
-	'PAYONEER_BALANCE',
+	'RAPYD_CHECKOUT',
 ];
 
 const WalletSchema = new Schema(
@@ -19,7 +19,11 @@ const WalletSchema = new Schema(
 		user: { type: String, ref: 'User', required: true },
 		virtualBalance: { type: Number, required: true, default: 0.0 },
 		realBalanceWithdrawable: { type: Number, required: true, default: 0.0 },
-		realBalanceNonWithdrawable: { type: Number, required: true, default: 0.0 },
+		realBalanceNonWithdrawable: {
+			type: Number,
+			required: true,
+			default: 0.0,
+		},
 		active: { type: Boolean, default: true },
 		pendingWithdrawals: { type: Number, default: 0.0 },
 	},
@@ -42,7 +46,12 @@ const PaymentSchema = new Schema(
 	{
 		user: { type: String, ref: 'User', required: true },
 		// Make sessionId optional for manual payments
-		sessionId: { type: String, required: false, unique: true, sparse: true },
+		sessionId: {
+			type: String,
+			required: false,
+			unique: true,
+			sparse: true,
+		},
 		amount: { type: Number, required: true },
 		currency: { type: String, default: 'USD' },
 		method: { type: String, enum: paymentMethods },

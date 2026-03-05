@@ -1,6 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
 
-// eslint-disable-next-line no-undef
 const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 const purchasedBy = ['ADMIN', 'AGENT', 'DEALER', 'USER'];
@@ -50,8 +49,12 @@ const BorletteTicketSchema = new Schema(
 		payoutConfig: {
 			percentage: { type: Number, default: 60 },
 			isCustom: { type: Boolean, default: false },
-			configId: { type: Schema.Types.ObjectId, ref: 'PayoutConfig', default: null },
-			description: { type: String, default: 'Default percentage' }
+			configId: {
+				type: Schema.Types.ObjectId,
+				ref: 'PayoutConfig',
+				default: null,
+			},
+			description: { type: String, default: 'Default percentage' },
 		},
 	},
 	{

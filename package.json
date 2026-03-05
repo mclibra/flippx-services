@@ -5,9 +5,15 @@
 	"private": true,
 	"scripts": {
 		"dev": "node app.js",
+		"tier:migrate": "node src/services/migrations migrate",
+		"lottery:migrate": "node src/services/migrations lottery",
+		"migrate:all": "node src/services/migrations all",
 		"start": "./node_modules/pm2/bin/pm2-runtime app.js",
 		"poststart": "node ./node_modules/pm2/bin/pm2 logs",
-		"eslint": "eslint ."
+		"eslint": "eslint .",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"lint:check": "eslint . --max-warnings 0"
 	},
 	"nodemonConfig": {
 		"ignore": [
@@ -22,7 +28,7 @@
 		"babel-loader": "^8.1.0",
 		"babel-plugin-source-map-support": "^2.1.2",
 		"cross-env": "^5.0.5",
-		"eslint": "^8.50.0",
+		"eslint": "^9.33.0",
 		"eslint-config-prettier": "^9.0.0",
 		"eslint-plugin-prettier": "^5.0.0",
 		"nock": "^9.0.2",
@@ -55,7 +61,7 @@
 		"mongoose-sequence": "^5.2.2",
 		"mongoose-slug-generator": "^1.0.4",
 		"morgan": "^1.7.0",
-		"node-cron": "^4.0.3",
+		"node-cron": "4.2.1",
 		"passport": "^0.4.0",
 		"passport-headerapikey": "^1.1.0",
 		"passport-http": "^0.3.0",

@@ -1,6 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
 
-// eslint-disable-next-line no-undef
 const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 const purchasedBy = ['ADMIN', 'AGENT', 'DEALER', 'USER'];

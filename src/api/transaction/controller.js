@@ -1,10 +1,6 @@
-import { generateRandomDigits } from '../../services/helper/utils';
 import { Wallet } from '../wallet/model';
 import { User } from '../user/model';
 import { Transaction } from './model';
-import { sendMessage } from '../text/controller';
-import { BorletteTicket } from '../borlette_ticket/model';
-import { MegaMillionTicket } from '../megamillion_ticket/model';
 import { LoyaltyService } from '../loyalty/service';
 
 const config = {
@@ -16,21 +12,6 @@ const config = {
 	withdrawCommissionAgent: 0.01,
 	withdrawCommissionAdmin: 0.02,
 };
-
-const transactionText = {
-	amountCredited: {
-		user: 'Hi, $crediterName has sent you Gourde $amount. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent:
-			'Hi, you have successfully sent Gourde $amount to $creditedTo. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-	},
-	amountDebited: {
-		user: 'Hi, $debiterName has withdrawn Gourde $amount from your account. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-		agent:
-			'Hi, you have successfully withdrawn Gourde $amount from $debitedFrom. Your wallet balance is now Gourde $walletBalance. Please contact MegaPay support.',
-	},
-};
-
-const tokenReference = {};
 
 export const getTransactions = async (user, query) => {
 	try {
@@ -46,11 +27,9 @@ export const getTransactions = async (user, query) => {
 			endDate,
 		} = query;
 
-		let params = {};
-
-		if (user.role !== 'ADMIN') {
-			params.user = user._id;
-		}
+		let params = {
+			user: user._id,
+		};
 
 		if (cashType) {
 			params.cashType = cashType.toUpperCase();
@@ -134,6 +113,20 @@ export const getTransactions = async (user, query) => {
 						transferTo,
 					};
 				}
+
+				// Add separate realAmount and virtualAmount based on cashType
+				if (item.cashType === 'REAL') {
+					item.realAmount = item.transactionAmount || 0;
+					item.virtualAmount = 0;
+				} else if (item.cashType === 'VIRTUAL') {
+					item.realAmount = 0;
+					item.virtualAmount = item.transactionAmount || 0;
+				} else {
+					// Default to virtual if cashType is not set
+					item.realAmount = 0;
+					item.virtualAmount = item.transactionAmount || 0;
+				}
+
 				return item;
 			})
 		);
@@ -153,6 +146,173 @@ export const getTransactions = async (user, query) => {
 			entity: {
 				success: false,
 				error: error.errors || error,
+			},
+		};
+	}
+};
+
+export const transactionSummary = async (user, query) => {
+	try {
+		const { startDate, endDate, cashType, transactionType, status } = query;
+
+		let params = {
+			user: user._id.toString(),
+		};
+
+		if (cashType) {
+			params.cashType = cashType.toUpperCase();
+		}
+
+		if (transactionType) {
+			params.transactionType = transactionType.toUpperCase();
+		}
+
+		if (status) {
+			params.status = status.toUpperCase();
+		}
+
+		if (startDate && endDate) {
+			params.createdAt = {
+				$gte: new Date(startDate),
+				$lte: new Date(endDate),
+			};
+		}
+
+		// Get wallet balance for the user
+		const wallet = await Wallet.findOne({ user: user._id.toString() });
+
+		// Calculate wallet balances
+		const totalRealAmount = wallet
+			? wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable
+			: 0;
+		const totalVirtualAmount = wallet ? wallet.virtualBalance : 0;
+		const totalAmount = totalRealAmount + totalVirtualAmount;
+
+		// Get summary statistics for transactions
+		const summary = await Transaction.aggregate([
+			{ $match: params },
+			{
+				$group: {
+					_id: null,
+					totalTransactions: { $sum: 1 },
+					totalCredits: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$transactionType', 'CREDIT'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalCreditsReal: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'CREDIT'] },
+										{ $eq: ['$cashType', 'REAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalCreditsVirtual: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'CREDIT'] },
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebits: {
+						$sum: {
+							$cond: [
+								{ $eq: ['$transactionType', 'DEBIT'] },
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebitsReal: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'DEBIT'] },
+										{ $eq: ['$cashType', 'REAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+					totalDebitsVirtual: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{ $eq: ['$transactionType', 'DEBIT'] },
+										{ $eq: ['$cashType', 'VIRTUAL'] },
+									],
+								},
+								'$transactionAmount',
+								0,
+							],
+						},
+					},
+				},
+			},
+		]);
+
+		const transactionStats = summary[0] || {
+			totalTransactions: 0,
+			totalCredits: 0,
+			totalCreditsReal: 0,
+			totalCreditsVirtual: 0,
+			totalDebits: 0,
+			totalDebitsReal: 0,
+			totalDebitsVirtual: 0,
+		};
+
+		const result = {
+			totalTransactions: transactionStats.totalTransactions,
+			totalAmount,
+			totalRealAmount,
+			totalVirtualAmount,
+			totalCredits: transactionStats.totalCredits,
+			totalCreditsReal: transactionStats.totalCreditsReal,
+			totalCreditsVirtual: transactionStats.totalCreditsVirtual,
+			totalDebits: transactionStats.totalDebits,
+			totalDebitsReal: transactionStats.totalDebitsReal,
+			totalDebitsVirtual: transactionStats.totalDebitsVirtual,
+		};
+
+		return {
+			status: 200,
+			entity: {
+				success: true,
+				summary: result,
+			},
+		};
+	} catch (error) {
+		console.log(error);
+		return {
+			status: 500,
+			entity: {
+				success: false,
+				error:
+					error.errors ||
+					error.message ||
+					'Failed to get transaction summary',
 			},
 		};
 	}
@@ -195,7 +355,9 @@ export const makeTransaction = async (
 			throw new Error('Transaction amount must be greater than 0');
 		}
 
-		console.log(`Making ${transactionIdentifier} transaction for user ${userId}: ${transactionAmount} ${cashType}`);
+		console.log(
+			`Making ${transactionIdentifier} transaction for user ${userId}: ${transactionAmount} ${cashType}`
+		);
 
 		const walletData = await Wallet.findOne({
 			user: userId,
@@ -208,7 +370,8 @@ export const makeTransaction = async (
 		// Store previous balances for transaction records
 		const previousVirtualBalance = walletData.virtualBalance;
 		const previousWithdrawableBalance = walletData.realBalanceWithdrawable;
-		const previousNonWithdrawableBalance = walletData.realBalanceNonWithdrawable;
+		const previousNonWithdrawableBalance =
+			walletData.realBalanceNonWithdrawable;
 
 		let returnAmount = 0;
 
@@ -235,7 +398,9 @@ export const makeTransaction = async (
 						status: 'COMPLETED',
 					});
 				} else {
-					throw new Error('Virtual cash purchase must use VIRTUAL cash type');
+					throw new Error(
+						'Virtual cash purchase must use VIRTUAL cash type'
+					);
 				}
 				break;
 			}
@@ -253,8 +418,12 @@ export const makeTransaction = async (
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							paymentId: referenceIndex,
 							paymentType: transactionIdentifier,
@@ -263,7 +432,9 @@ export const makeTransaction = async (
 						status: 'COMPLETED',
 					});
 				} else {
-					throw new Error('Real cash purchase must use REAL cash type');
+					throw new Error(
+						'Real cash purchase must use REAL cash type'
+					);
 				}
 				break;
 			}
@@ -283,8 +454,12 @@ export const makeTransaction = async (
 						transactionType: 'CREDIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							planId: referenceIndex,
 							transactionType: 'PLAN_PURCHASE',
@@ -320,8 +495,12 @@ export const makeTransaction = async (
 			case 'WITHDRAWAL_PENDING': {
 				if (cashType === 'REAL') {
 					// Only allow withdrawal from withdrawable Real Cash
-					if (transactionAmount > walletData.realBalanceWithdrawable) {
-						throw new Error('Insufficient withdrawable real balance.');
+					if (
+						transactionAmount > walletData.realBalanceWithdrawable
+					) {
+						throw new Error(
+							'Insufficient withdrawable real balance.'
+						);
 					}
 
 					walletData.realBalanceWithdrawable -= transactionAmount;
@@ -331,7 +510,9 @@ export const makeTransaction = async (
 						walletData.pendingWithdrawals = transactionAmount;
 					}
 				} else {
-					throw new Error('Withdrawals are only allowed for Real Cash');
+					throw new Error(
+						'Withdrawals are only allowed for Real Cash'
+					);
 				}
 
 				await walletData.save();
@@ -339,13 +520,16 @@ export const makeTransaction = async (
 				await Transaction.create({
 					user: userId,
 					cashType,
-
 					referenceIndex,
-					transactionType: 'PENDING_DEBIT',
+					transactionType: 'DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-					newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+					previousBalance:
+						previousWithdrawableBalance +
+						previousNonWithdrawableBalance,
+					newBalance:
+						walletData.realBalanceWithdrawable +
+						walletData.realBalanceNonWithdrawable,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						bankAccount: referenceIndex,
@@ -360,7 +544,10 @@ export const makeTransaction = async (
 			// WITHDRAWAL_COMPLETED - Finalize withdrawal
 			case 'WITHDRAWAL_COMPLETED': {
 				if (cashType === 'REAL') {
-					if (walletData.pendingWithdrawals && walletData.pendingWithdrawals >= transactionAmount) {
+					if (
+						walletData.pendingWithdrawals &&
+						walletData.pendingWithdrawals >= transactionAmount
+					) {
 						walletData.pendingWithdrawals -= transactionAmount;
 					}
 				}
@@ -375,12 +562,16 @@ export const makeTransaction = async (
 					transactionType: 'COMPLETED_DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						completionDate: new Date(),
@@ -395,7 +586,10 @@ export const makeTransaction = async (
 			case 'WITHDRAWAL_REJECTED': {
 				if (cashType === 'REAL') {
 					walletData.realBalanceWithdrawable += transactionAmount;
-					if (walletData.pendingWithdrawals && walletData.pendingWithdrawals >= transactionAmount) {
+					if (
+						walletData.pendingWithdrawals &&
+						walletData.pendingWithdrawals >= transactionAmount
+					) {
 						walletData.pendingWithdrawals -= transactionAmount;
 					}
 				} else {
@@ -412,12 +606,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						withdrawalId: referenceIndex,
 						refundedToWithdrawable: cashType === 'REAL',
@@ -436,13 +634,18 @@ export const makeTransaction = async (
 			case 'DOMINO_ENTRY': {
 				if (cashType === 'REAL') {
 					// Check sufficient balance
-					const totalRealBalance = walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable;
+					const totalRealBalance =
+						walletData.realBalanceWithdrawable +
+						walletData.realBalanceNonWithdrawable;
 					if (transactionAmount > totalRealBalance) {
 						throw new Error('Insufficient real balance.');
 					}
 
 					// Deduct with priority (non-withdrawable first)
-					const deductionResult = deductRealCashWithPriority(walletData, transactionAmount);
+					const deductionResult = deductRealCashWithPriority(
+						walletData,
+						transactionAmount
+					);
 
 					await walletData.save();
 
@@ -454,12 +657,18 @@ export const makeTransaction = async (
 						transactionType: 'DEBIT',
 						transactionIdentifier,
 						transactionAmount,
-						previousBalance: previousWithdrawableBalance + previousNonWithdrawableBalance,
-						newBalance: walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable,
+						previousBalance:
+							previousWithdrawableBalance +
+							previousNonWithdrawableBalance,
+						newBalance:
+							walletData.realBalanceWithdrawable +
+							walletData.realBalanceNonWithdrawable,
 						transactionData: {
 							referenceIndex,
-							deductedFromNonWithdrawable: deductionResult.deductedFromNonWithdrawable,
-							deductedFromWithdrawable: deductionResult.deductedFromWithdrawable,
+							deductedFromNonWithdrawable:
+								deductionResult.deductedFromNonWithdrawable,
+							deductedFromWithdrawable:
+								deductionResult.deductedFromWithdrawable,
 						},
 						status: 'COMPLETED',
 					});
@@ -483,7 +692,10 @@ export const makeTransaction = async (
 						newBalance: walletData.virtualBalance,
 						transactionData: {
 							referenceIndex,
-							gameType: transactionIdentifier.replace('TICKET_', '').replace('_ENTRY', '').replace('_BET', ''),
+							gameType: transactionIdentifier
+								.replace('TICKET_', '')
+								.replace('_ENTRY', '')
+								.replace('_BET', ''),
 						},
 						status: 'COMPLETED',
 					});
@@ -492,33 +704,44 @@ export const makeTransaction = async (
 				// Process referral commission for gameplay
 				try {
 					const gameTypeMap = {
-						'TICKET_BORLETTE': 'BORLETTE',
-						'TICKET_MEGAMILLION': 'MEGAMILLION',
-						'DOMINO_ENTRY': 'DOMINOES',
-						'ROULETTE_BET': 'ROULETTE'
+						TICKET_BORLETTE: 'BORLETTE',
+						TICKET_MEGAMILLION: 'MEGAMILLION',
+						DOMINO_ENTRY: 'DOMINOES',
+						ROULETTE_BET: 'ROULETTE',
 					};
 					const gameType = gameTypeMap[transactionIdentifier];
 
 					if (gameType) {
-						const commissionResult = await LoyaltyService.processReferralCommission(
-							userId,
-							gameType,
-							transactionAmount,
-							referenceIndex
-						);
+						const commissionResult =
+							await LoyaltyService.processReferralCommission(
+								userId,
+								gameType,
+								transactionAmount,
+								referenceIndex
+							);
 						if (commissionResult.success) {
-							console.log(`${gameType} referral commission processed: ${commissionResult.message}`);
+							console.log(
+								`${gameType} referral commission processed: ${commissionResult.message}`
+							);
 						}
 					}
 				} catch (error) {
-					console.error('Error processing referral commission:', error);
+					console.error(
+						'Error processing referral commission:',
+						error
+					);
 				}
 
-				// Track spending for loyalty tier requirements
-				try {
-					await LoyaltyService.recordUserPlayActivity(userId, transactionAmount);
-				} catch (error) {
-					console.error('Error tracking play activity:', error);
+				// Track spending and plays for loyalty tier requirements (only for REAL cash)
+				if (cashType === 'REAL') {
+					try {
+						await LoyaltyService.recordUserPlayActivity(
+							userId,
+							transactionAmount
+						);
+					} catch (error) {
+						console.error('Error tracking play activity:', error);
+					}
 				}
 
 				break;
@@ -546,12 +769,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						referenceIndex,
 						gameType: transactionIdentifier.replace('WON_', ''),
@@ -588,12 +815,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						creditedToNonWithdrawable: cashType === 'REAL',
 						loyaltyType: transactionIdentifier,
@@ -622,12 +853,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: 'REFERRAL',
 						referenceId: referenceIndex,
@@ -659,12 +894,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						paymentId: referenceIndex,
 						paymentType: transactionIdentifier,
@@ -679,7 +918,9 @@ export const makeTransaction = async (
 			// WITHDRAW for agents/dealers withdrawing from users
 			case 'WITHDRAW': {
 				if (!referenceIndex) {
-					throw new Error('Reference index required for withdraw transaction');
+					throw new Error(
+						'Reference index required for withdraw transaction'
+					);
 				}
 
 				const targetWalletData = await Wallet.findOne({
@@ -691,33 +932,55 @@ export const makeTransaction = async (
 				}
 
 				// Calculate commissions (only for REAL cash)
-				const adminCommission = cashType === 'REAL'
-					? parseFloat((config.withdrawCommissionAdmin * transactionAmount).toFixed(2))
-					: 0;
+				const adminCommission =
+					cashType === 'REAL'
+						? parseFloat(
+								(
+									config.withdrawCommissionAdmin *
+									transactionAmount
+								).toFixed(2)
+							)
+						: 0;
 
-				const agentCommission = cashType === 'REAL' && userRole === 'AGENT'
-					? parseFloat((config.withdrawCommissionAgent * transactionAmount).toFixed(2))
-					: 0;
+				const agentCommission =
+					cashType === 'REAL' && userRole === 'AGENT'
+						? parseFloat(
+								(
+									config.withdrawCommissionAgent *
+									transactionAmount
+								).toFixed(2)
+							)
+						: 0;
 
 				const totalCommission = adminCommission + agentCommission;
-				const amountAfterCommission = transactionAmount - totalCommission;
+				const amountAfterCommission =
+					transactionAmount - totalCommission;
 
 				if (cashType === 'REAL') {
 					// Check if target user has sufficient balance
-					const targetTotalBalance = targetWalletData.realBalanceWithdrawable + targetWalletData.realBalanceNonWithdrawable;
+					const targetTotalBalance =
+						targetWalletData.realBalanceWithdrawable +
+						targetWalletData.realBalanceNonWithdrawable;
 					if (transactionAmount > targetTotalBalance) {
-						throw new Error('Target user has insufficient real balance.');
+						throw new Error(
+							'Target user has insufficient real balance.'
+						);
 					}
 
 					// Deduct from target user with priority
-					const deductionResult = deductRealCashWithPriority(targetWalletData, transactionAmount);
+					deductRealCashWithPriority(
+						targetWalletData,
+						transactionAmount
+					);
 
 					// Credit to withdrawing agent/dealer (goes to withdrawable)
 					walletData.realBalanceWithdrawable += amountAfterCommission;
 				} else {
 					// For VIRTUAL cash
 					if (transactionAmount > targetWalletData.virtualBalance) {
-						throw new Error('Target user has insufficient virtual balance.');
+						throw new Error(
+							'Target user has insufficient virtual balance.'
+						);
 					}
 					targetWalletData.virtualBalance -= transactionAmount;
 					walletData.virtualBalance += amountAfterCommission;
@@ -735,12 +998,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount: amountAfterCommission,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						targetUserId: referenceIndex,
 						originalAmount: transactionAmount,
@@ -780,12 +1047,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: transactionIdentifier,
 						referenceId: referenceIndex,
@@ -802,8 +1073,12 @@ export const makeTransaction = async (
 			case 'DOMINO_REFUND_COMMISSION': {
 				if (cashType === 'REAL') {
 					// Check if agent has sufficient withdrawable balance for commission reversal
-					if (transactionAmount > walletData.realBalanceWithdrawable) {
-						throw new Error('Insufficient withdrawable balance for commission reversal.');
+					if (
+						transactionAmount > walletData.realBalanceWithdrawable
+					) {
+						throw new Error(
+							'Insufficient withdrawable balance for commission reversal.'
+						);
 					}
 
 					// Deduct commission from withdrawable Real Cash
@@ -811,7 +1086,9 @@ export const makeTransaction = async (
 				} else {
 					// For VIRTUAL cash (rare case)
 					if (transactionAmount > walletData.virtualBalance) {
-						throw new Error('Insufficient virtual balance for commission reversal.');
+						throw new Error(
+							'Insufficient virtual balance for commission reversal.'
+						);
 					}
 					walletData.virtualBalance -= transactionAmount;
 				}
@@ -826,15 +1103,21 @@ export const makeTransaction = async (
 					transactionType: 'DEBIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						commissionType: 'REVERSAL',
-						originalCommissionType: transactionIdentifier.replace('_CANCELLED', '').replace('_REFUND', ''),
+						originalCommissionType: transactionIdentifier
+							.replace('_CANCELLED', '')
+							.replace('_REFUND', ''),
 						referenceId: referenceIndex,
 						reason: 'Commission reversed due to cancellation/refund',
 					},
@@ -866,12 +1149,16 @@ export const makeTransaction = async (
 					transactionType: 'CREDIT',
 					transactionIdentifier,
 					transactionAmount,
-					previousBalance: cashType === 'REAL' ?
-						previousWithdrawableBalance + previousNonWithdrawableBalance :
-						previousVirtualBalance,
-					newBalance: cashType === 'REAL' ?
-						walletData.realBalanceWithdrawable + walletData.realBalanceNonWithdrawable :
-						walletData.virtualBalance,
+					previousBalance:
+						cashType === 'REAL'
+							? previousWithdrawableBalance +
+								previousNonWithdrawableBalance
+							: previousVirtualBalance,
+					newBalance:
+						cashType === 'REAL'
+							? walletData.realBalanceWithdrawable +
+								walletData.realBalanceNonWithdrawable
+							: walletData.virtualBalance,
 					transactionData: {
 						referenceIndex,
 						refundReason: transactionIdentifier,
@@ -884,530 +1171,210 @@ export const makeTransaction = async (
 			}
 
 			default:
-				throw new Error(`Unknown transaction identifier: ${transactionIdentifier}`);
+				throw new Error(
+					`Unknown transaction identifier: ${transactionIdentifier}`
+				);
 		}
 
-		console.log(`Transaction ${transactionIdentifier} completed successfully for user ${userId}`);
+		console.log(
+			`Transaction ${transactionIdentifier} completed successfully for user ${userId}`
+		);
 		return returnAmount;
-
 	} catch (error) {
 		console.error(`Transaction error for ${transactionIdentifier}:`, error);
 		throw error;
 	}
 };
 
-export const commissionSummaryByAgent = async (
-	user,
-	{ agentId, startDate, endDate }
-) => {
+export const initiateTransaction = async (user, body) => {
 	try {
-		const criteria = {
-			status: {
-				$ne: 'CANCELLED',
-			},
-		};
-		const transactionCriteria = {
-			transactionIdentifier: {
-				$in: [
-					'TICKET_BORLETTE',
-					'TICKET_BORLETTE_COMMISSION',
-					'TICKET_BORLETTE_CANCELLED',
-					'TICKET_BORLETTE_COMMISSION_CANCELLED',
-					'TICKET_MEGAMILLION',
-					'TICKET_MEGAMILLION_COMMISSION',
-					'TICKET_MEGAMILLION_CANCELLED',
-					'TICKET_MEGAMILLION_COMMISSION_CANCELLED',
-					'DOMINO_ENTRY',
-					'DOMINO_ENTRY_COMMISSION',
-					'DOMINO_REFUND',
-					'DOMINO_REFUND_COMMISSION',
-					'WON_DOMINO',
-					'WON_DOMINO_COMMISSION',
-					'WITHDRAW',
-					'WITHDRAW_COMMISSION',
-					'DEPOSIT',
-					'DEPOSIT_COMMISSION',
-					'CASHBACK',
-					'REFERRAL_COMMISSION',
-					'TICKET_BORLETTE_COMMISSION_CANCELLED',
-					'TICKET_MEGAMILLION_COMMISSION_CANCELLED',
-					'ROULETTE_BET_COMMISSION',
-					'TICKET_ROULETTE',
-				],
-			},
-		};
+		const {
+			userId,
+			amount,
+			amountType = 'VIRTUAL',
+			transactionType,
+		} = body;
 
-		if (user.role === 'ADMIN') {
-			if (agentId) {
-				criteria.agent = agentId;
-				transactionCriteria.user = agentId;
-			}
-		} else {
-			criteria.agent = user._id;
-			transactionCriteria.user = user._id;
-		}
-
-		if (startDate && endDate) {
-			criteria.createdAt = {
-				$gte: new Date(startDate),
-				$lte: new Date(endDate),
-			};
-			transactionCriteria.createdAt = {
-				$gte: new Date(startDate),
-				$lte: new Date(endDate),
+		// Validate inputs
+		if (!userId || !amount || amount <= 0) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Valid userId and amount are required',
+				},
 			};
 		}
 
-		const transactions = await Transaction.find(transactionCriteria)
-			.populate('user', 'name phone')
-			.sort({ createdAt: -1 });
+		// Validate amountType
+		const cashType = amountType.toUpperCase();
+		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'amountType must be REAL or VIRTUAL',
+				},
+			};
+		}
 
-		const summary = {
-			totalTransactions: transactions.length,
-			totalCommissionEarned: 0,
-			totalVolume: 0,
-			gameBreakdown: {
-				borlette: { volume: 0, commission: 0, count: 0 },
-				megamillion: { volume: 0, commission: 0, count: 0 },
-				domino: { volume: 0, commission: 0, count: 0 },
-				roulette: { volume: 0, commission: 0, count: 0 },
-			},
-		};
+		// Determine transaction identifier based on transactionType
+		let transactionIdentifier = 'DEPOSIT';
+		if (transactionType) {
+			transactionIdentifier = transactionType.toUpperCase();
+		}
 
-		transactions.forEach(transaction => {
-			const amount = transaction.transactionAmount;
+		// For withdrawals, ensure only REAL cash type
+		if (transactionIdentifier.includes('WITHDRAW') && cashType !== 'REAL') {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'Withdrawals are only allowed for REAL cash type',
+				},
+			};
+		}
 
-			if (transaction.transactionIdentifier.includes('COMMISSION')) {
-				summary.totalCommissionEarned += amount;
-			} else {
-				summary.totalVolume += amount;
-			}
-
-			// Categorize by game type
-			if (transaction.transactionIdentifier.includes('BORLETTE')) {
-				if (transaction.transactionIdentifier.includes('COMMISSION')) {
-					summary.gameBreakdown.borlette.commission += amount;
-				} else {
-					summary.gameBreakdown.borlette.volume += amount;
-					summary.gameBreakdown.borlette.count++;
-				}
-			} else if (transaction.transactionIdentifier.includes('MEGAMILLION')) {
-				if (transaction.transactionIdentifier.includes('COMMISSION')) {
-					summary.gameBreakdown.megamillion.commission += amount;
-				} else {
-					summary.gameBreakdown.megamillion.volume += amount;
-					summary.gameBreakdown.megamillion.count++;
-				}
-			} else if (transaction.transactionIdentifier.includes('DOMINO')) {
-				if (transaction.transactionIdentifier.includes('COMMISSION')) {
-					summary.gameBreakdown.domino.commission += amount;
-				} else {
-					summary.gameBreakdown.domino.volume += amount;
-					summary.gameBreakdown.domino.count++;
-				}
-			} else if (transaction.transactionIdentifier.includes('ROULETTE')) {
-				if (transaction.transactionIdentifier.includes('COMMISSION')) {
-					summary.gameBreakdown.roulette.commission += amount;
-				} else {
-					summary.gameBreakdown.roulette.volume += amount;
-					summary.gameBreakdown.roulette.count++;
-				}
-			}
+		// Create transaction record (actual processing happens in processTransaction)
+		const transaction = await Transaction.create({
+			user: userId,
+			cashType,
+			transactionType: transactionIdentifier.includes('WITHDRAW')
+				? 'DEBIT'
+				: 'CREDIT',
+			transactionIdentifier,
+			transactionAmount: amount,
+			status: 'PENDING',
+			referenceIndex: user._id.toString(),
 		});
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				summary,
-				transactions,
+				transaction: {
+					id: transaction._id,
+					userId,
+					amount,
+					realAmount: cashType === 'REAL' ? amount : 0,
+					virtualAmount: cashType === 'VIRTUAL' ? amount : 0,
+					amountType: cashType,
+					transactionType: transactionIdentifier,
+					status: 'PENDING',
+				},
+				message: 'Transaction initiated successfully',
 			},
 		};
 	} catch (error) {
-		console.log(error);
+		console.error('Initiate transaction error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to get commission summary',
+				error: error.message || 'Failed to initiate transaction',
 			},
 		};
 	}
 };
 
-export const verifyToken = async (user, { verificationToken }) => {
+export const processTransaction = async (user, body) => {
 	try {
-		if (tokenReference[verificationToken]) {
-			delete tokenReference[verificationToken];
+		const { transactionId, userId, amount, amountType = 'VIRTUAL' } = body;
+
+		// Validate inputs
+		if (!transactionId && (!userId || !amount)) {
 			return {
-				status: 200,
+				status: 400,
 				entity: {
-					success: true,
+					success: false,
+					error: 'Either transactionId or userId and amount are required',
 				},
 			};
 		}
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: 'Invalid verification token.',
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
 
-export const requestToken = async (user, { receiverPhone, countryCode }) => {
-	try {
-		const verificationToken = generateRandomDigits(6);
-		tokenReference[verificationToken] = {
-			user: user._id,
-			receiverPhone,
-			countryCode,
-		};
-		setTimeout(() => {
-			delete tokenReference[verificationToken];
-		}, 900000);
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				verificationToken,
-			},
-		};
-	} catch (error) {
-		console.log(error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.errors || error,
-			},
-		};
-	}
-};
-
-// NEW: Get tier-based payout analytics for admin dashboard
-export const getTierBasedPayoutAnalytics = async (query, user) => {
-	try {
-		if (!['ADMIN'].includes(user.role)) {
-			throw new Error('You are not authorized to view analytics data.');
+		const cashType = amountType.toUpperCase();
+		if (!['REAL', 'VIRTUAL'].includes(cashType)) {
+			return {
+				status: 400,
+				entity: {
+					success: false,
+					error: 'amountType must be REAL or VIRTUAL',
+				},
+			};
 		}
 
-		const { startDate, endDate, tier, gameType } = query;
+		let targetUserId = userId;
+		let transactionAmount = amount;
+		let transactionIdentifier = 'DEPOSIT';
 
-		// Build date filter
-		let dateFilter = {};
-		if (startDate || endDate) {
-			dateFilter.createdAt = {};
-			if (startDate) {
-				dateFilter.createdAt.$gte = new Date(startDate);
+		// If transactionId is provided, fetch the transaction
+		if (transactionId) {
+			const transaction = await Transaction.findById(transactionId);
+			if (!transaction) {
+				return {
+					status: 404,
+					entity: {
+						success: false,
+						error: 'Transaction not found',
+					},
+				};
 			}
-			if (endDate) {
-				dateFilter.createdAt.$lte = new Date(endDate);
+
+			if (transaction.status !== 'PENDING') {
+				return {
+					status: 400,
+					entity: {
+						success: false,
+						error: `Transaction is already ${transaction.status.toLowerCase()}`,
+					},
+				};
 			}
+
+			targetUserId = transaction.user.toString();
+			transactionAmount = transaction.transactionAmount;
+			transactionIdentifier = transaction.transactionIdentifier;
 		}
 
-		// Import models
-		const { BorletteTicket } = await import('../borlette_ticket/model');
+		// Process the transaction using makeTransaction
+		await makeTransaction(
+			targetUserId,
+			user.role,
+			transactionIdentifier,
+			transactionAmount,
+			transactionId || user._id.toString(),
+			cashType
+		);
 
-		// Build match criteria for tickets
-		let matchCriteria = {
-			status: 'COMPLETED',
-			...dateFilter
-		};
-
-		if (tier) {
-			matchCriteria.userTierAtPurchase = tier.toUpperCase();
+		// Update transaction status if transactionId was provided
+		if (transactionId) {
+			await Transaction.findByIdAndUpdate(transactionId, {
+				status: 'COMPLETED',
+			});
 		}
-
-		// Get tier-based payout statistics
-		const tierStats = await BorletteTicket.aggregate([
-			{ $match: matchCriteria },
-			{
-				$group: {
-					_id: {
-						tier: '$userTierAtPurchase',
-						payoutPercentage: '$payoutConfig.percentage',
-						isCustom: '$payoutConfig.isCustom'
-					},
-					totalTickets: { $sum: 1 },
-					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
-					totalAmountWon: { $sum: '$totalAmountWon' },
-					avgAmountPlayed: { $avg: '$totalAmountPlayed' },
-					avgAmountWon: { $avg: '$totalAmountWon' },
-					winningTickets: {
-						$sum: {
-							$cond: [{ $gt: ['$totalAmountWon', 0] }, 1, 0]
-						}
-					}
-				}
-			},
-			{
-				$addFields: {
-					winRate: {
-						$multiply: [
-							{ $divide: ['$winningTickets', '$totalTickets'] },
-							100
-						]
-					},
-					profitMargin: {
-						$multiply: [
-							{
-								$divide: [
-									{ $subtract: ['$totalAmountPlayed', '$totalAmountWon'] },
-									'$totalAmountPlayed'
-								]
-							},
-							100
-						]
-					}
-				}
-			},
-			{
-				$sort: { '_id.tier': 1 }
-			}
-		]);
-
-		// Get daily tier performance
-		const dailyTierPerformance = await BorletteTicket.aggregate([
-			{ $match: matchCriteria },
-			{
-				$group: {
-					_id: {
-						date: {
-							$dateToString: {
-								format: '%Y-%m-%d',
-								date: '$createdAt'
-							}
-						},
-						tier: '$userTierAtPurchase'
-					},
-					totalTickets: { $sum: 1 },
-					totalAmountPlayed: { $sum: '$totalAmountPlayed' },
-					totalAmountWon: { $sum: '$totalAmountWon' }
-				}
-			},
-			{
-				$sort: { '_id.date': -1 }
-			}
-		]);
-
-		// Get payout configuration usage
-		const { PayoutConfig } = await import('../payout_config/model');
-		const configUsage = await PayoutConfig.aggregate([
-			{
-				$match: {
-					...dateFilter,
-					isActive: true
-				}
-			},
-			{
-				$group: {
-					_id: {
-						tier: '$tier',
-						gameType: '$gameType',
-						percentage: '$payoutPercentage'
-					},
-					usageCount: { $sum: 1 },
-					isPromotional: { $first: '$isPromotional' },
-					description: { $first: '$description' }
-				}
-			},
-			{
-				$sort: { '_id.tier': 1, '_id.gameType': 1 }
-			}
-		]);
-
-		// Calculate overall impact
-		const overallImpact = await BorletteTicket.aggregate([
-			{ $match: matchCriteria },
-			{
-				$group: {
-					_id: null,
-					totalRevenue: { $sum: '$totalAmountPlayed' },
-					totalPayouts: { $sum: '$totalAmountWon' },
-					totalTickets: { $sum: 1 },
-					avgPayoutPercentageUsed: { $avg: '$payoutConfig.percentage' }
-				}
-			},
-			{
-				$addFields: {
-					overallProfitMargin: {
-						$multiply: [
-							{
-								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
-							},
-							100
-						]
-					}
-				}
-			}
-		]);
 
 		return {
 			status: 200,
 			entity: {
 				success: true,
-				analytics: {
-					tierStatistics: tierStats,
-					dailyTierPerformance: dailyTierPerformance,
-					configurationUsage: configUsage,
-					overallImpact: overallImpact[0] || {},
-					dateRange: {
-						startDate: startDate || 'All time',
-						endDate: endDate || 'Present'
-					}
-				}
-			}
+				message: 'Transaction processed successfully',
+				transaction: {
+					userId: targetUserId,
+					amount: transactionAmount,
+					realAmount: cashType === 'REAL' ? transactionAmount : 0,
+					virtualAmount:
+						cashType === 'VIRTUAL' ? transactionAmount : 0,
+					amountType: cashType,
+				},
+			},
 		};
 	} catch (error) {
-		console.error('Error getting tier-based payout analytics:', error);
+		console.error('Process transaction error:', error);
 		return {
 			status: 500,
 			entity: {
 				success: false,
-				error: error.message || 'Failed to retrieve analytics'
-			}
-		};
-	}
-};
-
-// NEW: Get revenue impact comparison (before vs after tier implementation)
-export const getRevenueImpactComparison = async (query, user) => {
-	try {
-		if (!['ADMIN'].includes(user.role)) {
-			throw new Error('You are not authorized to view analytics data.');
-		}
-
-		const { BorletteTicket } = await import('../borlette_ticket/model');
-
-		// Assume tier implementation date (you can make this configurable)
-		const tierImplementationDate = new Date('2024-01-01'); // Adjust as needed
-
-		// Get statistics before tier implementation
-		const beforeTierStats = await BorletteTicket.aggregate([
-			{
-				$match: {
-					status: 'COMPLETED',
-					createdAt: { $lt: tierImplementationDate }
-				}
+				error: error.message || 'Failed to process transaction',
 			},
-			{
-				$group: {
-					_id: null,
-					totalTickets: { $sum: 1 },
-					totalRevenue: { $sum: '$totalAmountPlayed' },
-					totalPayouts: { $sum: '$totalAmountWon' },
-					avgTicketValue: { $avg: '$totalAmountPlayed' }
-				}
-			},
-			{
-				$addFields: {
-					profitMargin: {
-						$multiply: [
-							{
-								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
-							},
-							100
-						]
-					}
-				}
-			}
-		]);
-
-		// Get statistics after tier implementation
-		const afterTierStats = await BorletteTicket.aggregate([
-			{
-				$match: {
-					status: 'COMPLETED',
-					createdAt: { $gte: tierImplementationDate }
-				}
-			},
-			{
-				$group: {
-					_id: null,
-					totalTickets: { $sum: 1 },
-					totalRevenue: { $sum: '$totalAmountPlayed' },
-					totalPayouts: { $sum: '$totalAmountWon' },
-					avgTicketValue: { $avg: '$totalAmountPlayed' }
-				}
-			},
-			{
-				$addFields: {
-					profitMargin: {
-						$multiply: [
-							{
-								$divide: [
-									{ $subtract: ['$totalRevenue', '$totalPayouts'] },
-									'$totalRevenue'
-								]
-							},
-							100
-						]
-					}
-				}
-			}
-		]);
-
-		const beforeStats = beforeTierStats[0] || {};
-		const afterStats = afterTierStats[0] || {};
-
-		// Calculate impact metrics
-		const impact = {
-			revenueChange: {
-				absolute: (afterStats.totalRevenue || 0) - (beforeStats.totalRevenue || 0),
-				percentage: beforeStats.totalRevenue
-					? (((afterStats.totalRevenue || 0) - beforeStats.totalRevenue) / beforeStats.totalRevenue) * 100
-					: 0
-			},
-			payoutChange: {
-				absolute: (afterStats.totalPayouts || 0) - (beforeStats.totalPayouts || 0),
-				percentage: beforeStats.totalPayouts
-					? (((afterStats.totalPayouts || 0) - beforeStats.totalPayouts) / beforeStats.totalPayouts) * 100
-					: 0
-			},
-			profitMarginChange: {
-				absolute: (afterStats.profitMargin || 0) - (beforeStats.profitMargin || 0),
-				beforeMargin: beforeStats.profitMargin || 0,
-				afterMargin: afterStats.profitMargin || 0
-			}
-		};
-
-		return {
-			status: 200,
-			entity: {
-				success: true,
-				comparison: {
-					beforeTierImplementation: beforeStats,
-					afterTierImplementation: afterStats,
-					impact,
-					implementationDate: tierImplementationDate
-				}
-			}
-		};
-	} catch (error) {
-		console.error('Error getting revenue impact comparison:', error);
-		return {
-			status: 500,
-			entity: {
-				success: false,
-				error: error.message || 'Failed to retrieve impact comparison'
-			}
 		};
 	}
 };
@@ -1419,14 +1386,20 @@ const deductRealCashWithPriority = (wallet, amount) => {
 
 	// First, deduct from non-withdrawable
 	if (remaining > 0 && wallet.realBalanceNonWithdrawable > 0) {
-		deductedFromNonWithdrawable = Math.min(remaining, wallet.realBalanceNonWithdrawable);
+		deductedFromNonWithdrawable = Math.min(
+			remaining,
+			wallet.realBalanceNonWithdrawable
+		);
 		wallet.realBalanceNonWithdrawable -= deductedFromNonWithdrawable;
 		remaining -= deductedFromNonWithdrawable;
 	}
 
 	// Then, deduct from withdrawable
 	if (remaining > 0 && wallet.realBalanceWithdrawable > 0) {
-		deductedFromWithdrawable = Math.min(remaining, wallet.realBalanceWithdrawable);
+		deductedFromWithdrawable = Math.min(
+			remaining,
+			wallet.realBalanceWithdrawable
+		);
 		wallet.realBalanceWithdrawable -= deductedFromWithdrawable;
 		remaining -= deductedFromWithdrawable;
 	}
@@ -1437,8 +1410,4 @@ const deductRealCashWithPriority = (wallet, amount) => {
 		totalDeducted: deductedFromNonWithdrawable + deductedFromWithdrawable,
 		remaining,
 	};
-};
-
-const getTotalRealBalance = (wallet) => {
-	return wallet.realBalanceWithdrawable + wallet.realBalanceNonWithdrawable;
 };
